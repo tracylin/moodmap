@@ -1,31 +1,21 @@
 import { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, ReferenceLine, BarChart, Bar } from "recharts";
+import './App.css'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = ""; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://schttps://script.google.com/macros/s/AKfycbypVhZzY-6X3vYCK8RagdvJoBQTLUslz0iK2T9i-EzRdjZDUB3y49P8LQk8ZOgFpxb7/exec"; // paste your deployed Apps Script URL here
 
-async function syncToSheets(payload){
-  if(!SHEETS_URL) return;
-  try{
-    await fetch(SHEETS_URL,{
-      method:"POST",
-      mode:"no-cors",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ ...payload, ts:new Date().toISOString() }),
+async function syncToSheets(mood, srm) {
+  if (!SHEETS_URL) return;
+  try {
+    await fetch(SHEETS_URL, {
+      method: "POST", mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mood, srm, ts: new Date().toISOString() }),
     });
-  }catch(e){ console.warn("Sync failed:", e); }
-}
-
-async function pullFromSheets(){
-  // Requires your Apps Script to support GET ?action=export returning JSON.
-  if(!SHEETS_URL) return null;
-  try{
-    const res=await fetch(`${SHEETS_URL}?action=export`,{method:"GET"});
-    if(!res.ok) return null;
-    return await res.json();
-  }catch{ return null; }
+  } catch (e) { console.warn("Sync failed:", e); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -66,11 +56,6 @@ const SEED_SRM = {
 const VER="0.4.0";
 const MM={sev_elev:{v:3,label:"Severe Elevated",color:"#D4785C",short:"Sev ↑",bg:"#FDF0EC"},mod_elev:{v:2,label:"Moderate Elevated",color:"#D49A6A",short:"Mod ↑",bg:"#FDF5EE"},mild_elev:{v:1,label:"Mild Elevated",color:"#C9B07A",short:"Mild ↑",bg:"#FAF6ED"},normal:{v:0,label:"Within Normal",color:"#7BA08B",short:"Normal",bg:"#EFF6F1"},mild_dep:{v:-1,label:"Mild Depressed",color:"#7E9AB3",short:"Mild ↓",bg:"#EEF3F8"},mod_dep:{v:-2,label:"Moderate Depressed",color:"#6478A0",short:"Mod ↓",bg:"#EDF0F6"},sev_dep:{v:-3,label:"Severe Depressed",color:"#5A5F8A",short:"Sev ↓",bg:"#EDEEF4"}};
 const MOOD_OPTS=[{key:"sev_elev",icon:"⬆⬆⬆",label:"Severe Elevated",sub:"Significant impairment · not able to work"},{key:"mod_elev",icon:"⬆⬆",label:"Moderate Elevated",sub:"Significant impairment · able to work"},{key:"mild_elev",icon:"⬆",label:"Mild Elevated",sub:"Without significant impairment"},{key:"normal",icon:"—",label:"Within Normal",sub:"No symptoms"},{key:"mild_dep",icon:"⬇",label:"Mild Depressed",sub:"Without significant impairment"},{key:"mod_dep",icon:"⬇⬇",label:"Moderate Depressed",sub:"Significant impairment · able to work"},{key:"sev_dep",icon:"⬇⬇⬇",label:"Severe Depressed",sub:"Significant impairment · not able to work"}];
-const moodsArr=(e)=>Array.isArray(e?.moods)?e.moods:(e?.mood?[e.mood]:[]);
-const primaryMood=(e)=>moodsArr(e)[0]||null;
-const moodValue=(e)=>{const ms=moodsArr(e);return ms.length?ms.reduce((s,k)=>s+(MM[k]?.v??0),0)/ms.length:null;};
-const moodLabel=(e)=>moodsArr(e).map(k=>MM[k]?.label||k).join(" / ");
-const moodKeyString=(e)=>moodsArr(e).join("|");
 const DEF_MEDS=[{key:"lamotrigine",name:"Lamotrigine",dose:"200mg"},{key:"quetiapine",name:"Quetiapine",dose:"100mg"},{key:"lithium",name:"Lithium Carbonate",dose:"300mg"},{key:"levothyroxine",name:"Levothyroxine",dose:"50mcg"},{key:"naltrexone",name:"Naltrexone",dose:"50mg"}];
 const SRM_ACT=[{id:"bed",label:"Got out of bed",icon:"○"},{id:"beverage",label:"Morning beverage",icon:"◎"},{id:"breakfast",label:"Breakfast",icon:"◉"},{id:"outside",label:"Went outside",icon:"◇"},{id:"exercise",label:"Work out",icon:"△"},{id:"work",label:"Started work / study",icon:"□"},{id:"lunch",label:"Lunch",icon:"◈"},{id:"dinner",label:"Dinner",icon:"◆"},{id:"home",label:"Returned home",icon:"⌂"},{id:"bedtime",label:"Went to bed",icon:"◑"}];
 const WHO_OPTS=[{key:"spouse",label:"Spouse / Partner"},{key:"friend",label:"Friend"},{key:"family",label:"Family"},{key:"other",label:"Other"}];
@@ -82,7 +67,6 @@ const dk=(y,m,d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0
 const dIn=(y,m)=>new Date(y,m+1,0).getDate();
 const fDay=(y,m)=>new Date(y,m,1).getDay();
 const tdk=()=>{const d=new Date();return dk(d.getFullYear(),d.getMonth(),d.getDate());};
-const ydk=()=>{const d=new Date();d.setDate(d.getDate()-1);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
 const nowTime=()=>{const d=new Date();return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;};
 const isAMnow=()=>new Date().getHours()<12;
 const GREETS=[n=>`Take it one moment at a time${n?", "+n:""}.`,n=>`No rush. You're here, and that's enough${n?", "+n:""}.`,n=>`A small step is still a step${n?", "+n:""}.`,n=>`Glad you're here${n?", "+n:""}.`,n=>`${n?n+", you":"You"} don't have to do this perfectly.`,n=>`Checking in takes courage${n?", "+n:""}.`,n=>`${n?n+", b":"B"}e gentle with yourself today.`,n=>`Ready when you are${n?", "+n:""}.`];
@@ -108,21 +92,13 @@ export default function App(){
   const[vm,setVm]=useState(()=>{const d=new Date();return[d.getFullYear(),d.getMonth()];});
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
-  useEffect(()=>{(async()=>{
-    const data=await pullFromSheets();
-    if(!data) return;
-    if(data.meds && Array.isArray(data.meds)) { setMedsS(data.meds); localStorage.setItem("mt_meds", JSON.stringify(data.meds)); }
-    if(data.mood && typeof data.mood==='object') { const merged={...loadMood(),...data.mood}; setMood(merged); saveMood(merged); }
-    if(data.srm && typeof data.srm==='object') { const merged={...loadSRM(),...data.srm}; setSrm(merged); saveSRM(merged); }
-  })();},[]);
-
 
   const setS=s=>{const n={...settings,...s};setSS(n);saveSet(n);};
   const setMeds=m=>{setMedsS(m);localStorage.setItem("mt_meds",JSON.stringify(m));};
   const name=settings.name||"";
 
-  const doSaveMood=(n)=>{setMood(n);saveMood(n);syncToSheets({mood:n,srm,meds});};
-  const doSaveSRM=(n)=>{setSrm(n);saveSRM(n);syncToSheets({mood,srm:n,meds});};
+  const doSaveMood=(n)=>{setMood(n);saveMood(n);syncToSheets(n,srm);};
+  const doSaveSRM=(n)=>{setSrm(n);saveSRM(n);syncToSheets(mood,n);};
 
   return(<>
     <style>{CSS}</style>
@@ -137,7 +113,7 @@ export default function App(){
         onEditSRM={id=>{setSrmEditId(id);setScreen("editDaySrm");}}/>}
       {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e});setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];doSaveSRM({...srm,[selDay]:{items}});setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
-      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} onSave={(e,k)=>{doSaveMood({...mood,[k]:e});setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
+      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} onSave={e=>{doSaveMood({...mood,[tdk()]:e});setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srm"&&<SRMPicker srm={srm} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srmEdit"&&<SRMSingle id={srmEditId} srm={srm} onSave={item=>{const k=tdk();const ex=srm[k]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];doSaveSRM({...srm,[k]:{items}});setScreen("srm");}} onX={()=>setScreen("srm")}/>}
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
@@ -152,7 +128,7 @@ function Welcome({name,onGo}){
   const[greet]=useState(()=>GREETS[Math.floor(Math.random()*GREETS.length)](name));
   return(<div className="scr welcome">
     <div className="w-top">
-      <div className="w-icon" dangerouslySetInnerHTML={{__html:'<svg id="_图层_1" data-name="图层 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600">  <path d="M373.56,317.01c5.5,0,11.17,.86,16.48-.16,16.13-3.12,32.14-6.91,48.17-10.56,12.87-2.93,25.78-5.57,39.08-4.85,16.48,.9,30.11,6.89,37.72,22.56,5.23,10.77,5.09,22.07,2.21,33.42-4.25,16.73-13.72,30.36-25.84,42.25-17.73,17.4-39.19,28.49-62.49,36.39-1.42,.48-2.82,1-3.63,1.29,.92,8.27,2.11,16.12,2.55,24.02,.23,4.1-.46,8.36-1.39,12.4-5.16,22.46-26.53,32.03-46.85,21.04-12.04-6.51-21.28-16.25-29.97-26.57-3.1-3.68-6.12-7.44-8.89-11.38-1.43-2.03-2.94-2.57-5.34-2.55-18.49,.09-36.98,.02-55.47-.02-1.01,0-2.08,.09-3.03-.19-8.76-2.61-14.46,1.03-20.33,7.65-16.64,18.79-34.26,36.72-55,51.14-5.36,3.72-11.21,7.04-17.29,9.36-19.77,7.53-37.21-4.31-36.77-25.41,.18-8.83,2.02-17.95,4.88-26.33,4.28-12.53,10.13-24.52,15.32-36.74,.34-.8,.7-1.59,1.19-2.71-2.79-1.2-5.43-2.31-8.06-3.47-26.13-11.55-47.83-28.42-63.08-52.91-27.65-44.41-20.84-102.82,16.13-140.47,14.51-14.78,31.28-26.09,50.4-33.89,3.44-1.41,4.88-3.16,5.06-7.17,1.27-28.78,3.84-57.42,13.03-84.96,2.06-6.18,4.9-12.27,8.33-17.81,10.57-17.09,29.92-19.74,45.26-6.59,8.72,7.48,14.65,17.05,20.05,27.01,10.28,18.98,18.22,38.98,25.65,59.18,1.04,2.83,2.2,3.42,5.12,3.27,21.56-1.08,43.08-.51,64.51,2.29,5.78,.75,5.75,.84,8.39-4.55,9.72-19.8,19.61-39.53,33.54-56.81,3.87-4.8,8.21-9.41,13.06-13.17,18.73-14.52,40.16-9.17,50.27,12.28,5.89,12.48,8.98,25.78,11.24,39.3,3.15,18.84,3.81,37.82,2.52,56.85-.92,13.55-7.2,24.91-15.68,35.16-11.9,14.39-26.72,25.49-41.53,36.6-10.23,7.67-20.39,15.46-30.3,23.55-3.74,3.05-6.66,7.1-9.96,10.69l.75,1.57ZM215.49,103.87c-1.57,3.26-2.88,5.29-3.56,7.51-2.42,7.98-5.09,15.93-6.83,24.07-4.97,23.12-6.68,46.63-7.35,70.22-.24,8.45-3.98,13.99-12.05,16.95-12.88,4.72-25.18,10.63-36.27,18.87-21.54,16-35.72,36.67-38.67,63.69-3.6,32.9,9.43,59.04,34.66,79.56,13.97,11.36,30.25,18.32,47.22,23.82,8.31,2.69,12.94,9.14,11.44,17.23-.67,3.61-2.86,6.96-4.47,10.37-6.16,13.03-12.64,25.92-18.42,39.12-2.49,5.69-3.57,11.99-5.29,18.02,.35,.2,.71,.41,1.06,.61,1.3-.69,2.69-1.24,3.87-2.09,5.84-4.23,12.21-7.95,17.32-12.94,16.58-16.19,32.76-32.8,48.94-49.41,3.66-3.76,7.59-6.27,12.93-6.03,2.28,.11,4.54,.41,6.81,.66,24.13,2.69,48.34,3.61,72.47,.89,9.86-1.11,16.37,1.61,21.7,9.97,7.24,11.35,16.04,21.57,26.5,30.17,2.58,2.12,5.64,3.66,9.19,5.92,.64-3.32,1.32-5.74,1.55-8.2,1.24-12.97-3.88-23.88-11.83-33.5-13.13-15.9-30.19-25.99-49.72-32.11-19.69-6.17-39.55-6.6-59.66-2-8.67,1.98-16.08-3.33-17.7-11.87-1.43-7.55,3.83-14.79,12.11-16.58,16.49-3.56,33.13-4.65,49.87-2.33,34.23,4.75,63.63,18.88,86.52,45.31,1.44,1.66,2.66,1.92,4.55,1.23,6.41-2.36,12.95-4.39,19.26-7,17.67-7.3,33.65-17.13,45.82-32.25,6.44-8,11.27-16.83,12.49-27.26,.86-7.38-2.33-12.02-9.53-13.55-8.38-1.78-16.71-.54-24.87,1.29-16.05,3.59-31.96,7.83-48.02,11.36-12.54,2.75-25.29,4.45-38.09,1.9-11.93-2.37-21.22-8.28-24.71-20.79-2.6-9.33,.11-17.83,4.84-25.76,5.82-9.76,14.38-16.99,23.24-23.8,10.95-8.42,22.38-16.23,33.1-24.91,8.94-7.23,17.48-15.03,25.6-23.17,6.95-6.96,10.5-15.77,10.11-25.83-.5-12.65-.52-25.35-1.76-37.93-1.27-12.85-4.09-25.5-9.34-37.44-2.09-4.75-3.6-5.3-7.1-1.61-4.94,5.21-10.15,10.52-13.64,16.69-10.39,18.39-20.07,37.18-29.87,55.89-3.82,7.31-9.63,10.49-17.73,9.15-28.29-4.69-56.73-5.41-85.28-3.25-9.72,.74-15.36-2.69-18.75-11.74-3.77-10.07-7.43-20.19-11.46-30.16-6.51-16.08-13.28-32.07-22.83-46.66-2.23-3.41-5.15-6.36-8.4-10.3Z"/>  <path d="M237.8,250.44c6.84-.03,13.42,1.44,19.32,4.79,2.78,1.58,4.34,.93,6.63-.65,14.6-10.05,29.85-10.97,45.43-2.45,6.72,3.67,11.66,9.32,15.21,16.06,4.06,7.7,1.65,15.98-5.59,19.99-6.94,3.85-15.14,1.41-19.59-5.84-4.31-7.01-11.23-9.26-17.6-5.2-2.14,1.37-4.01,3.88-4.96,6.28-2.43,6.17-6.64,9.91-13.12,10.58-6.37,.67-11.22-2.15-14.58-7.66-3.83-6.29-8.54-8.25-14.86-6.53-3.87,1.06-6.34,3.39-7.55,7.24-2.75,8.7-10.54,12.93-18.65,10.24-7.93-2.64-11.86-11.43-8.86-19.86,5.87-16.53,21.03-27.09,38.77-27.02Z"/></svg>'}} />
+      <div className="w-orb"><div className="w-orb-i"/><div className="w-orb-ring"/></div>
       <h1 className="w-t">Mood Tracker</h1>
       <p className="w-s">{greet}</p>
     </div>
@@ -171,12 +147,13 @@ function Lock({passcode,onOk}){
       <p className="lock-lbl">{err?"Incorrect passcode":"Enter passcode"}</p>
       <div className={`lock-dots${shake?" lock-shake":""}`}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<input.length?" on":""}`}/>)}</div>
       <div className="lock-pad">
-        {[1,2,3,4,5,6,7,8,9].map((n)=>(
-          <button key={n} className="lk" onClick={()=>tap(String(n))}>{n}</button>
+        {[1,2,3,4,5,6,7,8,9,null,0,"del"].map((n,i)=>(
+          <button key={i} className={`lk${n===null?" lke":""}`}
+            onClick={()=>{if(n==="del")setInput(input.slice(0,-1));else if(n!==null)tap(String(n));}}
+            disabled={n===null}>
+            {n==="del"?"‹":""+n}
+          </button>
         ))}
-        <div className="lk lke" aria-hidden="true"/>
-        <button className="lk" onClick={()=>tap("0")}>0</button>
-        <button className="lk lk-del" onClick={()=>setInput(input.slice(0,-1))} aria-label="Delete">⌫</button>
       </div>
     </div>
   </div>);
@@ -190,7 +167,7 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onSrm,onHist,onSet,o
   for(let i=0;i<off;i++) cells.push(<div key={`b${i}`} className="cc ce"/>);
   for(let d=1;d<=days;d++){
     const k=dk(y,m,d);const e=mood[k];const s=srm[k];const isT=d===td;const isSel=selDay===k;
-    const pm=primaryMood(e);const mc=pm?MM[pm]:null;
+    const mc=e?.mood?MM[e.mood]:null;
     cells.push(<div key={d} className={`cc${e||s?" cl":""}${isT?" ct":""}${isSel?" csel":""}`}
       onClick={()=>{if(e||s)setSelDay(isSel?null:k);}}>
       {mc&&<div className="cd" style={{background:mc.color,opacity:.18}}/>}
@@ -207,16 +184,16 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onSrm,onHist,onSet,o
   return(<div className="scr">
     <div className="cal-top">
       <div><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]} {y}</h2></div>
-      <div className="cal-tr"><button className="bi" onClick={onSet}>⋯</button><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
+      <div className="cal-tr"><button className="bi" onClick={onSet}>⚙</button><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
     </div>
-    {streak>1&&<div className="streak">• {streak} day streak</div>}
+    {streak>1&&<div className="streak">✦ {streak} day streak</div>}
     <div className="cg">{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
     <div className="cleg">{Object.entries(MM).map(([k,v])=>(<div key={k} className="cli"><div className="cld" style={{background:v.color}}/><span>{v.short}</span></div>))}</div>
 
     {selDay&&(selMood||selSrm)&&(
       <div className="day-card" onClick={onViewDay}>
         <div className="day-card-head"><span className="day-card-date">{selLabel}</span><span className="day-card-arrow">View full log →</span></div>
-        {primaryMood(selMood)&&<div className="day-card-mood" style={{color:MM[primaryMood(selMood)].color}}>{moodLabel(selMood)}</div>}
+        {selMood?.mood&&<div className="day-card-mood" style={{color:MM[selMood.mood].color}}>{MM[selMood.mood].label}</div>}
         {selMood?.notes&&<div className="day-card-note">{selMood.notes}</div>}
         <div className="day-chips">
           {selMood?.sleep!=null&&<span className="day-chip">Sleep {selMood.sleep}h</span>}
@@ -241,20 +218,19 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
   const label=`${MO[mo-1]} ${dy}, ${yr}`;
   return(<div className="scr">
-    <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>×</button></div>
+    <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>✕</button></div>
     {e&&(<div className="card">
       <div className="dv-head"><h3 className="ctit">Mood Log</h3><div className="dv-acts"><button className="rr-edit" onClick={onEditMood}>Edit</button><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("mood")}>Delete</button></div></div>
       {confirmDel==="mood"&&<div className="dv-confirm"><span>Delete this mood entry?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelMood}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
-      {primaryMood(e)&&<div className="dv-mood" style={{color:MM[primaryMood(e)].color}}>{moodLabel(e)}</div>}
+      {e.mood&&<div className="dv-mood" style={{color:MM[e.mood].color}}>{MM[e.mood].label}</div>}
       {e.sleep!=null&&<div className="dv-row">Sleep: {e.sleep} hrs</div>}
-      {e.weight!=null&&<div className="dv-row">Weight: {e.weight} kg</div>}
       {e.anxiety!=null&&<div className="dv-row">Anxiety: {e.anxiety} / 3</div>}
       {e.irritability!=null&&<div className="dv-row">Irritability: {e.irritability} / 3</div>}
       {e.meds&&<div className="dv-row">Meds: {Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(m=>m.key===k);return`${med?.name||k} ×${v.ct}`;}).join(", ")}</div>}
       {e.notes&&<div className="dv-note">{e.notes}</div>}
     </div>)}
     {s&&(<div className="card">
-      <div className="dv-head"><h3 className="ctit">SRM</h3><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("srm")}>Delete all</button></div>
+      <div className="dv-head"><h3 className="ctit">Daily Rhythm</h3><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("srm")}>Delete all</button></div>
       {confirmDel==="srm"&&<div className="dv-confirm"><span>Delete rhythm log?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelSRM}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
       {s.items.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{icon:"·",label:it.id};
         return(<div key={it.id} className="dv-srm-row">
@@ -273,98 +249,53 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
 /* ═══════════════════════════════════════════════════════════════════════════
    MOOD ENTRY
    ═══════════════════════════════════════════════════════════════════════════ */
-const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep?",s:"Last night, roughly"},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications taken",s:"Adjust pill counts (dosage shown)"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
+const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Overall mood"},{id:"sleep",q:"Hours of sleep?",s:"Last night, roughly"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications taken",s:"Adjust pill counts"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
 
 function MoodEntry({mood,meds,editKey,onSave,onX}){
-  const initialKey=editKey||ydk();
-  const[dateKey,setDateKey]=useState(initialKey);
-  const targetKey=editKey||dateKey;
-
+  const targetKey=editKey||tdk();
   const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);
   const[entry,setEntry]=useState(()=>{
-    const t=mood[targetKey];
-    if(t){
-      return{...t,moods:moodsArr(t),meds:{...t.meds}};
-    }
+    const t=mood[targetKey];if(t)return{...t,meds:{...t.meds}};
     const m={};meds.forEach(med=>{m[med.key]={ct:med.key==="naltrexone"?0:1};});
-    return{moods:[],sleep:8,weight:null,anxiety:1,irritability:1,meds:m,notes:""};
+    return{mood:null,sleep:8,anxiety:1,irritability:1,meds:m,notes:""};
   });
-
-  // when dateKey changes (new entry flow), refresh draft from that date if exists
-  useEffect(()=>{
-    if(editKey) return;
-    const t=mood[targetKey];
-    if(t) setEntry({...t,moods:moodsArr(t),meds:{...t.meds}});
-    else{
-      const m={};meds.forEach(med=>{m[med.key]={ct:med.key==="naltrexone"?0:1};});
-      setEntry({moods:[],sleep:8,weight:null,anxiety:1,irritability:1,meds:m,notes:""});
-    }
-  },[targetKey,editKey]); // eslint-disable-line
-
   const tot=MSTEPS.length;const isR=editIdx===null&&step===tot;
   const prog=((step+(isR?1:0))/(tot+1))*100;
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
   const updMC=(k,v)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v)}}}));
 
-  const toggleMood=(key)=>{
-    const cur=entry.moods||[];
-    if(cur.includes(key)) upd("moods", cur.filter(k=>k!==key));
-    else if(cur.length<2) upd("moods", [...cur,key]);
-    else upd("moods", [cur[0], key]); // keep primary
-  };
-
   const renderStep=(si)=>{
     const st=MSTEPS[si];const isEdit=editIdx!==null;
     return(<div className="qa" key={si+"-"+isEdit}>
       <h2 className="qt">{st.q}</h2><p className="qs">{st.s}</p>
-
-      {st.id==="mood"&&(<div className="ol">{MOOD_OPTS.map(o=>{
-        const sel=(entry.moods||[]).includes(o.key);const mc=MM[o.key];
-        return(<button key={o.key} className={`oc${sel?" os":""}`} style={sel?{borderColor:mc.color,background:mc.bg}:{}} onClick={()=>toggleMood(o.key)}>
+      {st.id==="mood"&&(<div className="ol">{MOOD_OPTS.map(o=>{const sel=entry.mood===o.key;const mc=MM[o.key];
+        return(<button key={o.key} className={`oc${sel?" os":""}`} style={sel?{borderColor:mc.color,background:mc.bg}:{}} onClick={()=>upd("mood",o.key)}>
           <div className="ocl"><span className="oce">{o.icon}</span><div><div className="ocn">{o.label}</div><div className="ocd">{o.sub}</div></div></div>
           <div className={`or${sel?" orn":""}`} style={sel?{borderColor:mc.color,background:mc.color}:{}}>{sel&&"✓"}</div>
-        </button>);
-      })}</div>)}
-
+        </button>);})}</div>)}
       {st.id==="sleep"&&(<div className="np"><button className="br" onClick={()=>upd("sleep",Math.max(0,(entry.sleep||0)-.5))}>−</button><div className="nv"><span className="nb">{entry.sleep??0}</span><span className="nu">hrs</span></div><button className="br" onClick={()=>upd("sleep",Math.min(24,(entry.sleep||0)+.5))}>+</button></div>)}
-
-      {st.id==="weight"&&(<div className="wgt"><input className="wgi" inputMode="decimal" value={entry.weight??""} onChange={e=>upd("weight", e.target.value===""?null:parseFloat(e.target.value))} placeholder="e.g. 68.4"/><div className="wgu">kg</div></div>)}
-
       {(st.id==="anxiety"||st.id==="irritability")&&(<div className="sg">{SEV.map(s=>{const sel=entry[st.id]===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd(st.id,s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div>)}
-
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
         return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
-
       {st.id==="notes"&&(<textarea className="ni" value={entry.notes||""} onChange={e=>upd("notes",e.target.value)} placeholder="Had a good walk today..." rows={4}/>)}
-
-      <button className={`btn-p en${(si===0&&!(entry.moods||[]).length)?" bd":""}`} onClick={()=>{if(isEdit)setEditIdx(null);else setStep(Math.min(si+1,tot));}} disabled={si===0&&!(entry.moods||[]).length}>{isEdit?"Done":si===tot-1?"Review":"Next"}</button>
+      <button className={`btn-p en${(si===0&&!entry.mood)?" bd":""}`} onClick={()=>{if(isEdit)setEditIdx(null);else setStep(Math.min(si+1,tot));}} disabled={si===0&&!entry.mood}>{isEdit?"Done":si===tot-1?"Review":"Next"}</button>
     </div>);
   };
 
   return(<div className="scr ent">
     <div className="et"><button className="bi" onClick={()=>{if(editIdx!==null)setEditIdx(null);else if(step>0)setStep(step-1);else onX();}}>‹</button><span className="es">{isR?"Review":editIdx!==null?"Editing":`${(editIdx??step)+1} / ${tot}`}</span><button className="btn-ghost" onClick={onX}>Cancel</button></div>
-    {!editKey&&editIdx===null&&(
-      <div className="datebar">
-        <button className={`datepill${dateKey===ydk()?" on":""}`} onClick={()=>setDateKey(ydk())}>Yesterday</button>
-        <button className={`datepill${dateKey===tdk()?" on":""}`} onClick={()=>setDateKey(tdk())}>Today</button>
-        <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)", dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)) setDateKey(v);}}>Pick</button>
-        <span className="datecap">{new Date(dateKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
-      </div>
-    )}
     <div className="pb"><div className="pf" style={{width:`${prog}%`}}/></div>
-
     {editIdx!==null?renderStep(editIdx):(!isR?renderStep(step):(
       <div className="qa" key="rv"><h2 className="qt">Looks good?</h2><p className="qs">{new Date(targetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
         <div className="rc">
-          <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} style={{color:MM[k].color,fontWeight:500}}>{MM[k].label}{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
+          <RvRow l="Mood" v={entry.mood?<span style={{color:MM[entry.mood].color,fontWeight:500}}>{MM[entry.mood].label}</span>:"—"} onEdit={()=>setEditIdx(0)}/>
           <RvRow l="Sleep" v={entry.sleep!=null?`${entry.sleep} hrs`:"—"} onEdit={()=>setEditIdx(1)}/>
-          <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(2)}/>
-          <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(3)}/>
-          <RvRow l="Irritability" v={entry.irritability!=null?`${entry.irritability}/3`:"—"} onEdit={()=>setEditIdx(4)}/>
-          <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>setEditIdx(5)}/>
-          <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(6)}/>
+          <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(2)}/>
+          <RvRow l="Irritability" v={entry.irritability!=null?`${entry.irritability}/3`:"—"} onEdit={()=>setEditIdx(3)}/>
+          <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} ×${v.ct}`).join(", ")||"None"} onEdit={()=>setEditIdx(4)}/>
+          <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(5)}/>
         </div>
-        <button className="btn-p" onClick={()=>onSave(entry,targetKey)}>Confirm</button>
+        <button className="btn-p" onClick={()=>onSave(entry)}>Confirm</button>
       </div>
     ))}
   </div>);
@@ -390,7 +321,7 @@ function SRMPicker({srm,onPick,onX}){
   };
 
   return(<div className="scr">
-    <div className="hh"><h2 className="ht">SRM</h2><button className="bi" onClick={onX}>×</button></div>
+    <div className="hh"><h2 className="ht">Daily Rhythm</h2><button className="bi" onClick={onX}>✕</button></div>
     <p className="srm-pick-sub">Tap an activity to log it. Come back later for the rest.</p>
     <div className="srm-pick-grid">
       {allActs.map(a=>{
@@ -469,12 +400,11 @@ function Confirm({msg,sub,onDone}){
    ═══════════════════════════════════════════════════════════════════════════ */
 function Hist({mood,srm,name,meds,onBack}){
   const sorted=Object.entries(mood).filter(([,e])=>e.mood||e.sleep||e.anxiety!=null).sort(([a],[b])=>a.localeCompare(b))
-    .map(([k,e])=>{const[y,m,d]=k.split("-").map(Number);return{key:k,day:d,month:m,year:y,label:`${MO[m-1].slice(0,3)} ${d}`,sl:`${m}/${d}`,...e,mv:moodValue(e)};});
+    .map(([k,e])=>{const[y,m,d]=k.split("-").map(Number);return{key:k,day:d,month:m,year:y,label:`${MO[m-1].slice(0,3)} ${d}`,sl:`${m}/${d}`,...e,mv:e.mood?MM[e.mood].v:null};});
   const wM=sorted.filter(e=>e.mv!=null);const wS=sorted.filter(e=>e.sleep!=null);const wA=sorted.filter(e=>e.anxiety!=null);
   const avg=a=>a.length?(a.reduce((s,x)=>s+x,0)/a.length):null;
   const moodData=wM.map(e=>({n:e.sl,mood:e.mv,f:e.label}));
   const comboData=sorted.filter(e=>e.sleep!=null||e.anxiety!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,f:e.label}));
-  const weightData=sorted.filter(e=>e.weight!=null).map(e=>({n:e.sl,weight:e.weight,f:e.label}));
   const notes=sorted.filter(e=>e.notes?.trim()).reverse();
   const srmSorted=Object.entries(srm).sort(([a],[b])=>a.localeCompare(b));
   const srmSocial=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);return{name:`${m}/${d}`,social:(v.items||[]).filter(i=>!i.didNot&&i.withOthers).length,total:(v.items||[]).filter(i=>!i.didNot).length};});
@@ -485,19 +415,19 @@ function Hist({mood,srm,name,meds,onBack}){
   const fmtH=v=>{const h=Math.floor(v);return`${h>12?h-12:h||12}${h>=12?"pm":"am"}`;};
 
   const exCSV=()=>{
-    let csv="Date,Mood,Sleep,Weight,Anxiety,Irritability,Medications,Notes,Rhythm Activities\n";
+    let csv="Date,Mood,Sleep,Anxiety,Irritability,Medications,Notes,Rhythm Activities\n";
     const allDates=new Set([...Object.keys(mood),...Object.keys(srm)]);
     [...allDates].sort().forEach(k=>{
       const e=mood[k];const s=srm[k];
       const ms=e?.meds?Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k2,v])=>`${k2}:${v.ct}`).join("; "):"";
       const rhythm=s?.items?s.items.filter(i=>!i.didNot).map(i=>`${i.id}:${i.time||"?"}${i.am?"AM":"PM"}`).join("; "):"";
-      csv+=`${k},${moodKeyString(e)},${e?.sleep??""},${e?.weight??""},${e?.anxiety??""},${e?.irritability??""},"${ms}","${(e?.notes||"").replace(/"/g,'""')}","${rhythm}"\n`;
+      csv+=`${k},${e?.mood||""},${e?.sleep??""},${e?.anxiety??""},${e?.irritability??""},"${ms}","${(e?.notes||"").replace(/"/g,'""')}","${rhythm}"\n`;
     });
     const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`mood-rhythm-${tdk()}.csv`;a.click();
   };
 
   return(<div className="scr">
-    <div className="hh"><h2 className="ht">{name?`${name}'s `:""}Insights</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
+    <div className="hh"><h2 className="ht">{name?`${name}'s `:""}Insights</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>✕</button></div></div>
     <div className="sr">
       <div className="sb"><div className="sv">{sorted.length}</div><div className="sbl">Days</div></div>
       <div className="sb"><div className="sv">{avg(wS.map(e=>e.sleep))?.toFixed(1)??"—"}</div><div className="sbl">Avg Sleep</div></div>
@@ -518,13 +448,6 @@ function Hist({mood,srm,name,meds,onBack}){
       <Line type="monotone" dataKey="anxiety" stroke="#D4785C" strokeWidth={1.5} dot={{r:2,fill:"#D4785C",strokeWidth:0}} connectNulls strokeDasharray="4 2"/>
     </LineChart></ResponsiveContainer></div><div className="cleg2"><span><span className="ll" style={{background:"#7BA08B"}}/> Sleep</span><span><span className="ll" style={{background:"#D4785C"}}/> Anxiety</span></div></div>}
 
-    
-
-    {weightData.length>0&&<div className="card"><h3 className="ctit">Weight</h3><div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={weightData} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
-      <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;return(<div className="tt"><div className="ttd">{d.f}</div><div>Weight: {d.weight} kg</div></div>);}}/>
-      <Line type="monotone" dataKey="weight" stroke="#6478A0" strokeWidth={1.8} dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} connectNulls/>
-    </LineChart></ResponsiveContainer></div></div>}
     {srmSorted.length>0&&<div className="card"><h3 className="ctit">Social Engagement</h3><div className="cw"><ResponsiveContainer width="100%" height={120}><BarChart data={srmSocial} margin={{top:8,right:8,left:-24,bottom:4}}>
       <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}}/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
       <Bar dataKey="total" fill="#E8E4DE" radius={[4,4,0,0]}/><Bar dataKey="social" fill="#7E9AB3" radius={[4,4,0,0]}/>
@@ -569,7 +492,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const toggleR=i=>{const nr=[...reminders];nr[i]={...nr[i],on:!nr[i].on};setReminders(nr);setS({reminders:nr});};
 
   return(<div className="scr">
-    <div className="hh"><h2 className="ht">Settings</h2><button className="bi" onClick={onBack}>×</button></div>
+    <div className="hh"><h2 className="ht">Settings</h2><button className="bi" onClick={onBack}>✕</button></div>
 
     <div className="card">
       <h3 className="ctit">Your Name</h3>
@@ -594,7 +517,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
       <p className="set-h" style={{marginBottom:10}}>Browser notifications. Keep your tab open.</p>
       {reminders.map((r,i)=>(<div key={i} className="set-reminder">
         <div><span className="set-r-time">{r.time}</span><span className="set-r-label">{r.label}</span></div>
-        <div className="set-r-acts"><button className={`set-r-toggle${r.on?" set-r-on":""}`} onClick={()=>toggleR(i)}>{r.on?"On":"Off"}</button><button className="btn-ghost" style={{color:"#D4785C",fontSize:11,padding:"2px 6px"}} onClick={()=>removeR(i)}>×</button></div>
+        <div className="set-r-acts"><button className={`set-r-toggle${r.on?" set-r-on":""}`} onClick={()=>toggleR(i)}>{r.on?"On":"Off"}</button><button className="btn-ghost" style={{color:"#D4785C",fontSize:11,padding:"2px 6px"}} onClick={()=>removeR(i)}>✕</button></div>
       </div>))}
       {showAddR?(<div className="add-form" style={{marginTop:8}}>
         <div style={{display:"flex",gap:8,marginBottom:8}}><input type="time" className="srm-ti" style={{flex:1}} value={newRT} onChange={e=>setNewRT(e.target.value)}/><input className="add-input" style={{marginBottom:0}} value={newRL} onChange={e=>setNewRL(e.target.value)} placeholder="Label"/></div>
@@ -723,16 +646,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 
 .ent{padding-top:12px}.et{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .es{font-size:12px;color:var(--t3);font-weight:500;letter-spacing:.04em}
-.pb{width:100%;height:3px;background:var(--bd);border-radius:2px;margin-bottom:18px;overflow:hidden}
-.datebar{display:flex;align-items:center;gap:8px;margin:0 0 14px;flex-wrap:wrap}
-.datepill{padding:8px 12px;border-radius:999px;border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer}
-.datepill.on{border-color:var(--tx);background:var(--warm);color:var(--tx)}
-.datepick{padding:8px 10px;border-radius:999px;border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer}
-.datecap{font-size:12px;color:var(--t3);font-weight:300;margin-left:auto}
-.wgt{display:flex;align-items:center;gap:10px;margin-bottom:18px}
-.wgi{flex:1;padding:14px 14px;border-radius:var(--r);border:1.5px solid var(--bd);background:transparent;color:var(--tx);font:400 16px 'DM Sans',sans-serif;outline:none}
-.wgi:focus{border-color:var(--tx)}
-.wgu{font-size:13px;color:var(--t3);font-weight:500;padding-right:6px}
+.pb{width:100%;height:3px;background:var(--bd);border-radius:2px;margin-bottom:36px;overflow:hidden}
 .pf{height:100%;background:var(--tx);border-radius:2px;transition:width .4s var(--ease)}
 .qa{animation:si .3s var(--ease)}
 @keyframes si{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
