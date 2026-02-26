@@ -4,58 +4,74 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = ""; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxqBSO_lSp43SH6MoLxrmhXDu5s1wC3gU_CZVtOIMtYQaxm3DVT1FmLGPdOY9K2XuHT/exec"; // paste your deployed Apps Script URL here
 
-async function syncToSheets(payload){
-  if(!SHEETS_URL) return;
-  try{
-    await fetch(SHEETS_URL,{
-      method:"POST",
-      mode:"no-cors",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ ...payload, ts:new Date().toISOString() }),
-    });
-  }catch(e){ console.warn("Sync failed:", e); }
+/* ── SYNC LAYER — sequential queue, one POST at a time ── */
+
+const syncQueue=[];
+let syncRunning=false;
+let syncStatus={state:"idle",pending:0}; // "idle"|"syncing"|"done"|"error"
+const syncListeners=new Set();
+function notifySync(){syncListeners.forEach(fn=>fn({...syncStatus}));}
+
+async function processQueue(){
+  if(syncRunning||!syncQueue.length)return;
+  syncRunning=true;
+  while(syncQueue.length){
+    syncStatus={state:"syncing",pending:syncQueue.length};notifySync();
+    const job=syncQueue.shift();
+    try{
+      await fetch(SHEETS_URL,{
+        method:"POST",mode:"no-cors",
+        headers:{"Content-Type":"text/plain;charset=UTF-8"},
+        body:JSON.stringify(job),
+      });
+      // Small delay between requests to avoid overwhelming Apps Script
+      await new Promise(r=>setTimeout(r,300));
+    }catch(e){console.warn("Sync:",e);}
+  }
+  syncRunning=false;
+  syncStatus={state:"done",pending:0};notifySync();
+  setTimeout(()=>{if(syncStatus.state==="done"){syncStatus={state:"idle",pending:0};notifySync();}},2000);
+}
+
+function enqueueSync(payload){
+  if(!SHEETS_URL)return;
+  syncQueue.push(payload);
+  processQueue();
+}
+
+function pushMood(date, entry, medsArr){
+  enqueueSync({type:"mood",date,entry,meds_ref:medsArr});
+}
+function pushSrm(date, items){
+  enqueueSync({type:"srm",date,items});
+}
+function pushDeleteMood(date){
+  enqueueSync({type:"delete_mood",date});
+}
+function pushDeleteSrm(date){
+  enqueueSync({type:"delete_srm",date});
 }
 
 async function pullFromSheets(){
-  // Auto-sync download from Google Apps Script.
-  // Preferred: GET ?action=sync returning JSON.
-  // Fallback: JSONP GET ?action=sync&callback=cb (avoids CORS issues).
   if(!SHEETS_URL) return null;
-
-  // 1) Try normal fetch JSON
   try{
-    const res = await fetch(`${SHEETS_URL}?action=sync`, { method:"GET", cache:"no-store" });
-    if(res && res.ok){
-      const j = await res.json();
-      return j;
-    }
-  }catch(e){
-    // ignore, try JSONP
-  }
-
-  // 2) JSONP fallback
+    const res=await fetch(`${SHEETS_URL}?action=sync`,{method:"GET",cache:"no-store"});
+    if(res&&res.ok) return await res.json();
+  }catch{}
+  // JSONP fallback
   try{
-    const cbName = `__mt_sync_cb_${Date.now()}_${Math.floor(Math.random()*1e6)}`;
-    const p = new Promise((resolve,reject)=>{
-      const t = setTimeout(()=>reject(new Error("JSONP timeout")), 8000);
-      window[cbName] = (payload)=>{
-        clearTimeout(t);
-        try{ resolve(payload); } finally {
-          try{ delete window[cbName]; }catch{}
-          if(script && script.parentNode) script.parentNode.removeChild(script);
-        }
-      };
-      const script = document.createElement("script");
-      script.src = `${SHEETS_URL}?action=sync&callback=${cbName}&_=${Date.now()}`;
-      script.onerror = ()=>{ clearTimeout(t); try{ delete window[cbName]; }catch{}; if(script&&script.parentNode) script.parentNode.removeChild(script); reject(new Error("JSONP load error")); };
-      document.body.appendChild(script);
+    const cb=`__mt_cb_${Date.now()}`;
+    return await new Promise((resolve,reject)=>{
+      const t=setTimeout(()=>{try{delete window[cb]}catch{};reject("timeout")},10000);
+      window[cb]=(d)=>{clearTimeout(t);resolve(d);try{delete window[cb]}catch{};if(s&&s.parentNode)s.parentNode.removeChild(s);};
+      var s=document.createElement("script");
+      s.src=`${SHEETS_URL}?action=sync&callback=${cb}&_=${Date.now()}`;
+      s.onerror=()=>{clearTimeout(t);try{delete window[cb]}catch{};if(s&&s.parentNode)s.parentNode.removeChild(s);reject("err");};
+      document.body.appendChild(s);
     });
-    return await p;
-  }catch{
-    return null;
-  }
+  }catch{ return null; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -93,15 +109,30 @@ const SEED_SRM = {
   "2026-02-19":{items:[{id:"bed",time:"10:00",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"beverage",time:"10:25",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"breakfast",time:"10:30",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"outside",time:"10:45",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0}]},
 };
 
-const VER="0.4.0";
+const VER="0.7.0";
+
+// Sync status hook
+function useSyncStatus(){
+  const[st,setSt]=useState({state:"idle",pending:0});
+  useEffect(()=>{syncListeners.add(setSt);return()=>syncListeners.delete(setSt);},[]);
+  return st;
+}
+// Sync badge — shows in calendar header
+function SyncBadge(){
+  const st=useSyncStatus();
+  if(!SHEETS_URL)return null;
+  if(st.state==="idle")return null;
+  if(st.state==="done")return(<span className="sync-badge done">Synced</span>);
+  return(<span className="sync-badge active">Syncing {st.pending}...</span>);
+}
 const MM={sev_elev:{v:3,label:"Severe Elevated",color:"#D4785C",short:"Sev ↑",bg:"#FDF0EC"},mod_elev:{v:2,label:"Moderate Elevated",color:"#D49A6A",short:"Mod ↑",bg:"#FDF5EE"},mild_elev:{v:1,label:"Mild Elevated",color:"#C9B07A",short:"Mild ↑",bg:"#FAF6ED"},normal:{v:0,label:"Within Normal",color:"#7BA08B",short:"Normal",bg:"#EFF6F1"},mild_dep:{v:-1,label:"Mild Depressed",color:"#7E9AB3",short:"Mild ↓",bg:"#EEF3F8"},mod_dep:{v:-2,label:"Moderate Depressed",color:"#6478A0",short:"Mod ↓",bg:"#EDF0F6"},sev_dep:{v:-3,label:"Severe Depressed",color:"#5A5F8A",short:"Sev ↓",bg:"#EDEEF4"}};
 const MOOD_OPTS=[{key:"sev_elev",icon:"⬆⬆⬆",label:"Severe Elevated",sub:"Significant impairment · not able to work"},{key:"mod_elev",icon:"⬆⬆",label:"Moderate Elevated",sub:"Significant impairment · able to work"},{key:"mild_elev",icon:"⬆",label:"Mild Elevated",sub:"Without significant impairment"},{key:"normal",icon:"—",label:"Within Normal",sub:"No symptoms"},{key:"mild_dep",icon:"⬇",label:"Mild Depressed",sub:"Without significant impairment"},{key:"mod_dep",icon:"⬇⬇",label:"Moderate Depressed",sub:"Significant impairment · able to work"},{key:"sev_dep",icon:"⬇⬇⬇",label:"Severe Depressed",sub:"Significant impairment · not able to work"}];
 const moodsArr=(e)=>Array.isArray(e?.moods)?e.moods:(e?.mood?[e.mood]:[]);
 const primaryMood=(e)=>moodsArr(e)[0]||null;
-const moodValue=(e)=>{const ms=moodsArr(e);return ms.length?ms.reduce((s,k)=>s+(MM[k]?.v??0),0)/ms.length:null;};
+const moodValue=(e)=>{const ms=moodsArr(e);if(!ms.length)return null;const vals=ms.map(k=>MM[k]?.v).filter(v=>v!=null);return vals.length?vals.reduce((s,x)=>s+x,0)/vals.length:null;};
 const moodLabel=(e)=>moodsArr(e).map(k=>MM[k]?.label||k).join(" / ");
 const moodKeyString=(e)=>moodsArr(e).join("|");
-const DEF_MEDS=[{key:"lamotrigine",name:"Lamotrigine",dose:"200mg"},{key:"quetiapine",name:"Quetiapine",dose:"100mg"},{key:"lithium",name:"Lithium Carbonate",dose:"300mg"},{key:"levothyroxine",name:"Levothyroxine",dose:"50mcg"},{key:"naltrexone",name:"Naltrexone",dose:"50mg"}];
+const DEF_MEDS=[{key:"lamotrigine",name:"Lamotrigine",dose:"200mg",defaultCt:1},{key:"quetiapine",name:"Quetiapine",dose:"100mg",defaultCt:1},{key:"lithium",name:"Lithium Carbonate",dose:"300mg",defaultCt:4},{key:"levothyroxine",name:"Levothyroxine",dose:"50mcg",defaultCt:1},{key:"naltrexone",name:"Naltrexone",dose:"50mg",defaultCt:0}];
 const SRM_ACT=[{id:"bed",label:"Got out of bed",icon:"○"},{id:"beverage",label:"Morning beverage",icon:"◎"},{id:"breakfast",label:"Breakfast",icon:"◉"},{id:"outside",label:"Went outside",icon:"◇"},{id:"exercise",label:"Work out",icon:"△"},{id:"work",label:"Started work / study",icon:"□"},{id:"lunch",label:"Lunch",icon:"◈"},{id:"dinner",label:"Dinner",icon:"◆"},{id:"home",label:"Returned home",icon:"⌂"},{id:"bedtime",label:"Went to bed",icon:"◑"}];
 const WHO_OPTS=[{key:"spouse",label:"Spouse / Partner"},{key:"friend",label:"Friend"},{key:"family",label:"Family"},{key:"other",label:"Other"}];
 const ENG_OPTS=[{v:1,label:"Just present"},{v:2,label:"Actively involved"},{v:3,label:"Very stimulating"}];
@@ -115,6 +146,16 @@ const tdk=()=>{const d=new Date();return dk(d.getFullYear(),d.getMonth(),d.getDa
 const ydk=()=>{const d=new Date();d.setDate(d.getDate()-1);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
 const nowTime=()=>{const d=new Date();return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;};
 const isAMnow=()=>new Date().getHours()<12;
+// Normalize time from various formats to "HH:MM"
+const normTime=(v)=>{
+  if(!v)return"";const s=String(v).trim();
+  if(/^\d{1,2}:\d{2}$/.test(s))return s;
+  // ISO "1899-12-30T19:29:00.000Z" or Date string
+  if(s.includes("T")){try{const d=new Date(s);if(!isNaN(d))return`${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`;}catch{}}
+  // Long date string "Mon Jan 26 2026..." — extract time part
+  const m=s.match(/(\d{1,2}):(\d{2}):\d{2}/);if(m)return`${m[1].padStart(2,"0")}:${m[2]}`;
+  return s;
+};
 const GREETS=[n=>`Take it one moment at a time${n?", "+n:""}.`,n=>`No rush. You're here, and that's enough${n?", "+n:""}.`,n=>`A small step is still a step${n?", "+n:""}.`,n=>`Glad you're here${n?", "+n:""}.`,n=>`${n?n+", you":"You"} don't have to do this perfectly.`,n=>`Checking in takes courage${n?", "+n:""}.`,n=>`${n?n+", b":"B"}e gentle with yourself today.`,n=>`Ready when you are${n?", "+n:""}.`];
 
 function loadJ(k,fb){try{const s=localStorage.getItem(k);return s?JSON.parse(s):fb;}catch{return fb;}}
@@ -138,47 +179,101 @@ export default function App(){
   const[vm,setVm]=useState(()=>{const d=new Date();return[d.getFullYear(),d.getMonth()];});
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
+  const[srmDate,setSrmDate]=useState(tdk);
+  // Pull from Google Sheets on app open (cross-device sync)
   useEffect(()=>{(async()=>{
     const resp=await pullFromSheets();
-    const data=(resp&&resp.data)?resp.data:resp;
-    if(!data) return;
-    if(data.meds && Array.isArray(data.meds)) { setMedsS(data.meds); localStorage.setItem("mt_meds", JSON.stringify(data.meds)); }
-    if(data.mood && typeof data.mood==='object') { const merged={...loadMood(),...data.mood}; setMood(merged); saveMood(merged); }
-    if(data.srm && typeof data.srm==='object') { const merged={...loadSRM(),...data.srm}; setSrm(merged); saveSRM(merged); }
+    if(!resp||resp.status!=="ok") return;
+    const hasPushedSeed=localStorage.getItem("mt_seed_pushed");
+    // Merge mood: remote wins, then push local-only entries ONCE
+    if(resp.mood && typeof resp.mood==='object'){
+      const local=loadMood();
+      const remoteDates=new Set(Object.keys(resp.mood));
+      let changed=false;
+      for(const dt in resp.mood){
+        const r=resp.mood[dt];
+        const rMeds={};
+        if(r.meds && typeof r.meds==='object'){
+          for(const k in r.meds) if(r.meds[k]?.ct) rMeds[k]={ct:r.meds[k].ct};
+        }
+        local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,anxiety:r.anxiety,
+          irritability:r.irritability,weight:r.weight,notes:r.notes||"",meds:rMeds};
+        changed=true;
+      }
+      if(changed){setMood({...local});saveMood(local);}
+      // Push local-only entries ONCE (seed data)
+      if(!hasPushedSeed){
+        for(const dt in local){
+          if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null)){
+            pushMood(dt, local[dt], meds);
+          }
+        }
+      }
+    } else if(!hasPushedSeed) {
+      const local=loadMood();
+      for(const dt in local){
+        if(local[dt]?.mood) pushMood(dt, local[dt], meds);
+      }
+    }
+    // Merge SRM
+    if(resp.srm && typeof resp.srm==='object'){
+      const local=loadSRM();
+      const remoteDates=new Set(Object.keys(resp.srm));
+      let changed=false;
+      for(const dt in resp.srm){
+        const src=resp.srm[dt];
+        // Normalize time fields in items
+        if(src?.items){
+          src.items=src.items.map(it=>({...it,time:normTime(it.time)}));
+        }
+        local[dt]=src; changed=true;
+      }
+      if(changed){setSrm({...local});saveSRM(local);}
+      if(!hasPushedSeed){
+        for(const dt in local){
+          if(!remoteDates.has(dt)&&local[dt]?.items?.length) pushSrm(dt, local[dt].items);
+        }
+      }
+    } else if(!hasPushedSeed) {
+      const local=loadSRM();
+      for(const dt in local){
+        if(local[dt]?.items?.length) pushSrm(dt, local[dt].items);
+      }
+    }
+    if(!hasPushedSeed) localStorage.setItem("mt_seed_pushed","1");
   })();},[]);
-// Periodic background sync while the app is open (for other-device updates).
-useEffect(()=>{
-  if(!SHEETS_URL) return;
-  let cancelled=false;
-  const applyRemote=(resp)=>{
-    const data=(resp&&resp.data)?resp.data:resp;
-    if(!data || cancelled) return;
-
-    // Optional freshness check if ts is present
-    const remoteTs = data.ts ? Date.parse(data.ts) : null;
-    const localTsRaw = localStorage.getItem("mt_last_sync_ts");
-    const localTs = localTsRaw ? Date.parse(localTsRaw) : null;
-    if(remoteTs && localTs && remoteTs <= localTs) return;
-
-    if(data.meds && Array.isArray(data.meds)) { setMedsS(data.meds); localStorage.setItem("mt_meds", JSON.stringify(data.meds)); }
-    if(data.mood && typeof data.mood==='object') { const merged={...loadMood(),...data.mood}; setMood(merged); saveMood(merged); }
-    if(data.srm && typeof data.srm==='object') { const merged={...loadSRM(),...data.srm}; setSrm(merged); saveSRM(merged); }
-    if(remoteTs) localStorage.setItem("mt_last_sync_ts", new Date(remoteTs).toISOString());
-  };
-
-  const tick=async()=>{ try{ const r=await pullFromSheets(); applyRemote(r); }catch{} };
-  const id=setInterval(tick, 45000);
-  tick();
-  return ()=>{ cancelled=true; clearInterval(id); };
-},[]);
+  // No periodic polling — sync happens on app open only.
+  // Each device pushes entries on save, pulls on load.
 
 
   const setS=s=>{const n={...settings,...s};setSS(n);saveSet(n);};
   const setMeds=m=>{setMedsS(m);localStorage.setItem("mt_meds",JSON.stringify(m));};
   const name=settings.name||"";
 
-  const doSaveMood=(n)=>{setMood(n);saveMood(n);localStorage.setItem("mt_last_sync_ts", new Date().toISOString());syncToSheets({mood:n,srm,meds,ts:new Date().toISOString()});};
-  const doSaveSRM=(n)=>{setSrm(n);saveSRM(n);localStorage.setItem("mt_last_sync_ts", new Date().toISOString());syncToSheets({mood,srm:n,meds,ts:new Date().toISOString()});};
+  // Save mood: update local state + push ONLY this one entry to sheets
+  const doSaveMood=(newMood, changedDate)=>{
+    setMood(newMood); saveMood(newMood);
+    if(changedDate && newMood[changedDate]){
+      pushMood(changedDate, newMood[changedDate], meds);
+    }
+  };
+  // Delete mood: remove locally + tell sheets to delete that row
+  const doDeleteMood=(date)=>{
+    const n={...mood}; delete n[date]; setMood(n); saveMood(n);
+    pushDeleteMood(date);
+  };
+  // Save SRM: update local state + push ONLY this date's items to sheets
+  const doSaveSRM=(newSrm, changedDate)=>{
+    setSrm(newSrm); saveSRM(newSrm);
+    if(changedDate && newSrm[changedDate]){
+      pushSrm(changedDate, newSrm[changedDate].items || []);
+    }
+  };
+  // Delete SRM
+  const doDeleteSrm=(date)=>{
+    const n={...srm}; delete n[date]; setSrm(n); saveSRM(n);
+    pushDeleteSrm(date);
+  };
 
   return(<>
     <style>{CSS}</style>
@@ -187,15 +282,15 @@ useEffect(()=>{
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>setScreen("calendar")}/>}
       {screen==="calendar"&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
-        onDelMood={()=>{const n={...mood};delete n[selDay];doSaveMood(n);setScreen("calendar");}}
-        onDelSRM={()=>{const n={...srm};delete n[selDay];doSaveSRM(n);setScreen("calendar");}}
+        onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
+        onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
         onEditMood={()=>setScreen("editDayMood")}
         onEditSRM={id=>{setSrmEditId(id);setScreen("editDaySrm");}}/>}
-      {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e});setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
-      {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];doSaveSRM({...srm,[selDay]:{items}});setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
-      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} onSave={(e,k)=>{doSaveMood({...mood,[k]:e});setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
-      {screen==="srm"&&<SRMPicker srm={srm} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
-      {screen==="srmEdit"&&<SRMSingle id={srmEditId} srm={srm} onSave={item=>{const k=tdk();const ex=srm[k]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];doSaveSRM({...srm,[k]:{items}});setScreen("srm");}} onX={()=>setScreen("srm")}/>}
+      {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
+      {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[selDay]:{items}};doSaveSRM(ns,selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
+      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
+      {screen==="srm"&&<SRMPicker srm={srm} srmDate={srmDate} setSrmDate={setSrmDate} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
+      {screen==="srmEdit"&&<SRMSingle id={srmEditId} srm={srm} dateKey={srmDate} onSave={item=>{const k=srmDate;const ex=srm[k]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[k]:{items}};doSaveSRM(ns,k);setScreen("srm");}} onX={()=>setScreen("srm")}/>}
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
       {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} meds={meds} setMeds={setMeds} onBack={()=>setScreen("calendar")}/>}
@@ -208,7 +303,7 @@ function Welcome({name,onGo}){
   const[greet]=useState(()=>GREETS[Math.floor(Math.random()*GREETS.length)](name));
   return(<div className="scr welcome">
     <div className="w-top">
-      <div className="w-icon" dangerouslySetInnerHTML={{__html:'<svg id="_图层_1" data-name="图层 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600">  <path d="M373.56,317.01c5.5,0,11.17,.86,16.48-.16,16.13-3.12,32.14-6.91,48.17-10.56,12.87-2.93,25.78-5.57,39.08-4.85,16.48,.9,30.11,6.89,37.72,22.56,5.23,10.77,5.09,22.07,2.21,33.42-4.25,16.73-13.72,30.36-25.84,42.25-17.73,17.4-39.19,28.49-62.49,36.39-1.42,.48-2.82,1-3.63,1.29,.92,8.27,2.11,16.12,2.55,24.02,.23,4.1-.46,8.36-1.39,12.4-5.16,22.46-26.53,32.03-46.85,21.04-12.04-6.51-21.28-16.25-29.97-26.57-3.1-3.68-6.12-7.44-8.89-11.38-1.43-2.03-2.94-2.57-5.34-2.55-18.49,.09-36.98,.02-55.47-.02-1.01,0-2.08,.09-3.03-.19-8.76-2.61-14.46,1.03-20.33,7.65-16.64,18.79-34.26,36.72-55,51.14-5.36,3.72-11.21,7.04-17.29,9.36-19.77,7.53-37.21-4.31-36.77-25.41,.18-8.83,2.02-17.95,4.88-26.33,4.28-12.53,10.13-24.52,15.32-36.74,.34-.8,.7-1.59,1.19-2.71-2.79-1.2-5.43-2.31-8.06-3.47-26.13-11.55-47.83-28.42-63.08-52.91-27.65-44.41-20.84-102.82,16.13-140.47,14.51-14.78,31.28-26.09,50.4-33.89,3.44-1.41,4.88-3.16,5.06-7.17,1.27-28.78,3.84-57.42,13.03-84.96,2.06-6.18,4.9-12.27,8.33-17.81,10.57-17.09,29.92-19.74,45.26-6.59,8.72,7.48,14.65,17.05,20.05,27.01,10.28,18.98,18.22,38.98,25.65,59.18,1.04,2.83,2.2,3.42,5.12,3.27,21.56-1.08,43.08-.51,64.51,2.29,5.78,.75,5.75,.84,8.39-4.55,9.72-19.8,19.61-39.53,33.54-56.81,3.87-4.8,8.21-9.41,13.06-13.17,18.73-14.52,40.16-9.17,50.27,12.28,5.89,12.48,8.98,25.78,11.24,39.3,3.15,18.84,3.81,37.82,2.52,56.85-.92,13.55-7.2,24.91-15.68,35.16-11.9,14.39-26.72,25.49-41.53,36.6-10.23,7.67-20.39,15.46-30.3,23.55-3.74,3.05-6.66,7.1-9.96,10.69l.75,1.57ZM215.49,103.87c-1.57,3.26-2.88,5.29-3.56,7.51-2.42,7.98-5.09,15.93-6.83,24.07-4.97,23.12-6.68,46.63-7.35,70.22-.24,8.45-3.98,13.99-12.05,16.95-12.88,4.72-25.18,10.63-36.27,18.87-21.54,16-35.72,36.67-38.67,63.69-3.6,32.9,9.43,59.04,34.66,79.56,13.97,11.36,30.25,18.32,47.22,23.82,8.31,2.69,12.94,9.14,11.44,17.23-.67,3.61-2.86,6.96-4.47,10.37-6.16,13.03-12.64,25.92-18.42,39.12-2.49,5.69-3.57,11.99-5.29,18.02,.35,.2,.71,.41,1.06,.61,1.3-.69,2.69-1.24,3.87-2.09,5.84-4.23,12.21-7.95,17.32-12.94,16.58-16.19,32.76-32.8,48.94-49.41,3.66-3.76,7.59-6.27,12.93-6.03,2.28,.11,4.54,.41,6.81,.66,24.13,2.69,48.34,3.61,72.47,.89,9.86-1.11,16.37,1.61,21.7,9.97,7.24,11.35,16.04,21.57,26.5,30.17,2.58,2.12,5.64,3.66,9.19,5.92,.64-3.32,1.32-5.74,1.55-8.2,1.24-12.97-3.88-23.88-11.83-33.5-13.13-15.9-30.19-25.99-49.72-32.11-19.69-6.17-39.55-6.6-59.66-2-8.67,1.98-16.08-3.33-17.7-11.87-1.43-7.55,3.83-14.79,12.11-16.58,16.49-3.56,33.13-4.65,49.87-2.33,34.23,4.75,63.63,18.88,86.52,45.31,1.44,1.66,2.66,1.92,4.55,1.23,6.41-2.36,12.95-4.39,19.26-7,17.67-7.3,33.65-17.13,45.82-32.25,6.44-8,11.27-16.83,12.49-27.26,.86-7.38-2.33-12.02-9.53-13.55-8.38-1.78-16.71-.54-24.87,1.29-16.05,3.59-31.96,7.83-48.02,11.36-12.54,2.75-25.29,4.45-38.09,1.9-11.93-2.37-21.22-8.28-24.71-20.79-2.6-9.33,.11-17.83,4.84-25.76,5.82-9.76,14.38-16.99,23.24-23.8,10.95-8.42,22.38-16.23,33.1-24.91,8.94-7.23,17.48-15.03,25.6-23.17,6.95-6.96,10.5-15.77,10.11-25.83-.5-12.65-.52-25.35-1.76-37.93-1.27-12.85-4.09-25.5-9.34-37.44-2.09-4.75-3.6-5.3-7.1-1.61-4.94,5.21-10.15,10.52-13.64,16.69-10.39,18.39-20.07,37.18-29.87,55.89-3.82,7.31-9.63,10.49-17.73,9.15-28.29-4.69-56.73-5.41-85.28-3.25-9.72,.74-15.36-2.69-18.75-11.74-3.77-10.07-7.43-20.19-11.46-30.16-6.51-16.08-13.28-32.07-22.83-46.66-2.23-3.41-5.15-6.36-8.4-10.3Z"/>  <path d="M237.8,250.44c6.84-.03,13.42,1.44,19.32,4.79,2.78,1.58,4.34,.93,6.63-.65,14.6-10.05,29.85-10.97,45.43-2.45,6.72,3.67,11.66,9.32,15.21,16.06,4.06,7.7,1.65,15.98-5.59,19.99-6.94,3.85-15.14,1.41-19.59-5.84-4.31-7.01-11.23-9.26-17.6-5.2-2.14,1.37-4.01,3.88-4.96,6.28-2.43,6.17-6.64,9.91-13.12,10.58-6.37,.67-11.22-2.15-14.58-7.66-3.83-6.29-8.54-8.25-14.86-6.53-3.87,1.06-6.34,3.39-7.55,7.24-2.75,8.7-10.54,12.93-18.65,10.24-7.93-2.64-11.86-11.43-8.86-19.86,5.87-16.53,21.03-27.09,38.77-27.02Z"/></svg>'}} />
+      <div className="w-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600"><path className="w-draw" fill="none" stroke="currentColor" strokeWidth="4" d="M373.56,317.01c5.5,0,11.17,.86,16.48-.16,16.13-3.12,32.14-6.91,48.17-10.56,12.87-2.93,25.78-5.57,39.08-4.85,16.48,.9,30.11,6.89,37.72,22.56,5.23,10.77,5.09,22.07,2.21,33.42-4.25,16.73-13.72,30.36-25.84,42.25-17.73,17.4-39.19,28.49-62.49,36.39-1.42,.48-2.82,1-3.63,1.29,.92,8.27,2.11,16.12,2.55,24.02,.23,4.1-.46,8.36-1.39,12.4-5.16,22.46-26.53,32.03-46.85,21.04-12.04-6.51-21.28-16.25-29.97-26.57-3.1-3.68-6.12-7.44-8.89-11.38-1.43-2.03-2.94-2.57-5.34-2.55-18.49,.09-36.98,.02-55.47-.02-1.01,0-2.08,.09-3.03-.19-8.76-2.61-14.46,1.03-20.33,7.65-16.64,18.79-34.26,36.72-55,51.14-5.36,3.72-11.21,7.04-17.29,9.36-19.77,7.53-37.21-4.31-36.77-25.41,.18-8.83,2.02-17.95,4.88-26.33,4.28-12.53,10.13-24.52,15.32-36.74,.34-.8,.7-1.59,1.19-2.71-2.79-1.2-5.43-2.31-8.06-3.47-26.13-11.55-47.83-28.42-63.08-52.91-27.65-44.41-20.84-102.82,16.13-140.47,14.51-14.78,31.28-26.09,50.4-33.89,3.44-1.41,4.88-3.16,5.06-7.17,1.27-28.78,3.84-57.42,13.03-84.96,2.06-6.18,4.9-12.27,8.33-17.81,10.57-17.09,29.92-19.74,45.26-6.59,8.72,7.48,14.65,17.05,20.05,27.01,10.28,18.98,18.22,38.98,25.65,59.18,1.04,2.83,2.2,3.42,5.12,3.27,21.56-1.08,43.08-.51,64.51,2.29,5.78,.75,5.75,.84,8.39-4.55,9.72-19.8,19.61-39.53,33.54-56.81,3.87-4.8,8.21-9.41,13.06-13.17,18.73-14.52,40.16-9.17,50.27,12.28,5.89,12.48,8.98,25.78,11.24,39.3,3.15,18.84,3.81,37.82,2.52,56.85-.92,13.55-7.2,24.91-15.68,35.16-11.9,14.39-26.72,25.49-41.53,36.6-10.23,7.67-20.39,15.46-30.3,23.55-3.74,3.05-6.66,7.1-9.96,10.69l.75,1.57ZM215.49,103.87c-1.57,3.26-2.88,5.29-3.56,7.51-2.42,7.98-5.09,15.93-6.83,24.07-4.97,23.12-6.68,46.63-7.35,70.22-.24,8.45-3.98,13.99-12.05,16.95-12.88,4.72-25.18,10.63-36.27,18.87-21.54,16-35.72,36.67-38.67,63.69-3.6,32.9,9.43,59.04,34.66,79.56,13.97,11.36,30.25,18.32,47.22,23.82,8.31,2.69,12.94,9.14,11.44,17.23-.67,3.61-2.86,6.96-4.47,10.37-6.16,13.03-12.64,25.92-18.42,39.12-2.49,5.69-3.57,11.99-5.29,18.02,.35,.2,.71,.41,1.06,.61,1.3-.69,2.69-1.24,3.87-2.09,5.84-4.23,12.21-7.95,17.32-12.94,16.58-16.19,32.76-32.8,48.94-49.41,3.66-3.76,7.59-6.27,12.93-6.03,2.28,.11,4.54,.41,6.81,.66,24.13,2.69,48.34,3.61,72.47,.89,9.86-1.11,16.37,1.61,21.7,9.97,7.24,11.35,16.04,21.57,26.5,30.17,2.58,2.12,5.64,3.66,9.19,5.92,.64-3.32,1.32-5.74,1.55-8.2,1.24-12.97-3.88-23.88-11.83-33.5-13.13-15.9-30.19-25.99-49.72-32.11-19.69-6.17-39.55-6.6-59.66-2-8.67,1.98-16.08-3.33-17.7-11.87-1.43-7.55,3.83-14.79,12.11-16.58,16.49-3.56,33.13-4.65,49.87-2.33,34.23,4.75,63.63,18.88,86.52,45.31,1.44,1.66,2.66,1.92,4.55,1.23,6.41-2.36,12.95-4.39,19.26-7,17.67-7.3,33.65-17.13,45.82-32.25,6.44-8,11.27-16.83,12.49-27.26,.86-7.38-2.33-12.02-9.53-13.55-8.38-1.78-16.71-.54-24.87,1.29-16.05,3.59-31.96,7.83-48.02,11.36-12.54,2.75-25.29,4.45-38.09,1.9-11.93-2.37-21.22-8.28-24.71-20.79-2.6-9.33,.11-17.83,4.84-25.76,5.82-9.76,14.38-16.99,23.24-23.8,10.95-8.42,22.38-16.23,33.1-24.91,8.94-7.23,17.48-15.03,25.6-23.17,6.95-6.96,10.5-15.77,10.11-25.83-.5-12.65-.52-25.35-1.76-37.93-1.27-12.85-4.09-25.5-9.34-37.44-2.09-4.75-3.6-5.3-7.1-1.61-4.94,5.21-10.15,10.52-13.64,16.69-10.39,18.39-20.07,37.18-29.87,55.89-3.82,7.31-9.63,10.49-17.73,9.15-28.29-4.69-56.73-5.41-85.28-3.25-9.72,.74-15.36-2.69-18.75-11.74-3.77-10.07-7.43-20.19-11.46-30.16-6.51-16.08-13.28-32.07-22.83-46.66-2.23-3.41-5.15-6.36-8.4-10.3Z"/><path className="w-draw w-draw2" fill="none" stroke="currentColor" strokeWidth="4" d="M237.8,250.44c6.84-.03,13.42,1.44,19.32,4.79,2.78,1.58,4.34,.93,6.63-.65,14.6-10.05,29.85-10.97,45.43-2.45,6.72,3.67,11.66,9.32,15.21,16.06,4.06,7.7,1.65,15.98-5.59,19.99-6.94,3.85-15.14,1.41-19.59-5.84-4.31-7.01-11.23-9.26-17.6-5.2-2.14,1.37-4.01,3.88-4.96,6.28-2.43,6.17-6.64,9.91-13.12,10.58-6.37,.67-11.22-2.15-14.58-7.66-3.83-6.29-8.54-8.25-14.86-6.53-3.87,1.06-6.34,3.39-7.55,7.24-2.75,8.7-10.54,12.93-18.65,10.24-7.93-2.64-11.86-11.43-8.86-19.86,5.87-16.53,21.03-27.09,38.77-27.02Z"/></svg></div>
       <h1 className="w-t">Mood Tracker</h1>
       <p className="w-s">{greet}</p>
     </div>
@@ -262,8 +357,8 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onSrm,onHist,onSet,o
 
   return(<div className="scr">
     <div className="cal-top">
-      <div><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]} {y}</h2></div>
-      <div className="cal-tr"><button className="bi" onClick={onSet}>⋯</button><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
+      <div><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]} {y} <SyncBadge/></h2></div>
+      <div className="cal-tr"><button className="bi" onClick={onSet}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
     </div>
     {streak>1&&<div className="streak">• {streak} day streak</div>}
     <div className="cg">{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
@@ -282,10 +377,13 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onSrm,onHist,onSet,o
       </div>
     )}
 
+    <div className="cal-pad"/>
     <div className="cact">
-      <button className="btn-p" onClick={onAdd}>{mood[tdk()]?"Edit Mood":"Log Mood"}</button>
-      <button className="btn-rhythm" onClick={onSrm}>{srm[tdk()]?"Edit Social Rhythm":"Social Rhythm"}</button>
-      <button className="btn-s" onClick={onHist}>Insights</button>
+      <button className="btn-p" onClick={onAdd}>{mood[tdk()]||mood[ydk()]?"Edit Mood":"Log Mood"}</button>
+      <div className="cact-row">
+        <button className="btn-rhythm" onClick={onSrm}>{srm[tdk()]?"Edit SRM":"SRM"}</button>
+        <button className="btn-s" onClick={onHist}>Insights</button>
+      </div>
     </div>
   </div>);
 }
@@ -311,12 +409,12 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
     </div>)}
     {s&&(<div className="card">
       <div className="dv-head"><h3 className="ctit">SRM</h3><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("srm")}>Delete all</button></div>
-      {confirmDel==="srm"&&<div className="dv-confirm"><span>Delete rhythm log?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelSRM}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
+      {confirmDel==="srm"&&<div className="dv-confirm"><span>Delete SRM log?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelSRM}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
       {s.items.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{icon:"·",label:it.id};
         return(<div key={it.id} className="dv-srm-row">
           <div className="dv-srm-info"><span className="dv-srm-icon">{ac.icon}</span><span>{ac.label}</span></div>
           <div className="dv-srm-r">
-            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?(it.time+" "+(it.am?"AM":"PM")):"—"}{it.withOthers?" · social":""}</span>
+            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?(normTime(it.time)+" "+(it.am?"AM":"PM")):"—"}{it.withOthers?" · social":""}</span>
             <button className="rr-edit" onClick={()=>onEditSRM(it.id)}>Edit</button>
           </div>
         </div>);
@@ -342,7 +440,7 @@ function MoodEntry({mood,meds,editKey,onSave,onX}){
     if(t){
       return{...t,moods:moodsArr(t),meds:{...t.meds}};
     }
-    const m={};meds.forEach(med=>{m[med.key]={ct:med.key==="naltrexone"?0:1};});
+    const m={};meds.forEach(med=>{m[med.key]={ct:med.defaultCt??0};});
     return{moods:[],sleep:8,weight:null,anxiety:1,irritability:1,meds:m,notes:""};
   });
 
@@ -352,7 +450,7 @@ function MoodEntry({mood,meds,editKey,onSave,onX}){
     const t=mood[targetKey];
     if(t) setEntry({...t,moods:moodsArr(t),meds:{...t.meds}});
     else{
-      const m={};meds.forEach(med=>{m[med.key]={ct:med.key==="naltrexone"?0:1};});
+      const m={};meds.forEach(med=>{m[med.key]={ct:med.defaultCt??0};});
       setEntry({moods:[],sleep:8,weight:null,anxiety:1,irritability:1,meds:m,notes:""});
     }
   },[targetKey,editKey]); // eslint-disable-line
@@ -431,11 +529,11 @@ function RvRow({l,v,onEdit}){return(<div className="rr"><div className="rr-left"
 /* ═══════════════════════════════════════════════════════════════════════════
    SRM PICKER — shows all activities, custom is one-off (session only)
    ═══════════════════════════════════════════════════════════════════════════ */
-function SRMPicker({srm,onPick,onX}){
+function SRMPicker({srm,srmDate,setSrmDate,onPick,onX}){
   const[sessionCustom,setSessionCustom]=useState([]);
   const allActs=[...SRM_ACT,...sessionCustom];
-  const todayItems=(srm[tdk()]||{}).items||[];
-  const logged=new Set(todayItems.map(i=>i.id));
+  const dateItems=(srm[srmDate]||{}).items||[];
+  const logged=new Set(dateItems.map(i=>i.id));
   const[showAdd,setShowAdd]=useState(false);const[newLabel,setNewLabel]=useState("");
 
   const addCustom=()=>{
@@ -447,6 +545,12 @@ function SRMPicker({srm,onPick,onX}){
 
   return(<div className="scr">
     <div className="hh"><h2 className="ht">SRM</h2><button className="bi" onClick={onX}>×</button></div>
+    <div className="datebar">
+      <button className={`datepill${srmDate===tdk()?" on":""}`} onClick={()=>setSrmDate(tdk())}>Today</button>
+      <button className={`datepill${srmDate===ydk()?" on":""}`} onClick={()=>setSrmDate(ydk())}>Yesterday</button>
+      <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)",srmDate);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))setSrmDate(v);}}>Pick</button>
+      <span className="datecap">{new Date(srmDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
+    </div>
     <p className="srm-pick-sub">Tap an activity to log it. Come back later for the rest.</p>
     <div className="srm-pick-grid">
       {allActs.map(a=>{
@@ -524,8 +628,12 @@ function Confirm({msg,sub,onDone}){
    HISTORY — export includes SRM, notes newest first
    ═══════════════════════════════════════════════════════════════════════════ */
 function Hist({mood,srm,name,meds,onBack}){
-  const sorted=Object.entries(mood).filter(([,e])=>e.mood||e.sleep||e.anxiety!=null).sort(([a],[b])=>a.localeCompare(b))
-    .map(([k,e])=>{const[y,m,d]=k.split("-").map(Number);return{key:k,day:d,month:m,year:y,label:`${MO[m-1].slice(0,3)} ${d}`,sl:`${m}/${d}`,...e,mv:moodValue(e)};});
+  const sorted=Object.entries(mood).filter(([k,e])=>{
+    if(!e||typeof e!=='object') return false;
+    if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
+    return e.mood||e.mood2||(Array.isArray(e.moods)&&e.moods.length)||e.sleep!=null||e.anxiety!=null||e.weight!=null;
+  }).sort(([a],[b])=>a.localeCompare(b))
+    .map(([k,e])=>{const[y,m,d]=k.split("-").map(Number);return{key:k,day:d,month:m,year:y,label:`${MO[m-1]?.slice(0,3)||"?"} ${d}`,sl:`${m}/${d}`,...e,mv:moodValue(e)};});
   const wM=sorted.filter(e=>e.mv!=null);const wS=sorted.filter(e=>e.sleep!=null);const wA=sorted.filter(e=>e.anxiety!=null);
   const avg=a=>a.length?(a.reduce((s,x)=>s+x,0)/a.length):null;
   const moodData=wM.map(e=>({n:e.sl,mood:e.mv,f:e.label}));
@@ -545,8 +653,8 @@ function Hist({mood,srm,name,meds,onBack}){
   const srmSocial=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);return{name:`${m}/${d}`,social:(v.items||[]).filter(i=>!i.didNot&&i.withOthers).length,total:(v.items||[]).filter(i=>!i.didNot).length};});
   const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const[h,mi]=(item.time||"0:0").split(":").map(Number);const tot=item.am?(h*60+mi):((h===12?12:h+12)*60+mi);out[item.id]=tot/60;}});return out;});
 
-  const MTT=({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);};
-  const CTT=({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;return(<div className="tt"><div className="ttd">{d.f}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}</div>);};
+  const MTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f||""}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);}catch{return null;}};
+  const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}</div>);}catch{return null;}};
   const fmtH=v=>{const h=Math.floor(v);return`${h>12?h-12:h||12}${h>=12?"pm":"am"}`;};
 
   const exCSV=()=>{
@@ -555,19 +663,20 @@ function Hist({mood,srm,name,meds,onBack}){
     [...allDates].sort().forEach(k=>{
       const e=mood[k];const s=srm[k];
       const ms=e?.meds?Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k2,v])=>`${k2}:${v.ct}`).join("; "):"";
-      const rhythm=s?.items?s.items.filter(i=>!i.didNot).map(i=>`${i.id}:${i.time||"?"}${i.am?"AM":"PM"}`).join("; "):"";
+      const rhythm=s?.items?s.items.filter(i=>!i.didNot).map(i=>`${i.id}:${normTime(i.time)||"?"}${i.am?"AM":"PM"}`).join("; "):"";
       csv+=`${k},${moodKeyString(e)},${e?.sleep??""},${e?.weight??""},${e?.anxiety??""},${e?.irritability??""},"${ms}","${(e?.notes||"").replace(/"/g,'""')}","${rhythm}"\n`;
     });
     const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`mood-rhythm-${tdk()}.csv`;a.click();
   };
 
   return(<div className="scr">
-    <div className="hh"><h2 className="ht">{name?`${name}'s `:""}Insights</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
-    <div className="sr">
+    <div className="hh"><h2 className="ht">{name?`${name}'s `:""}{sorted.length>0?"Insights":"Insights"}</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
+    {sorted.length===0&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
+    {sorted.length>0&&<div className="sr">
       <div className="sb"><div className="sv">{sorted.length}</div><div className="sbl">Days</div></div>
       <div className="sb"><div className="sv">{avg(wS.map(e=>e.sleep))?.toFixed(1)??"—"}</div><div className="sbl">Avg Sleep</div></div>
       <div className="sb"><div className="sv">{avg(wA.map(e=>e.anxiety))?.toFixed(1)??"—"}</div><div className="sbl">Avg Anxiety</div></div>
-    </div>
+    </div>}
 
     {moodData.length>0&&<div className="card"><h3 className="ctit">Mood</h3><div className="cw"><ResponsiveContainer width="100%" height={180}><AreaChart data={moodData} margin={{top:8,right:8,left:-24,bottom:4}}>
       <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4785C" stopOpacity={.12}/><stop offset="50%" stopColor="#7BA08B" stopOpacity={.06}/><stop offset="100%" stopColor="#5A5F8A" stopOpacity={.15}/></linearGradient></defs>
@@ -585,11 +694,12 @@ function Hist({mood,srm,name,meds,onBack}){
 
     
 
-    {weightData.length>0&&<div className="card"><div className="whead"><h3 className="ctit">Weight</h3>{weightStats&&<div className="wstat"><div className="wsv">{weightStats.lastW} kg</div><div className="wsd">{weightStats.delta==null?"":(weightStats.delta>=0?`+${weightStats.delta.toFixed(1)}`:weightStats.delta.toFixed(1))}{weightStats.delta==null?"":" in ~7 entries"}</div></div>}</div><div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={weightData} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
+    {weightData.length>0&&<div className="card"><div className="whead"><h3 className="ctit">Weight</h3>{weightStats&&<div className="wstat"><div className="wsv">{weightStats.lastW} kg</div><div className="wsd">{weightStats.delta==null?"":(weightStats.delta>=0?`+${weightStats.delta.toFixed(1)}`:weightStats.delta.toFixed(1))}{weightStats.delta==null?"":" in ~7 entries"}</div></div>}</div><div className="cw"><ResponsiveContainer width="100%" height={140}><AreaChart data={weightData} margin={{top:8,right:8,left:-24,bottom:4}}>
+      <defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6478A0" stopOpacity={.15}/><stop offset="100%" stopColor="#6478A0" stopOpacity={.02}/></linearGradient></defs>
+      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}} domain={["dataMin-2","dataMax+2"]}/>
       <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;return(<div className="tt"><div className="ttd">{d.f}</div><div>Weight: {d.weight} kg</div></div>);}}/>
-      <Line type="monotone" dataKey="weight" stroke="#6478A0" strokeWidth={1.8} dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} connectNulls/>
-    </LineChart></ResponsiveContainer></div></div>}
+      <Area type="monotone" dataKey="weight" stroke="#6478A0" strokeWidth={2} fill="url(#wg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
+    </AreaChart></ResponsiveContainer></div></div>}
     {srmSorted.length>0&&<div className="card"><h3 className="ctit">Social Engagement</h3><div className="cw"><ResponsiveContainer width="100%" height={120}><BarChart data={srmSocial} margin={{top:8,right:8,left:-24,bottom:4}}>
       <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}}/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
       <Bar dataKey="total" fill="#E8E4DE" radius={[4,4,0,0]}/><Bar dataKey="social" fill="#7E9AB3" radius={[4,4,0,0]}/>
@@ -617,8 +727,8 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[nameVal,setNameVal]=useState(settings.name||"");
   const[nameSaved,setNameSaved]=useState(false);
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
-  const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");
-  const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");
+  const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
+  const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
   const[reminders,setReminders]=useState(settings.reminders||[]);
   const[showAddR,setShowAddR]=useState(false);const[newRT,setNewRT]=useState("21:00");const[newRL,setNewRL]=useState("Log mood");
 
@@ -627,9 +737,9 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
   const pcDel=()=>{if(pcStep==="new")setPc1(pc1.slice(0,-1));else setPc2(pc2.slice(0,-1));};
   const pcClear=()=>{if(pcStep==="new")setPc1("");else setPc2("");};
-  const startEditMed=i=>{setEditMedIdx(i);setEmName(meds[i].name);setEmDose(meds[i].dose);};
-  const saveEditMed=()=>{if(!emName.trim())return;const nm=[...meds];nm[editMedIdx]={...nm[editMedIdx],name:emName.trim(),dose:emDose.trim()};setMeds(nm);setEditMedIdx(null);};
-  const addMed=()=>{if(!newMedName.trim())return;const key=newMedName.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();setMeds([...meds,{key,name:newMedName.trim(),dose:newMedDose.trim()||"—"}]);setNewMedName("");setNewMedDose("");setShowAddMed(false);};
+  const startEditMed=i=>{setEditMedIdx(i);setEmName(meds[i].name);setEmDose(meds[i].dose);setEmDefaultCt(meds[i].defaultCt??0);};
+  const saveEditMed=()=>{if(!emName.trim())return;const nm=[...meds];nm[editMedIdx]={...nm[editMedIdx],name:emName.trim(),dose:emDose.trim(),defaultCt:Number(emDefaultCt)||0};setMeds(nm);setEditMedIdx(null);};
+  const addMed=()=>{if(!newMedName.trim())return;const key=newMedName.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();setMeds([...meds,{key,name:newMedName.trim(),dose:newMedDose.trim()||"—",defaultCt:Number(newMedCt)||0}]);setNewMedName("");setNewMedDose("");setNewMedCt(1);setShowAddMed(false);};
   const addReminder=()=>{const nr=[...reminders,{time:newRT,label:newRL,on:true}];setReminders(nr);setS({reminders:nr});setShowAddR(false);if("Notification" in window)Notification.requestPermission();};
   const removeR=i=>{const nr=reminders.filter((_,j)=>j!==i);setReminders(nr);setS({reminders:nr});};
   const toggleR=i=>{const nr=[...reminders];nr[i]={...nr[i],on:!nr[i].on};setReminders(nr);setS({reminders:nr});};
@@ -670,23 +780,25 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     <div className="card">
       <h3 className="ctit">Medications</h3>
-      <p className="set-h" style={{marginBottom:10}}>Edit dosage or add new medications here.</p>
+      <p className="set-h" style={{marginBottom:10}}>Dosage, daily default, and add new medications.</p>
       {meds.map((med,i)=>editMedIdx===i?(
         <div key={med.key} className="set-med-edit">
           <input className="add-input" value={emName} onChange={e=>setEmName(e.target.value)} placeholder="Name"/>
-          <input className="add-input add-sm" value={emDose} onChange={e=>setEmDose(e.target.value)} placeholder="Dose"/>
+          <input className="add-input add-sm" value={emDose} onChange={e=>setEmDose(e.target.value)} placeholder="Dose per pill"/>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,color:"var(--t2)",whiteSpace:"nowrap"}}>Daily default:</span><button className="bs" onClick={()=>setEmDefaultCt(Math.max(0,emDefaultCt-1))}>−</button><span className="mv">{emDefaultCt}</span><button className="bs" onClick={()=>setEmDefaultCt(emDefaultCt+1)}>+</button></div>
           <div className="add-btns"><button className="btn-ghost" onClick={()=>setEditMedIdx(null)}>Cancel</button><button className="btn-sm-p" onClick={saveEditMed}>Save</button></div>
         </div>
-      ):(<div key={med.key} className="set-mr"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose}/pill</div></div>
+      ):(<div key={med.key} className="set-mr"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose}/pill · default {med.defaultCt??0}/day</div></div>
         <div className="set-mr-acts"><button className="rr-edit" onClick={()=>startEditMed(i)}>Edit</button><button className="btn-ghost" style={{color:"#D4785C",fontSize:11,padding:"4px 6px"}} onClick={()=>setMeds(meds.filter((_,j)=>j!==i))}>Remove</button></div></div>))}
       {showAddMed?(<div className="add-form" style={{marginTop:8}}>
         <input className="add-input" value={newMedName} onChange={e=>setNewMedName(e.target.value)} placeholder="Medication name"/>
         <input className="add-input add-sm" value={newMedDose} onChange={e=>setNewMedDose(e.target.value)} placeholder="Dose (e.g. 50mg)"/>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,color:"var(--t2)",whiteSpace:"nowrap"}}>Daily default:</span><button className="bs" onClick={()=>setNewMedCt(Math.max(0,newMedCt-1))}>−</button><span className="mv">{newMedCt}</span><button className="bs" onClick={()=>setNewMedCt(newMedCt+1)}>+</button></div>
         <div className="add-btns"><button className="btn-ghost" onClick={()=>setShowAddMed(false)}>Cancel</button><button className="btn-sm-p" onClick={addMed}>Add</button></div>
       </div>):(<button className="btn-add" style={{marginTop:8}} onClick={()=>setShowAddMed(true)}>+ Add medication</button>)}
     </div>
 
-    {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — data syncs on every save.</p></div>}
+    {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
     {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
 
     <p className="ver-label">Mood Tracker v{VER}</p>
@@ -718,9 +830,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 
 .btn-p{width:100%;padding:15px 24px;border-radius:var(--r);border:none;background:var(--tx);color:#fff;font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s var(--ease);letter-spacing:.01em}
 .btn-p:active{transform:scale(.98);opacity:.9}.btn-p.bd{opacity:.25;pointer-events:none}
-.btn-s{width:100%;padding:15px 24px;border-radius:var(--r);border:1.5px solid var(--bd);background:transparent;color:var(--tx);font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s}
+.btn-s{padding:15px 24px;border-radius:var(--r);border:1.5px solid var(--bd);background:transparent;color:var(--tx);font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s}
 .btn-s:hover{border-color:var(--t3)}.btn-s:active{transform:scale(.98)}
-.btn-rhythm{width:100%;padding:15px 24px;border-radius:var(--r);border:none;background:#6478A0;color:#fff;font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s var(--ease)}
+.btn-rhythm{padding:15px 24px;border-radius:var(--r);border:none;background:#6478A0;color:#fff;font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s var(--ease)}
 .btn-rhythm:active{transform:scale(.98);opacity:.9}
 .bi{width:36px;height:36px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font-size:16px;color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
 .bi:hover{border-color:var(--t3)}
@@ -737,11 +849,12 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .welcome{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .w-top{margin-bottom:60px;animation:wIn .8s var(--ease)}
 @keyframes wIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-.w-orb{width:80px;height:80px;border-radius:50%;background:linear-gradient(145deg,#EEF1F7,#E8E4DE 50%,#EFF6F1);display:flex;align-items:center;justify-content:center;margin:0 auto 28px;overflow:hidden;position:relative}
-.w-orb-i{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--gn),#6478A0);opacity:.3;animation:orbP 3s ease-in-out infinite}
-@keyframes orbP{0%,100%{transform:scale(1);opacity:.3}50%{transform:scale(1.1);opacity:.4}}
-.w-orb-ring{position:absolute;inset:6px;border-radius:50%;border:1px solid rgba(123,160,139,.15);animation:ringP 3s ease-in-out infinite .5s}
-@keyframes ringP{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.06);opacity:.6}}
+.w-icon{width:80px;height:80px;margin:0 auto 24px;color:var(--tx);opacity:.7;animation:iconFloat 3s ease-in-out infinite 2s}
+.w-icon svg{width:100%;height:100%}
+.w-draw{stroke-dasharray:3000;stroke-dashoffset:3000;animation:drawIn 2.2s var(--ease) forwards}
+.w-draw2{animation-delay:.5s}
+@keyframes drawIn{0%{stroke-dashoffset:3000;fill-opacity:0}70%{fill-opacity:0}100%{stroke-dashoffset:0;fill:currentColor;fill-opacity:1;stroke-opacity:0}}
+@keyframes iconFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 .w-t{font-family:'Source Serif 4',serif;font-weight:400;font-size:30px;letter-spacing:-.3px;margin-bottom:10px}
 .w-s{color:var(--t2);font-size:15px;line-height:1.6;max-width:280px;font-weight:300;font-style:italic}
 .w-b{width:100%;max-width:280px;animation:wBIn .8s var(--ease) .3s both}
@@ -772,6 +885,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .set-pad{display:grid;grid-template-columns:repeat(3,56px);gap:8px;margin-bottom:12px}
 
 .cal-top{display:flex;align-items:flex-start;justify-content:space-between;padding:24px 0 16px}
+.sync-badge{display:inline-block;font-size:10px;font-family:'DM Sans',sans-serif;font-weight:500;padding:2px 8px;border-radius:99px;vertical-align:middle;margin-left:6px}
+.sync-badge.active{background:#EDF0F6;color:#6478A0;animation:syncPulse 1.5s ease-in-out infinite}
+.sync-badge.done{background:#EFF6F1;color:#7BA08B}
+@keyframes syncPulse{0%,100%{opacity:1}50%{opacity:.5}}
 .cal-tr{display:flex;gap:6px;align-items:center}.cal-gr{font-size:13px;color:var(--t3);font-weight:300;margin-bottom:2px}
 .cht{font-family:'Source Serif 4',serif;font-weight:400;font-size:22px}.cnav{display:flex;gap:4px}
 .streak{display:flex;align-items:center;gap:6px;padding:10px 14px;background:var(--gbg);border-radius:var(--rs);font-size:13px;color:var(--gn);font-weight:400;margin-bottom:16px}
@@ -784,10 +901,12 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .csel{box-shadow:inset 0 0 0 1.5px var(--tx)}
 .cleg{display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:16px;padding:0 2px}
 .cli{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)}.cld{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.cact{position:fixed;left:0;right:0;bottom:0;padding:12px 20px 18px;background:rgba(249,247,243,.92);backdrop-filter:blur(10px);border-top:1px solid var(--bd);display:flex;flex-direction:row;gap:10px;justify-content:space-between;z-index:50}
-.cact > button{flex:1}
+.cact{position:fixed;left:0;right:0;bottom:0;padding:12px 20px calc(16px + env(safe-area-inset-bottom, 0px));background:linear-gradient(to top,var(--bg) 70%,transparent);z-index:50;display:flex;flex-direction:column;gap:10px;max-width:420px;margin:0 auto}
+.cact-row{display:flex;gap:10px}
+.cact-row > button{flex:1}
+.cal-pad{height:140px}
 
-.day-card{position:fixed;left:20px;right:20px;bottom:92px;background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);cursor:pointer;transition:all .15s;z-index:40;animation:si .25s var(--ease)}
+.day-card{background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);cursor:pointer;transition:all .15s;animation:si .25s var(--ease);margin-bottom:4px}
 .day-card:active{transform:scale(.99)}
 .day-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .day-card-date{font-size:12px;font-weight:500;color:var(--t3)}
