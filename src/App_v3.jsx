@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzcBERUAcI4q6T4Wp8yxJ2iTX6K_xCTZjI3O4i5u6ZfF25UpIO_9W64S4MKpsPLoa8/exec"; // paste your deployed Apps Script URL here
+const SHEETS_URL = ""; // paste your deployed Apps Script URL here
 
 async function syncToSheets(payload){
   if(!SHEETS_URL) return;
@@ -109,8 +109,7 @@ export default function App(){
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
   useEffect(()=>{(async()=>{
-    const resp=await pullFromSheets();
-    const data=(resp&&resp.data)?resp.data:resp;
+    const data=await pullFromSheets();
     if(!data) return;
     if(data.meds && Array.isArray(data.meds)) { setMedsS(data.meds); localStorage.setItem("mt_meds", JSON.stringify(data.meds)); }
     if(data.mood && typeof data.mood==='object') { const merged={...loadMood(),...data.mood}; setMood(merged); saveMood(merged); }
@@ -229,7 +228,7 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onSrm,onHist,onSet,o
 
     <div className="cact">
       <button className="btn-p" onClick={onAdd}>{mood[tdk()]?"Edit Mood":"Log Mood"}</button>
-      <button className="btn-rhythm" onClick={onSrm}>{srm[tdk()]?"Edit Social Rhythm":"Social Rhythm"}</button>
+      <button className="btn-rhythm" onClick={onSrm}>{srm[tdk()]?"Edit Rhythm":"Daily Rhythm"}</button>
       <button className="btn-s" onClick={onHist}>Insights</button>
     </div>
   </div>);
@@ -251,7 +250,7 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
       {e.weight!=null&&<div className="dv-row">Weight: {e.weight} kg</div>}
       {e.anxiety!=null&&<div className="dv-row">Anxiety: {e.anxiety} / 3</div>}
       {e.irritability!=null&&<div className="dv-row">Irritability: {e.irritability} / 3</div>}
-      {e.meds&&<div className="dv-row">Meds: {Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(m=>m.key===k);const d=v.dose||med?.dose;return`${med?.name||k}${d?` (${d})`:""} ×${v.ct}`;}).join(", ")}</div>}
+      {e.meds&&<div className="dv-row">Meds: {Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(m=>m.key===k);return`${med?.name||k} ×${v.ct}`;}).join(", ")}</div>}
       {e.notes&&<div className="dv-note">{e.notes}</div>}
     </div>)}
     {s&&(<div className="card">
@@ -274,7 +273,7 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
 /* ═══════════════════════════════════════════════════════════════════════════
    MOOD ENTRY
    ═══════════════════════════════════════════════════════════════════════════ */
-const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep?",s:"Last night, roughly"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications taken",s:"Adjust pill counts (dosage shown)"},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
+const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep?",s:"Last night, roughly"},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications taken",s:"Adjust pill counts (dosage shown)"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
 
 function MoodEntry({mood,meds,editKey,onSave,onX}){
   const initialKey=editKey||ydk();
@@ -305,7 +304,7 @@ function MoodEntry({mood,meds,editKey,onSave,onX}){
   const tot=MSTEPS.length;const isR=editIdx===null&&step===tot;
   const prog=((step+(isR?1:0))/(tot+1))*100;
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
-  const updMC=(k,v,dose)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v),dose:dose||e.meds[k]?.dose}}}));
+  const updMC=(k,v)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v)}}}));
 
   const toggleMood=(key)=>{
     const cur=entry.moods||[];
@@ -476,15 +475,6 @@ function Hist({mood,srm,name,meds,onBack}){
   const moodData=wM.map(e=>({n:e.sl,mood:e.mv,f:e.label}));
   const comboData=sorted.filter(e=>e.sleep!=null||e.anxiety!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,f:e.label}));
   const weightData=sorted.filter(e=>e.weight!=null).map(e=>({n:e.sl,weight:e.weight,f:e.label}));
-  const weightStats=(()=>{
-    if(!weightData||weightData.length===0) return null;
-    const last=weightData[weightData.length-1];
-    const lastW=last.weight;
-    const prev=weightData.length>7?weightData[weightData.length-8]:weightData[0];
-    const delta=(prev&&prev.weight!=null)?(lastW-prev.weight):null;
-    return { lastW, delta, lastDate:last.f, prevDate:prev?.f };
-  })();
-
   const notes=sorted.filter(e=>e.notes?.trim()).reverse();
   const srmSorted=Object.entries(srm).sort(([a],[b])=>a.localeCompare(b));
   const srmSocial=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);return{name:`${m}/${d}`,social:(v.items||[]).filter(i=>!i.didNot&&i.withOthers).length,total:(v.items||[]).filter(i=>!i.didNot).length};});
@@ -530,7 +520,7 @@ function Hist({mood,srm,name,meds,onBack}){
 
     
 
-    {weightData.length>0&&<div className="card"><div className="whead"><h3 className="ctit">Weight</h3>{weightStats&&<div className="wstat"><div className="wsv">{weightStats.lastW} kg</div><div className="wsd">{weightStats.delta==null?"":(weightStats.delta>=0?`+${weightStats.delta.toFixed(1)}`:weightStats.delta.toFixed(1))}{weightStats.delta==null?"":" in ~7 entries"}</div></div>}</div><div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={weightData} margin={{top:8,right:8,left:-24,bottom:4}}>
+    {weightData.length>0&&<div className="card"><h3 className="ctit">Weight</h3><div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={weightData} margin={{top:8,right:8,left:-24,bottom:4}}>
       <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
       <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;return(<div className="tt"><div className="ttd">{d.f}</div><div>Weight: {d.weight} kg</div></div>);}}/>
       <Line type="monotone" dataKey="weight" stroke="#6478A0" strokeWidth={1.8} dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} connectNulls/>
@@ -571,7 +561,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
   const pcDel=()=>{if(pcStep==="new")setPc1(pc1.slice(0,-1));else setPc2(pc2.slice(0,-1));};
-  const pcClear=()=>{if(pcStep==="new")setPc1("");else setPc2("");};
   const startEditMed=i=>{setEditMedIdx(i);setEmName(meds[i].name);setEmDose(meds[i].dose);};
   const saveEditMed=()=>{if(!emName.trim())return;const nm=[...meds];nm[editMedIdx]={...nm[editMedIdx],name:emName.trim(),dose:emDose.trim()};setMeds(nm);setEditMedIdx(null);};
   const addMed=()=>{if(!newMedName.trim())return;const key=newMedName.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();setMeds([...meds,{key,name:newMedName.trim(),dose:newMedDose.trim()||"—"}]);setNewMedName("");setNewMedDose("");setShowAddMed(false);};
@@ -596,7 +585,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set Passcode</button></div>)}
       {pcStep&&(<div className="set-pcf"><p className="set-h">{pcStep==="new"?"Enter 4-digit passcode":"Confirm passcode"}</p>
         <div className="lock-dots" style={{justifyContent:"flex-start",margin:"12px 0"}}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<curPc.length?" on":""}`}/>)}</div>
-        <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}} disabled={false}>{n==="del"?"‹":""+n}</button>))}</div>
+        <div className="set-pad">{[1,2,3,4,5,6,7,8,9,null,0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n===null?" lke":""}`} onClick={()=>{if(n==="del")pcDel();else if(n!==null)pcTap(String(n));}} disabled={n===null}>{n==="del"?"‹":""+n}</button>))}</div>
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
@@ -659,7 +648,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .app{max-width:420px;margin:0 auto;min-height:100dvh;overflow-x:hidden}
 .page{animation:pageIn .4s var(--ease)}
 @keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.scr{padding:0 20px 140px;min-height:100dvh}
+.scr{padding:0 20px 40px;min-height:100dvh}
 
 .btn-p{width:100%;padding:15px 24px;border-radius:var(--r);border:none;background:var(--tx);color:#fff;font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s var(--ease);letter-spacing:.01em}
 .btn-p:active{transform:scale(.98);opacity:.9}.btn-p.bd{opacity:.25;pointer-events:none}
@@ -706,14 +695,6 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .lk:active{background:var(--warm);transform:scale(.95)}
 .lke{border:none!important;background:transparent!important;cursor:default;pointer-events:none}
 .lksm{width:56px;height:44px;font-size:18px}
-.lkdel{background:transparent;border:none;color:var(--t2)}
-.lkdel:active{background:transparent;transform:scale(.95)}
-.lkclr{background:transparent;border:1px solid var(--bd);color:var(--t2)}
-.whead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}
-.wstat{text-align:right}
-.wsv{font-weight:500;font-size:16px}
-.wsd{font-size:12px;color:var(--t3)}
-
 .set-pad{display:grid;grid-template-columns:repeat(3,56px);gap:8px;margin-bottom:12px}
 
 .cal-top{display:flex;align-items:flex-start;justify-content:space-between;padding:24px 0 16px}
@@ -729,10 +710,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .csel{box-shadow:inset 0 0 0 1.5px var(--tx)}
 .cleg{display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:16px;padding:0 2px}
 .cli{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--t3)}.cld{width:6px;height:6px;border-radius:50%;flex-shrink:0}
-.cact{position:fixed;left:0;right:0;bottom:0;padding:12px 20px 18px;background:rgba(249,247,243,.92);backdrop-filter:blur(10px);border-top:1px solid var(--bd);display:flex;flex-direction:row;gap:10px;justify-content:space-between;z-index:50}
-.cact > button{flex:1}
+.cact{display:flex;flex-direction:column;gap:10px}
 
-.day-card{position:fixed;left:20px;right:20px;bottom:92px;background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);cursor:pointer;transition:all .15s;z-index:40;animation:si .25s var(--ease)}
+.day-card{background:var(--card);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh);margin-bottom:16px;cursor:pointer;transition:all .15s;animation:si .25s var(--ease)}
 .day-card:active{transform:scale(.99)}
 .day-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .day-card-date{font-size:12px;font-weight:500;color:var(--t3)}
