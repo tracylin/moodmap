@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = ""; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzcBERUAcI4q6T4Wp8yxJ2iTX6K_xCTZjI3O4i5u6ZfF25UpIO_9W64S4MKpsPLoa8/exec"; // paste your deployed Apps Script URL here
 
 async function syncToSheets(payload){
   if(!SHEETS_URL) return;
@@ -19,43 +19,13 @@ async function syncToSheets(payload){
 }
 
 async function pullFromSheets(){
-  // Auto-sync download from Google Apps Script.
-  // Preferred: GET ?action=sync returning JSON.
-  // Fallback: JSONP GET ?action=sync&callback=cb (avoids CORS issues).
+  // Requires your Apps Script to support GET ?action=export returning JSON.
   if(!SHEETS_URL) return null;
-
-  // 1) Try normal fetch JSON
   try{
-    const res = await fetch(`${SHEETS_URL}?action=sync`, { method:"GET", cache:"no-store" });
-    if(res && res.ok){
-      const j = await res.json();
-      return j;
-    }
-  }catch(e){
-    // ignore, try JSONP
-  }
-
-  // 2) JSONP fallback
-  try{
-    const cbName = `__mt_sync_cb_${Date.now()}_${Math.floor(Math.random()*1e6)}`;
-    const p = new Promise((resolve,reject)=>{
-      const t = setTimeout(()=>reject(new Error("JSONP timeout")), 8000);
-      window[cbName] = (payload)=>{
-        clearTimeout(t);
-        try{ resolve(payload); } finally {
-          try{ delete window[cbName]; }catch{}
-          if(script && script.parentNode) script.parentNode.removeChild(script);
-        }
-      };
-      const script = document.createElement("script");
-      script.src = `${SHEETS_URL}?action=sync&callback=${cbName}&_=${Date.now()}`;
-      script.onerror = ()=>{ clearTimeout(t); try{ delete window[cbName]; }catch{}; if(script&&script.parentNode) script.parentNode.removeChild(script); reject(new Error("JSONP load error")); };
-      document.body.appendChild(script);
-    });
-    return await p;
-  }catch{
-    return null;
-  }
+    const res=await fetch(`${SHEETS_URL}?action=export`,{method:"GET"});
+    if(!res.ok) return null;
+    return await res.json();
+  }catch{ return null; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -146,39 +116,14 @@ export default function App(){
     if(data.mood && typeof data.mood==='object') { const merged={...loadMood(),...data.mood}; setMood(merged); saveMood(merged); }
     if(data.srm && typeof data.srm==='object') { const merged={...loadSRM(),...data.srm}; setSrm(merged); saveSRM(merged); }
   })();},[]);
-// Periodic background sync while the app is open (for other-device updates).
-useEffect(()=>{
-  if(!SHEETS_URL) return;
-  let cancelled=false;
-  const applyRemote=(resp)=>{
-    const data=(resp&&resp.data)?resp.data:resp;
-    if(!data || cancelled) return;
-
-    // Optional freshness check if ts is present
-    const remoteTs = data.ts ? Date.parse(data.ts) : null;
-    const localTsRaw = localStorage.getItem("mt_last_sync_ts");
-    const localTs = localTsRaw ? Date.parse(localTsRaw) : null;
-    if(remoteTs && localTs && remoteTs <= localTs) return;
-
-    if(data.meds && Array.isArray(data.meds)) { setMedsS(data.meds); localStorage.setItem("mt_meds", JSON.stringify(data.meds)); }
-    if(data.mood && typeof data.mood==='object') { const merged={...loadMood(),...data.mood}; setMood(merged); saveMood(merged); }
-    if(data.srm && typeof data.srm==='object') { const merged={...loadSRM(),...data.srm}; setSrm(merged); saveSRM(merged); }
-    if(remoteTs) localStorage.setItem("mt_last_sync_ts", new Date(remoteTs).toISOString());
-  };
-
-  const tick=async()=>{ try{ const r=await pullFromSheets(); applyRemote(r); }catch{} };
-  const id=setInterval(tick, 45000);
-  tick();
-  return ()=>{ cancelled=true; clearInterval(id); };
-},[]);
 
 
   const setS=s=>{const n={...settings,...s};setSS(n);saveSet(n);};
   const setMeds=m=>{setMedsS(m);localStorage.setItem("mt_meds",JSON.stringify(m));};
   const name=settings.name||"";
 
-  const doSaveMood=(n)=>{setMood(n);saveMood(n);localStorage.setItem("mt_last_sync_ts", new Date().toISOString());syncToSheets({mood:n,srm,meds,ts:new Date().toISOString()});};
-  const doSaveSRM=(n)=>{setSrm(n);saveSRM(n);localStorage.setItem("mt_last_sync_ts", new Date().toISOString());syncToSheets({mood,srm:n,meds,ts:new Date().toISOString()});};
+  const doSaveMood=(n)=>{setMood(n);saveMood(n);syncToSheets({mood:n,srm,meds});};
+  const doSaveSRM=(n)=>{setSrm(n);saveSRM(n);syncToSheets({mood,srm:n,meds});};
 
   return(<>
     <style>{CSS}</style>
@@ -230,7 +175,7 @@ function Lock({passcode,onOk}){
         {[1,2,3,4,5,6,7,8,9].map((n)=>(
           <button key={n} className="lk" onClick={()=>tap(String(n))}>{n}</button>
         ))}
-        <button className="lk lk-clear" onClick={()=>setInput("")} aria-label="Clear">C</button>
+        <div className="lk lke" aria-hidden="true"/>
         <button className="lk" onClick={()=>tap("0")}>0</button>
         <button className="lk lk-del" onClick={()=>setInput(input.slice(0,-1))} aria-label="Delete">⌫</button>
       </div>
