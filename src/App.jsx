@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwHzqh3WHyBY8nHpN6Zr1q_j7h9mkkn-LRvbVIqB1FlpgsRNkzYWDMupbxVMw7CErfr/exec"; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxqBSO_lSp43SH6MoLxrmhXDu5s1wC3gU_CZVtOIMtYQaxm3DVT1FmLGPdOY9K2XuHT/exec"; // paste your deployed Apps Script URL here
 
 /* ── SYNC LAYER — sequential queue, one POST at a time ── */
 
@@ -187,7 +187,23 @@ export default function App(){
   const[srmDate,setSrmDate]=useState(tdk);
   const[snap,setSnap]=useState(loadSnap);
   const[snapEditIdx,setSnapEditIdx]=useState(null);
-  const doSaveSnap=(date,snapEntry)=>{const n={...snap,[date]:[...(snap[date]||[]),snapEntry]};setSnap(n);saveSnap(n);pushSnap(date,snapEntry);};
+  const doSaveSnap=(date,snapEntry)=>{
+    const n={...snap,[date]:[...(snap[date]||[]),snapEntry]};setSnap(n);saveSnap(n);pushSnap(date,snapEntry);
+    // Extract weight from snapshot → save into mood data structure as weight-only entry
+    if(snapEntry.weight!=null){
+      const existing=mood[date]||null;
+      // Only write weight if no real mood entry exists for this date, or update weight on existing
+      if(!existing||existing._weightOnly){
+        const we={...(existing||{}),weight:snapEntry.weight,mood:null,moods:[],_weightOnly:true};
+        const nm={...mood,[date]:we};setMood(nm);saveMood(nm);
+        pushMood(date,we,meds);
+      } else {
+        // Day already has real mood log — just update weight field silently
+        const nm={...mood,[date]:{...existing,weight:snapEntry.weight}};setMood(nm);saveMood(nm);
+        pushMood(date,nm[date],meds);
+      }
+    }
+  };
   const doDeleteSnap=(date,idx)=>{const arr=[...(snap[date]||[])];const [removed]=arr.splice(idx,1);const n={...snap,[date]:arr};setSnap(n);saveSnap(n);if(removed?.time)pushDeleteSnap(date,removed.time);};
   const doUpdateSnap=(date,idx,updated)=>{const arr=[...(snap[date]||[])];const old=arr[idx];arr[idx]={...updated};const n={...snap,[date]:arr};setSnap(n);saveSnap(n);if(old?.time)pushDeleteSnap(date,old.time);pushSnap(date,updated);};
   // Pull from Google Sheets on app open (cross-device sync)
@@ -319,6 +335,16 @@ export default function App(){
     const n={...mood}; delete n[date]; setMood(n); saveMood(n);
     pushDeleteMood(date);
   };
+  const doMoveMood=(fromDate,toDate)=>{
+    if(!fromDate||!toDate||fromDate===toDate) return;
+    const entry=mood[fromDate]; if(!entry) return;
+    const n={...mood};
+    delete n[fromDate];
+    n[toDate]={...entry};
+    setMood(n); saveMood(n);
+    pushDeleteMood(fromDate);
+    pushMood(toDate, n[toDate], meds);
+  };
   // Save SRM: update local state + push ONLY this date's items to sheets
   const doSaveSRM=(newSrm, changedDate)=>{
     setSrm(newSrm); saveSRM(newSrm);
@@ -337,21 +363,22 @@ export default function App(){
     <div className="app"><div className="page" key={screen}>
       {screen==="welcome"&&<Welcome name={name} onGo={()=>settings.passcode?setScreen("lock"):setScreen("calendar")}/>}
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>setScreen("calendar")}/>}
-      {screen==="calendar"&&<Cal mood={mood} srm={srm} snap={snap} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onCalDayTap={k=>{setSelDay(k);setScreen("blankDay");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
+      {screen==="calendar"&&<Cal mood={mood} srm={srm} snap={snap} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} snap={snap} meds={meds} onBack={()=>setScreen("calendar")}
         onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
         onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
         onEditMood={()=>setScreen("editDayMood")}
         onEditSRM={id=>{setSrmEditId(id);setScreen("editDaySrm");}}
         onDelSnap={idx=>{doDeleteSnap(selDay,idx);}}
-        onEditSnap={idx=>{setSnapEditIdx(idx);setScreen("editSnap");}}/>}
+        onEditSnap={idx=>{setSnapEditIdx(idx);setScreen("editSnap");}}
+        onLogMood={()=>setScreen("editDayMood")}/>}
       {screen==="editSnap"&&snapEditIdx!=null&&(()=>{
         const snaps=snap[selDay]||[];
         const sn=snaps[snapEditIdx];
         if(!sn) return null;
         return <SnapEditor snap={sn} onSave={updated=>{doUpdateSnap(selDay,snapEditIdx,updated);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>;
       })()}
-      {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
+      {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onMoveMood={(to)=>{doMoveMood(selDay,to);setSelDay(to);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[selDay]:{items}};doSaveSRM(ns,selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="entry"&&<MoodEntry mood={mood} meds={meds} snap={snap} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onSaveSnap={(s,k)=>{doSaveSnap(k,s);setScreen("confirmSnap");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srm"&&<SRMPicker srm={srm} srmDate={srmDate} setSrmDate={setSrmDate} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
@@ -360,7 +387,7 @@ export default function App(){
       {screen==="confirmSnap"&&<Confirm msg="Snapshot saved" sub="Come back later to complete the full log." onDone={()=>setScreen("calendar")}/>}
       {screen==="blankDay"&&<BlankDayCard dateKey={selDay} snap={snap} onLogMood={()=>setScreen("calEntry")} onBack={()=>setScreen("calendar")}/>}
       {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} snap={snap} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onSaveSnap={(s,k)=>{doSaveSnap(k,s);setScreen("confirmSnap");}} onX={()=>setScreen("calendar")}/>}
-      {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")}/>}
+      {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({type:"send_report",email:settings.reportEmail,name:settings.name||""})});}} reportEmail={settings.reportEmail||""}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} meds={meds} setMeds={setMeds} onBack={()=>setScreen("calendar")}/>}
     </div></div>
   </>);
@@ -402,7 +429,8 @@ function Lock({passcode,onOk}){
 }
 
 /* ── CALENDAR ── */
-function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onCalDayTap,onSrm,onHist,onSet,onViewDay}){
+function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,onHist,onSet,onViewDay}){
+  const[emptyDay,setEmptyDay]=useState(null);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
   const now=new Date();const td=now.getFullYear()===y&&now.getMonth()===m?now.getDate():-1;
   const cells=[];
@@ -413,8 +441,8 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onCalDayTap,onS
     const pm=primaryMood(e);const mc=pm?MM[pm]:null;
     cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${isSel?" csel":""}`}
       onClick={()=>{
-        if(hasData) setSelDay(isSel?null:k);
-        else onCalDayTap(k);
+        if(hasData){setEmptyDay(null);setSelDay(isSel?null:k);}
+        else{setSelDay(null);setEmptyDay(emptyDay===k?null:k);}
       }}>
       {mc&&<div className="cd" style={{background:mc.color,opacity:.18}}/>}
       {s&&<div className="c-srm-tick"/>}
@@ -423,7 +451,7 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onCalDayTap,onS
     </div>);
   }
   let streak=0;const sd=new Date();
-  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(mood[k]||srm[k]||(snap[k]||[]).length)streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
+  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());const mk=mood[k];if((mk&&!mk._weightOnly)||srm[k]||(snap[k]||[]).length)streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
   const selMood=selDay?mood[selDay]:null;const selSrm=selDay?srm[selDay]:null;
   const selLabel=selDay?`${MO[parseInt(selDay.split("-")[1])-1].slice(0,3)} ${parseInt(selDay.split("-")[2])}`:"";
@@ -443,10 +471,10 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onCalDayTap,onS
       const hasFullLog=selMood||selSrm;
       if(!hasFullLog&&!selSnaps.length) return null;
       return(
-        <div className="day-card" onClick={hasFullLog?onViewDay:undefined} style={{cursor:hasFullLog?"pointer":"default"}}>
+        <div className="day-card" onClick={onViewDay} style={{cursor:"pointer"}}>
           <div className="day-card-head">
             <span className="day-card-date">{selLabel}</span>
-            {hasFullLog&&<span className="day-card-arrow">View full log →</span>}
+            <span className="day-card-arrow">View full log →</span>
           </div>
           {/* Full log mood */}
           {primaryMood(selMood)&&<div className="day-card-mood" style={{color:MM[primaryMood(selMood)].color}}>{moodLabel(selMood)}</div>}
@@ -473,16 +501,32 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onCalDayTap,onS
               ))}
             </div>
           )}
-          {/* Snap-only: CTA to log full day */}
-          {!hasFullLog&&selSnaps.length>0&&(
-            <button className="day-card-log-cta" onClick={e=>{e.stopPropagation();onCalDayTap(selDay);}}>
-              Log full day →
+          {/* CTA to log mood when no real mood entry yet */}
+          {(!selMood||selMood._weightOnly)&&(selSrm||selSnaps.length>0)&&(
+            <button className="day-card-log-cta" onClick={e=>{e.stopPropagation();onLogForDay(selDay);}}>
+              Log mood for this day →
             </button>
           )}
         </div>
       );
     })()}
 
+    {emptyDay&&(()=>{
+      const[yr,mo,dy]=emptyDay.split("-").map(Number);
+      const lbl=`${MO[mo-1].slice(0,3)} ${dy}`;
+      return(
+        <div className="day-card" style={{animation:"si .2s var(--ease)"}}>
+          <div className="day-card-head">
+            <span className="day-card-date">{lbl}</span>
+            <span className="day-card-arrow" style={{color:"var(--t3)"}}>No entries</span>
+          </div>
+          <button className="btn-p" style={{marginTop:4,fontSize:13,padding:"11px 16px"}}
+            onClick={()=>onLogForDay(emptyDay)}>
+            Log mood for {lbl}
+          </button>
+        </div>
+      );
+    })()}
     <div className="cal-pad"/>
     <div className="cact">
       <button className="btn-p" onClick={onAdd}>Log Mood</button>
@@ -495,7 +539,7 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onCalDayTap,onS
 }
 
 /* ── DAY VIEW — with edit and delete ── */
-function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onDelSnap,onEditSnap}){
+function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onDelSnap,onEditSnap,onLogMood}){
   const[confirmDel,setConfirmDel]=useState(null);
   const[confirmSnapIdx,setConfirmSnapIdx]=useState(null);
   const e=mood[dateKey];const s=srm[dateKey];const snaps=(snap||{})[dateKey]||[];
@@ -503,6 +547,7 @@ function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEdit
   const label=`${MO[mo-1]} ${dy}, ${yr}`;
   return(<div className="scr">
     <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>×</button></div>
+    {!e&&onLogMood&&<button className="btn-p" style={{marginBottom:12,fontSize:13,padding:"11px 16px"}} onClick={onLogMood}>Log full day entry</button>}
     {e&&(<div className="card">
       <div className="dv-head"><h3 className="ctit">Mood Log</h3><div className="dv-acts"><button className="rr-edit" onClick={onEditMood}>Edit</button><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("mood")}>Delete</button></div></div>
       {confirmDel==="mood"&&<div className="dv-confirm"><span>Delete this mood entry?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelMood}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
@@ -570,12 +615,12 @@ const MSTEPS_FULL=[
   {id:"anxiety",   q:{full:"Anxiety level?",             now:"Anxiety right now?"},               s:"0 none · 1 mild · 2 moderate · 3 severe"},
   {id:"irritability",q:{full:"Irritability level?",     now:"Irritability right now?"},           s:"0 none · 1 mild · 2 moderate · 3 severe"},
   {id:"meds",      q:{full:"Medications taken",          now:null},                               s:"Adjust pill counts (dosage shown)"},
-  {id:"weight",    q:{full:"Weight",                     now:null},                               s:"Optional daily check-in"},
+  {id:"weight",    q:{full:"Weight",                     now:"Weight check-in"},                  s:"Optional — syncs to your mood log"},
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
 ];
-const SNAP_IDS=new Set(["mood","anxiety","irritability","notes"]);
+const SNAP_IDS=new Set(["mood","anxiety","irritability","weight","notes"]);
 
-function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onX}){
+function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMood,onX}){
   // mode: null=picker, "full"=full day, "now"=snapshot
   // lockedDate skips mode picker and forces full
   const[mode,setMode]=useState(editKey||lockedDate?"full":null);
@@ -656,11 +701,14 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onX}){
         return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
       {st.id==="notes"&&(<textarea className="ni" value={entry.notes||""} onChange={e=>upd("notes",e.target.value)} placeholder="Had a good walk today..." rows={4}/>)}
 
-      <button className={`btn-p en${(si===0&&!(entry.moods||[]).length)?" bd":""}`}
-        onClick={()=>{if(isEdit)setEditIdx(null);else setStep(Math.min(si+1,tot));}}
-        disabled={si===0&&!(entry.moods||[]).length}>
-        {isEdit?"Done":si===tot-1?"Review":"Next"}
-      </button>
+      <div className="step-btns">
+        <button className={`btn-p en${(si===0&&!(entry.moods||[]).length)?" bd":""}`}
+          onClick={()=>{if(isEdit)setEditIdx(null);else setStep(Math.min(si+1,tot));}}
+          disabled={si===0&&!(entry.moods||[]).length}>
+          {isEdit?"Done":si===tot-1?"Review":"Next"}
+        </button>
+        {si>0&&!isEdit&&<button className="btn-skip" onClick={()=>setStep(Math.min(si+1,tot))}>skip</button>}
+      </div>
     </div>);
   };
 
@@ -739,7 +787,13 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onX}){
         </div>
         {mode==="now"
           ?<button className="btn-p" onClick={()=>onSaveSnap({...entry,time:nowTime(),moods:entry.moods},targetKey)}>Save Snapshot</button>
-          :<button className="btn-p" onClick={()=>onSave(entry,targetKey)}>Confirm</button>
+          :<>
+            <button className="btn-p" onClick={()=>onSave(entry,targetKey)}>Confirm</button>
+            {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
+              const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
+              if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==editKey){onMoveMood(v);}
+            }}>Move to another date…</button>}
+          </>
         }
       </div>
     ))}
@@ -928,7 +982,7 @@ function Confirm({msg,sub,onDone}){
 /* ═══════════════════════════════════════════════════════════════════════════
    HISTORY — export includes SRM, notes newest first
    ═══════════════════════════════════════════════════════════════════════════ */
-function Hist({mood,srm,name,meds,onBack}){
+function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
   const sorted=Object.entries(mood).filter(([k,e])=>{
     if(!e||typeof e!=='object') return false;
     if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
@@ -1017,6 +1071,10 @@ function Hist({mood,srm,name,meds,onBack}){
     </LineChart></ResponsiveContainer></div><div className="cleg2" style={{flexWrap:"wrap"}}><span><span className="ll" style={{background:"#7E9AB3"}}/> Wake</span><span><span className="ll" style={{background:"#5A5F8A"}}/> Bed</span><span><span className="ll" style={{background:"#C9B07A"}}/> Work</span><span><span className="ll" style={{background:"#D49A6A"}}/> Work out</span><span><span className="ll" style={{background:"#7BA08B"}}/> Outside</span></div></div>}
 
     {notes.length>0&&<div className="card"><h3 className="ctit">Journal Notes</h3><div className="nl">{notes.map(n=>(<div key={n.key} className="nr"><div className="nd">{n.label}</div><div className="nt">{n.notes}</div></div>))}</div></div>}
+    {onSendReport&&<div className="card" style={{textAlign:"center"}}>
+      <p style={{fontSize:12,color:"var(--t3)",marginBottom:10,fontWeight:300}}>{reportEmail?"Weekly report will also auto-send every Sunday.":"Set your email in Settings to enable weekly reports."}</p>
+      <button className="btn-s" style={{fontSize:13,padding:"11px 16px",width:"100%",opacity:reportEmail?1:.5}} onClick={reportEmail?onSendReport:undefined} disabled={!reportEmail}>{reportEmail?"Send this week's report":"Configure email in Settings"}</button>
+    </div>}
     <div style={{height:40}}/>
   </div>);
 }
@@ -1032,6 +1090,17 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
   const[reminders,setReminders]=useState(settings.reminders||[]);
   const[showAddR,setShowAddR]=useState(false);const[newRT,setNewRT]=useState("21:00");const[newRL,setNewRL]=useState("Log mood");
+  const[emailVal,setEmailVal]=useState(settings.reportEmail||"");const[emailSaved,setEmailSaved]=useState(false);const[reportSending,setReportSending]=useState(false);const[reportMsg,setReportMsg]=useState("");
+  const saveEmail=()=>{setS({reportEmail:emailVal.trim()});setEmailSaved(true);setTimeout(()=>setEmailSaved(false),2500);};
+  const sendReport=async()=>{
+    if(!SHEETS_URL||!settings.reportEmail){setReportMsg("Set email address first");return;}
+    setReportSending(true);setReportMsg("");
+    try{
+      const res=await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({type:"send_report",email:settings.reportEmail,name:settings.name||""})});
+      setReportMsg("Report sent! Check your inbox.");
+    }catch(e){setReportMsg("Could not send. Try again.");}
+    setReportSending(false);setTimeout(()=>setReportMsg(""),4000);
+  };
 
   const saveName=()=>{setS({name:nameVal.trim()});setNameSaved(true);setTimeout(()=>setNameSaved(false),2500);};
   const curPc=pcStep==="new"?pc1:pc2;
@@ -1097,6 +1166,17 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontSize:13,color:"var(--t2)",whiteSpace:"nowrap"}}>Daily default:</span><button className="bs" onClick={()=>setNewMedCt(Math.max(0,newMedCt-1))}>−</button><span className="mv">{newMedCt}</span><button className="bs" onClick={()=>setNewMedCt(newMedCt+1)}>+</button></div>
         <div className="add-btns"><button className="btn-ghost" onClick={()=>setShowAddMed(false)}>Cancel</button><button className="btn-sm-p" onClick={addMed}>Add</button></div>
       </div>):(<button className="btn-add" style={{marginTop:8}} onClick={()=>setShowAddMed(true)}>+ Add medication</button>)}
+    </div>
+
+    <div className="card">
+      <h3 className="ctit">Weekly Report</h3>
+      <p className="set-h" style={{marginBottom:10}}>HTML email with mood insights and stats. Auto-sends every Sunday via Google Sheets.</p>
+      <div className="set-nr"><input className="set-in" inputMode="email" type="email" style={{fontSize:16}} value={emailVal} onChange={e=>setEmailVal(e.target.value)} placeholder="your@email.com"/><button className="btn-sm-p" onClick={saveEmail}>Save</button></div>
+      {emailSaved&&<p className="set-saved">Email saved!</p>}
+      {settings.reportEmail&&<>
+        <button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:10,width:"100%"}} onClick={sendReport} disabled={reportSending}>{reportSending?"Sending…":"Send this week's report now"}</button>
+        {reportMsg&&<p className="set-saved" style={{color:reportMsg.includes("sent")?undefined:"#D4785C"}}>{reportMsg}</p>}
+      </>}
     </div>
 
     {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
@@ -1255,7 +1335,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .mi{flex:1}.mn{font-size:14px}.md-sub{font-size:11px;color:var(--t3);margin-top:1px}
 .mc{display:flex;align-items:center;gap:10px}.mv{font-size:15px;font-weight:500;min-width:20px;text-align:center}
 
-.ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:15px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);transition:border .15s;margin-bottom:12px}
+.ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);transition:border .15s;margin-bottom:12px}
 .ni:focus{outline:none;border-color:var(--tx)}.ni::placeholder{color:var(--t3)}
 
 .rc{background:var(--card);border-radius:var(--r);padding:4px 16px;box-shadow:var(--sh);margin-bottom:16px}
@@ -1361,6 +1441,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .ver-label{font-size:11px;color:var(--t3);text-align:center;margin-top:20px;font-weight:300}
 
 @media(max-width:440px){.app{max-width:100%}.scr{padding:0 16px 32px}}
+/* ── step navigation ── */
+.step-btns{display:flex;flex-direction:column;align-items:center;gap:8px}
+.btn-skip{background:none;border:none;font:300 13px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;padding:4px 12px;letter-spacing:.01em}
+.btn-skip:hover{color:var(--t2)}
+/* ── move to date ── */
+.btn-move-date{width:100%;margin-top:8px;padding:11px;border-radius:var(--rs);border:1px solid var(--bd);background:transparent;font:400 13px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;text-align:center;transition:all .15s}
+.btn-move-date:hover{border-color:var(--t2);color:var(--t2)}
+
 /* ── SRM bottom-edge tick on calendar cells ── */
 .c-srm-tick{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:12px;height:2px;border-radius:1px;background:#7E9AB3;opacity:.7;pointer-events:none}
 
