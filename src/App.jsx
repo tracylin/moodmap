@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxqBSO_lSp43SH6MoLxrmhXDu5s1wC3gU_CZVtOIMtYQaxm3DVT1FmLGPdOY9K2XuHT/exec"; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"; // paste your deployed Apps Script URL here
 
 /* ── SYNC LAYER — sequential queue, one POST at a time ── */
 
@@ -149,13 +149,15 @@ const isAMnow=()=>new Date().getHours()<12;
 // Normalize time from various formats to "HH:MM"
 const normTime=(v)=>{
   if(!v)return"";const s=String(v).trim();
-  if(/^\d{1,2}:\d{2}$/.test(s))return s;
-  // ISO "1899-12-30T19:29:00.000Z" or Date string
-  if(s.includes("T")){try{const d=new Date(s);if(!isNaN(d))return`${String(d.getUTCHours()).padStart(2,"0")}:${String(d.getUTCMinutes()).padStart(2,"0")}`;}catch{}}
-  // Long date string "Mon Jan 26 2026..." — extract time part
-  const m=s.match(/(\d{1,2}):(\d{2}):\d{2}/);if(m)return`${m[1].padStart(2,"0")}:${m[2]}`;
+  if(/^\d{1,2}:\d{2}$/.test(s)){const[h,m]=s.split(":").map(Number);return`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;}
+  // ISO string — use local time, not UTC
+  if(s.includes("T")){try{const d=new Date(s);if(!isNaN(d))return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}catch{}}
+  // Long date string — extract HH:MM
+  const m=s.match(/(\d{1,2}):(\d{2}):\d{2}/);if(m)return`${String(Number(m[1])).padStart(2,"0")}:${m[2]}`;
   return s;
 };
+// Display 24h "HH:MM" as 12h "h:MMam/pm"
+const fmt12h=(v)=>{if(!v)return"";const[h,m]=v.split(":").map(Number);const ampm=h<12?"am":"pm";const h12=h%12||12;return`${h12}:${String(m).padStart(2,"0")}${ampm}`;};
 const GREETS=[n=>`Take it one moment at a time${n?", "+n:""}.`,n=>`No rush. You're here, and that's enough${n?", "+n:""}.`,n=>`A small step is still a step${n?", "+n:""}.`,n=>`Glad you're here${n?", "+n:""}.`,n=>`${n?n+", you":"You"} don't have to do this perfectly.`,n=>`Checking in takes courage${n?", "+n:""}.`,n=>`${n?n+", b":"B"}e gentle with yourself today.`,n=>`Ready when you are${n?", "+n:""}.`];
 
 function loadJ(k,fb){try{const s=localStorage.getItem(k);return s?JSON.parse(s):fb;}catch{return fb;}}
@@ -175,7 +177,33 @@ function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds}
 /* ═══════════════════════════════════════════════════════════════════════════
    APP — passcode ONLY after welcome
    ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── AUTO UPDATE ──
+   On app open, fetches /version.json and compares to localStorage.
+   If the build changed, reloads once to pick up new assets.
+*/
+function useAutoUpdate() {
+  useEffect(() => {
+    const check = async () => {
+      try {
+        const res = await fetch("/version.json?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return;
+        const { v } = await res.json();
+        const stored = localStorage.getItem("mt_app_version");
+        if (stored && stored !== v) {
+          localStorage.setItem("mt_app_version", v);
+          window.location.reload();
+        } else {
+          localStorage.setItem("mt_app_version", v);
+        }
+      } catch (_) { /* offline or missing file — silent */ }
+    };
+    check();
+  }, []);
+}
+
 export default function App(){
+  useAutoUpdate();
   const[screen,setScreen]=useState("welcome");
   const[mood,setMood]=useState(loadMood);
   const[srm,setSrm]=useState(loadSRM);
@@ -222,8 +250,11 @@ export default function App(){
         if(r.meds && typeof r.meds==='object'){
           for(const k in r.meds) if(r.meds[k]?.ct) rMeds[k]={ct:r.meds[k].ct};
         }
+        // If GS returned no meds (parse failure or empty cols), keep local meds
+        const localMeds=local[dt]?.meds||{};
+        const finalMeds=Object.keys(rMeds).length>0 ? rMeds : localMeds;
         local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,anxiety:r.anxiety,
-          irritability:r.irritability,weight:r.weight,notes:r.notes||"",meds:rMeds};
+          irritability:r.irritability,weight:r.weight,notes:r.notes||"",meds:finalMeds};
         changed=true;
       }
       if(changed){setMood({...local});saveMood(local);}
@@ -595,7 +626,7 @@ function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEdit
         return(<div key={it.id} className="dv-srm-row">
           <div className="dv-srm-info"><span className="dv-srm-icon">{ac.icon}</span><span>{ac.label}</span></div>
           <div className="dv-srm-r">
-            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?(normTime(it.time)+" "+(it.am?"AM":"PM")):"—"}{it.withOthers?" · social":""}</span>
+            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?fmt12h(normTime(it.time)):"—"}{it.withOthers?" · social":""}</span>
             <button className="rr-edit" onClick={()=>onEditSRM(it.id)}>Edit</button>
           </div>
         </div>);
@@ -1012,7 +1043,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     const count=socialActs.length;
     return{name:`${m}/${d}`,score,count,total:done.length,f:`${MO[m-1].slice(0,3)} ${d}`};
   });
-  const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const[h,mi]=(item.time||"0:0").split(":").map(Number);const tot=item.am?(h*60+mi):((h===12?12:h+12)*60+mi);out[item.id]=tot/60;}});return out;});
+  const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const t=normTime(item.time);const[h,mi]=t.split(":").map(Number);out[item.id]=(h*60+mi)/60;}});return out;});
 
   const MTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f||""}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);}catch{return null;}};
   const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}{d.irritability!=null&&<div>Irritability: {d.irritability}/3</div>}</div>);}catch{return null;}};
@@ -1024,7 +1055,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     [...allDates].sort().forEach(k=>{
       const e=mood[k];const s=srm[k];
       const ms=e?.meds?Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k2,v])=>`${k2}:${v.ct}`).join("; "):"";
-      const rhythm=s?.items?s.items.filter(i=>!i.didNot).map(i=>`${i.id}:${normTime(i.time)||"?"}${i.am?"AM":"PM"}`).join("; "):"";
+      const rhythm=s?.items?s.items.filter(i=>!i.didNot).map(i=>`${i.id}:${fmt12h(normTime(i.time))||"?"}`).join("; "):"";
       csv+=`${k},${moodKeyString(e)},${e?.sleep??""},${e?.weight??""},${e?.anxiety??""},${e?.irritability??""},"${ms}","${(e?.notes||"").replace(/"/g,'""')}","${rhythm}"\n`;
     });
     const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`mood-rhythm-${tdk()}.csv`;a.click();
