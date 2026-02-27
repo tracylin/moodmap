@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxqBSO_lSp43SH6MoLxrmhXDu5s1wC3gU_CZVtOIMtYQaxm3DVT1FmLGPdOY9K2XuHT/exec"; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxMxzEua4RIq51QPCh5kXkqcDeFFSP_4gWfhCPnP6OPvC0_T-rkNmOoLCbkApASB138/exec"; // paste your deployed Apps Script URL here
 
 /* ── SYNC LAYER — sequential queue, one POST at a time ── */
 
@@ -387,7 +387,7 @@ export default function App(){
       {screen==="confirmSnap"&&<Confirm msg="Snapshot saved" sub="Come back later to complete the full log." onDone={()=>setScreen("calendar")}/>}
       {screen==="blankDay"&&<BlankDayCard dateKey={selDay} snap={snap} onLogMood={()=>setScreen("calEntry")} onBack={()=>setScreen("calendar")}/>}
       {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} snap={snap} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onSaveSnap={(s,k)=>{doSaveSnap(k,s);setScreen("confirmSnap");}} onX={()=>setScreen("calendar")}/>}
-      {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({type:"send_report",email:settings.reportEmail,name:settings.name||""})});}} reportEmail={settings.reportEmail||""}/>}
+      {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;fetch(u,{method:"GET",cache:"no-store"}).catch(()=>{});}} reportEmail={settings.reportEmail||""}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} meds={meds} setMeds={setMeds} onBack={()=>setScreen("calendar")}/>}
     </div></div>
   </>);
@@ -454,7 +454,7 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onS
   for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());const mk=mood[k];if((mk&&!mk._weightOnly)||srm[k]||(snap[k]||[]).length)streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
   const selMood=selDay?mood[selDay]:null;const selSrm=selDay?srm[selDay]:null;
-  const selLabel=selDay?`${MO[parseInt(selDay.split("-")[1])-1].slice(0,3)} ${parseInt(selDay.split("-")[2])}`:"";
+  const selLabel=selDay?(()=>{const[sy,sm,sd]=selDay.split("-").map(Number);const dow=new Date(sy,sm-1,sd).getDay();return`${MO[sm-1].slice(0,3)} ${sd} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;})():"";
 
   return(<div className="scr">
     <div className="cal-top">
@@ -513,14 +513,15 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onS
 
     {emptyDay&&(()=>{
       const[yr,mo,dy]=emptyDay.split("-").map(Number);
-      const lbl=`${MO[mo-1].slice(0,3)} ${dy}`;
+      const dow=new Date(yr,mo-1,dy).getDay();
+      const lbl=`${MO[mo-1].slice(0,3)} ${dy} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;
       return(
         <div className="day-card" style={{animation:"si .2s var(--ease)"}}>
           <div className="day-card-head">
             <span className="day-card-date">{lbl}</span>
             <span className="day-card-arrow" style={{color:"var(--t3)"}}>No entries</span>
           </div>
-          <button className="btn-p" style={{marginTop:4,fontSize:13,padding:"11px 16px"}}
+          <button className="day-card-log-cta" style={{marginTop:4,width:"100%"}}
             onClick={()=>onLogForDay(emptyDay)}>
             Log mood for {lbl}
           </button>
@@ -544,7 +545,8 @@ function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEdit
   const[confirmSnapIdx,setConfirmSnapIdx]=useState(null);
   const e=mood[dateKey];const s=srm[dateKey];const snaps=(snap||{})[dateKey]||[];
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
-  const label=`${MO[mo-1]} ${dy}, ${yr}`;
+  const _dow=new Date(yr,mo-1,dy).getDay();
+  const label=`${MO[mo-1]} ${dy}, ${yr} · ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_dow]}`;
   return(<div className="scr">
     <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>×</button></div>
     {!e&&onLogMood&&<button className="btn-p" style={{marginBottom:12,fontSize:13,padding:"11px 16px"}} onClick={onLogMood}>Log full day entry</button>}
@@ -640,10 +642,10 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
     const m={};meds.forEach(med=>{m[med.key]={ct:med.defaultCt??0};});
     // preselect mood from snapshot if present
     const preselect=latestSnap?.moods||[];
-    return{moods:preselect,sleep:8,weight:null,anxiety:latestSnap?.anxiety??1,irritability:latestSnap?.irritability??1,meds:m,notes:""};
+    return{moods:preselect,sleep:null,weight:null,anxiety:latestSnap?.anxiety??null,irritability:latestSnap?.irritability??null,meds:m,notes:""};
   };
 
-  const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);
+  const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);const[skippedSteps,setSkippedSteps]=useState(new Set());
   const[entry,setEntry]=useState(()=>{
     const t=mood[targetKey];
     if(t) return{...t,moods:moodsArr(t),meds:{...t.meds}};
@@ -694,7 +696,7 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
         </button>);
       })}</div>)}
 
-      {st.id==="sleep"&&(<div className="np"><button className="br" onClick={()=>upd("sleep",Math.max(0,(entry.sleep||0)-.5))}>−</button><div className="nv"><span className="nb">{entry.sleep??0}</span><span className="nu">hrs</span></div><button className="br" onClick={()=>upd("sleep",Math.min(24,(entry.sleep||0)+.5))}>+</button></div>)}
+      {st.id==="sleep"&&(<div className="np"><button className="br" onClick={()=>upd("sleep",entry.sleep==null?null:Math.max(0,entry.sleep-.5))} disabled={entry.sleep==null}>−</button><div className="nv">{entry.sleep==null?<span className="nb" style={{color:"var(--t3)",fontSize:32}}>—</span>:<><span className="nb">{entry.sleep}</span><span className="nu">hrs</span></>}</div><button className="br" onClick={()=>upd("sleep",entry.sleep==null?8:Math.min(24,entry.sleep+.5))}>+</button></div>)}
       {st.id==="weight"&&(<div className="wgt"><input className="wgi" inputMode="decimal" value={entry.weight??""} onChange={e=>upd("weight",e.target.value===""?null:parseFloat(e.target.value))} placeholder="e.g. 68.4"/><div className="wgu">kg</div></div>)}
       {(st.id==="anxiety"||st.id==="irritability")&&(<div className="sg">{SEV.map(s=>{const sel=entry[st.id]===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd(st.id,s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div>)}
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
@@ -703,11 +705,11 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
 
       <div className="step-btns">
         <button className={`btn-p en${(si===0&&!(entry.moods||[]).length)?" bd":""}`}
-          onClick={()=>{if(isEdit)setEditIdx(null);else setStep(Math.min(si+1,tot));}}
+          onClick={()=>{if(isEdit)setEditIdx(null);else{const sid=activeSteps[si]?.id;setSkippedSteps(prev=>{const n=new Set(prev);n.delete(sid);return n;});setStep(Math.min(si+1,tot));}}}
           disabled={si===0&&!(entry.moods||[]).length}>
           {isEdit?"Done":si===tot-1?"Review":"Next"}
         </button>
-        {si>0&&!isEdit&&<button className="btn-skip" onClick={()=>setStep(Math.min(si+1,tot))}>skip</button>}
+        {si>0&&!isEdit&&<button className="btn-skip" onClick={()=>{const sid=activeSteps[si]?.id;setSkippedSteps(prev=>{const n=new Set(prev);n.add(sid);return n;});setStep(Math.min(si+1,tot));}}>skip</button>}
       </div>
     </div>);
   };
@@ -777,7 +779,7 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anxiety"))}/>
             <RvRow l="Irritability" v={entry.irritability!=null?`${entry.irritability}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="irritability"))}/>
-            <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}/>
+            <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           </>}
           {mode==="now"&&<>
             <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anxiety"))}/>
@@ -788,7 +790,7 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
         {mode==="now"
           ?<button className="btn-p" onClick={()=>onSaveSnap({...entry,time:nowTime(),moods:entry.moods},targetKey)}>Save Snapshot</button>
           :<>
-            <button className="btn-p" onClick={()=>onSave(entry,targetKey)}>Confirm</button>
+            <button className="btn-p" onClick={()=>{const finalEntry={...entry};if(skippedSteps.has("meds")){const cleared={};Object.keys(finalEntry.meds||{}).forEach(k=>{cleared[k]={ct:0};});finalEntry.meds=cleared;}onSave(finalEntry,targetKey);}}>Confirm</button>
             {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
               const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
               if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==editKey){onMoveMood(v);}
@@ -804,7 +806,8 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
 /* ── BLANK DAY CARD — shown when tapping an empty calendar cell ── */
 function BlankDayCard({dateKey,snap,onLogMood,onBack}){
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
-  const label=`${MO[mo-1]} ${dy}, ${yr}`;
+  const _dow=new Date(yr,mo-1,dy).getDay();
+  const label=`${MO[mo-1]} ${dy}, ${yr} · ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_dow]}`;
   const daySnaps=(snap||{})[dateKey]||[];
   return(<div className="scr">
     <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>×</button></div>
@@ -1096,10 +1099,13 @@ function Settings({settings,setS,meds,setMeds,onBack}){
     if(!SHEETS_URL||!settings.reportEmail){setReportMsg("Set email address first");return;}
     setReportSending(true);setReportMsg("");
     try{
-      const res=await fetch(SHEETS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain;charset=UTF-8"},body:JSON.stringify({type:"send_report",email:settings.reportEmail,name:settings.name||""})});
-      setReportMsg("Report sent! Check your inbox.");
+      const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;
+      const res=await fetch(u,{method:"GET",cache:"no-store"});
+      const data=await res.json().catch(()=>({}));
+      if(data.status==="ok") setReportMsg("Report sent! Check your inbox.");
+      else setReportMsg("Error: "+(data.message||"unknown"));
     }catch(e){setReportMsg("Could not send. Try again.");}
-    setReportSending(false);setTimeout(()=>setReportMsg(""),4000);
+    setReportSending(false);setTimeout(()=>setReportMsg(""),5000);
   };
 
   const saveName=()=>{setS({name:nameVal.trim()});setNameSaved(true);setTimeout(()=>setNameSaved(false),2500);};
