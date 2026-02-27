@@ -4,7 +4,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 /* ═══════════════════════════════════════════════════════════════════════════
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxMxzEua4RIq51QPCh5kXkqcDeFFSP_4gWfhCPnP6OPvC0_T-rkNmOoLCbkApASB138/exec"; // paste your deployed Apps Script URL here
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbxqBSO_lSp43SH6MoLxrmhXDu5s1wC3gU_CZVtOIMtYQaxm3DVT1FmLGPdOY9K2XuHT/exec"; // paste your deployed Apps Script URL here
 
 /* ── SYNC LAYER — sequential queue, one POST at a time ── */
 
@@ -608,15 +608,15 @@ function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEdit
 /* ═══════════════════════════════════════════════════════════════════════════
    MOOD ENTRY
    ═══════════════════════════════════════════════════════════════════════════ */
-const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep?",s:"Last night, roughly"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications taken",s:"Adjust pill counts (dosage shown)"},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
+const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep last night?",s:"Total hours, roughly"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications last night",s:"Pills taken yesterday evening / this morning"},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
 
 /* ── MODE STEPS ── */
 const MSTEPS_FULL=[
   {id:"mood",      q:{full:"How was your mood?",         now:"How are you feeling right now?"},  s:"Choose up to 2 (if it felt mixed)"},
-  {id:"sleep",     q:{full:"Hours of sleep?",            now:null},                               s:"Last night, roughly"},
+  {id:"sleep",     q:{full:"Hours of sleep last night?",  now:null},                               s:"Total hours, roughly"},
   {id:"anxiety",   q:{full:"Anxiety level?",             now:"Anxiety right now?"},               s:"0 none · 1 mild · 2 moderate · 3 severe"},
   {id:"irritability",q:{full:"Irritability level?",     now:"Irritability right now?"},           s:"0 none · 1 mild · 2 moderate · 3 severe"},
-  {id:"meds",      q:{full:"Medications taken",          now:null},                               s:"Adjust pill counts (dosage shown)"},
+  {id:"meds",      q:{full:"Medications last night",     now:null},                               s:"Pills taken yesterday evening / this morning"},
   {id:"weight",    q:{full:"Weight",                     now:"Weight check-in"},                  s:"Optional — syncs to your mood log"},
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
 ];
@@ -626,7 +626,7 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
   // mode: null=picker, "full"=full day, "now"=snapshot
   // lockedDate skips mode picker and forces full
   const[mode,setMode]=useState(editKey||lockedDate?"full":null);
-  const initialKey=lockedDate||editKey||ydk();
+  const initialKey=lockedDate||editKey||tdk();
   const[dateKey,setDateKey]=useState(initialKey);
   const targetKey=editKey||lockedDate||dateKey;
 
@@ -697,7 +697,7 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
       })}</div>)}
 
       {st.id==="sleep"&&(<div className="np"><button className="br" onClick={()=>upd("sleep",entry.sleep==null?null:Math.max(0,entry.sleep-.5))} disabled={entry.sleep==null}>−</button><div className="nv">{entry.sleep==null?<span className="nb" style={{color:"var(--t3)",fontSize:32}}>—</span>:<><span className="nb">{entry.sleep}</span><span className="nu">hrs</span></>}</div><button className="br" onClick={()=>upd("sleep",entry.sleep==null?8:Math.min(24,entry.sleep+.5))}>+</button></div>)}
-      {st.id==="weight"&&(<div className="wgt"><input className="wgi" inputMode="decimal" value={entry.weight??""} onChange={e=>upd("weight",e.target.value===""?null:parseFloat(e.target.value))} placeholder="e.g. 68.4"/><div className="wgu">kg</div></div>)}
+      {st.id==="weight"&&(<div className="wgt"><input className="wgi" type="number" inputMode="decimal" step="0.01" value={entry.weight??""} onChange={e=>upd("weight",e.target.value===""?null:Math.round(parseFloat(e.target.value)*100)/100)} placeholder="e.g. 68.45"/><div className="wgu">kg</div></div>)}
       {(st.id==="anxiety"||st.id==="irritability")&&(<div className="sg">{SEV.map(s=>{const sel=entry[st.id]===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd(st.id,s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div>)}
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
         return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
@@ -753,8 +753,8 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
         {mode==="now"
           ?<span className="datepill on">Today · now</span>
           :<>
-            <button className={`datepill${dateKey===ydk()?" on":""}`} onClick={()=>setDateKey(ydk())}>Yesterday</button>
             <button className={`datepill${dateKey===tdk()?" on":""}`} onClick={()=>setDateKey(tdk())}>Today</button>
+            <button className={`datepill${dateKey===ydk()?" on":""}`} onClick={()=>setDateKey(ydk())}>Yesterday</button>
             <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))setDateKey(v);}}>Pick</button>
             <span className="datecap">{new Date(dateKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
           </>
@@ -946,12 +946,8 @@ function SRMSingle({id,srm,dateKey,onSave,onX}){
       <h2 className="qt">{act.label}</h2>
       <div className="srm-tr">
         <label className="srm-lb">Time</label>
-        <input type="time" className="srm-ti" value={item.time} onChange={e=>upd("time",e.target.value)}/>
-        <button className="srm-now" onClick={()=>{upd("time",nowTime());upd("am",isAMnow());}}>Now</button>
-        <div className="srm-ap">
-          <button className={`srm-ab${item.am?" srm-aon":""}`} onClick={()=>upd("am",true)}>AM</button>
-          <button className={`srm-ab${!item.am?" srm-aon":""}`} onClick={()=>upd("am",false)}>PM</button>
-        </div>
+        <input type="time" className="srm-ti" value={item.time} onChange={e=>{const v=e.target.value;const h=parseInt(v.split(":")[0],10);setItem(p=>({...p,time:v,am:h<12}));}}/>
+        <button className="srm-now" onClick={()=>{const t=nowTime();setItem(p=>({...p,time:t,am:isAMnow()}));}}>Now</button>
       </div>
       <button className={`srm-skip${item.didNot?" srm-skip-on":""}`} onClick={()=>upd("didNot",!item.didNot)}>{item.didNot?"✓ ":""}Didn't do this</button>
       {!item.didNot&&(<>
@@ -995,7 +991,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
   const wM=sorted.filter(e=>e.mv!=null);const wS=sorted.filter(e=>e.sleep!=null);const wA=sorted.filter(e=>e.anxiety!=null);
   const avg=a=>a.length?(a.reduce((s,x)=>s+x,0)/a.length):null;
   const moodData=wM.map(e=>({n:e.sl,mood:e.mv,f:e.label}));
-  const comboData=sorted.filter(e=>e.sleep!=null||e.anxiety!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,f:e.label}));
+  const comboData=sorted.filter(e=>e.sleep!=null||e.anxiety!=null||e.irritability!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,irritability:e.irritability,f:e.label}));
   const weightData=sorted.filter(e=>e.weight!=null).map(e=>({n:e.sl,weight:e.weight,f:e.label}));
   const weightStats=(()=>{
     if(!weightData||weightData.length===0) return null;
@@ -1008,11 +1004,18 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
 
   const notes=sorted.filter(e=>e.notes?.trim()).reverse();
   const srmSorted=Object.entries(srm).sort(([a],[b])=>a.localeCompare(b));
-  const srmSocial=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);return{name:`${m}/${d}`,social:(v.items||[]).filter(i=>!i.didNot&&i.withOthers).length,total:(v.items||[]).filter(i=>!i.didNot).length};});
+  const srmSocial=srmSorted.map(([k,v])=>{
+    const[,m,d]=k.split("-").map(Number);
+    const done=(v.items||[]).filter(i=>!i.didNot);
+    const socialActs=done.filter(i=>i.withOthers);
+    const score=socialActs.reduce((acc,i)=>acc+(i.engagement||1),0);
+    const count=socialActs.length;
+    return{name:`${m}/${d}`,score,count,total:done.length,f:`${MO[m-1].slice(0,3)} ${d}`};
+  });
   const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const[h,mi]=(item.time||"0:0").split(":").map(Number);const tot=item.am?(h*60+mi):((h===12?12:h+12)*60+mi);out[item.id]=tot/60;}});return out;});
 
   const MTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f||""}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);}catch{return null;}};
-  const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}</div>);}catch{return null;}};
+  const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}{d.irritability!=null&&<div>Irritability: {d.irritability}/3</div>}</div>);}catch{return null;}};
   const fmtH=v=>{const h=Math.floor(v);return`${h>12?h-12:h||12}${h>=12?"pm":"am"}`;};
 
   const exCSV=()=>{
@@ -1044,11 +1047,13 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
       <Area type="monotone" dataKey="mood" stroke="#6478A0" strokeWidth={2} fill="url(#mg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
     </AreaChart></ResponsiveContainer></div></div>}
 
-    {comboData.length>0&&<div className="card"><h3 className="ctit">Sleep & Anxiety</h3><div className="cw"><ResponsiveContainer width="100%" height={150}><LineChart data={comboData} margin={{top:8,right:8,left:-24,bottom:4}}>
+    {comboData.length>0&&<div className="card"><h3 className="ctit">Sleep · Anxiety · Irritability</h3><div className="cw"><ResponsiveContainer width="100%" height={150}><LineChart data={comboData} margin={{top:8,right:8,left:-24,bottom:4}}>
       <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
-      <Tooltip content={<CTT/>}/><Line type="monotone" dataKey="sleep" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls/>
-      <Line type="monotone" dataKey="anxiety" stroke="#D4785C" strokeWidth={1.5} dot={{r:2,fill:"#D4785C",strokeWidth:0}} connectNulls strokeDasharray="4 2"/>
-    </LineChart></ResponsiveContainer></div><div className="cleg2"><span><span className="ll" style={{background:"#7BA08B"}}/> Sleep</span><span><span className="ll" style={{background:"#D4785C"}}/> Anxiety</span></div></div>}
+      <Tooltip content={<CTT/>}/>
+      <Line type="monotone" dataKey="sleep" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Sleep"/>
+      <Line type="monotone" dataKey="anxiety" stroke="#D4785C" strokeWidth={1.5} dot={{r:2,fill:"#D4785C",strokeWidth:0}} connectNulls strokeDasharray="4 2" name="Anxiety"/>
+      <Line type="monotone" dataKey="irritability" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls strokeDasharray="2 3" name="Irritability"/>
+    </LineChart></ResponsiveContainer></div><div className="cleg2"><span><span className="ll" style={{background:"#7BA08B"}}/> Sleep</span><span><span className="ll" style={{background:"#D4785C"}}/> Anxiety</span><span><span className="ll" style={{background:"#C9B07A"}}/> Irritability</span></div></div>}
 
     
 
@@ -1058,20 +1063,81 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
       <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;return(<div className="tt"><div className="ttd">{d.f}</div><div>Weight: {d.weight} kg</div></div>);}}/>
       <Area type="monotone" dataKey="weight" stroke="#6478A0" strokeWidth={2} fill="url(#wg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
     </AreaChart></ResponsiveContainer></div></div>}
-    {srmSorted.length>0&&<div className="card"><h3 className="ctit">Social Engagement</h3><div className="cw"><ResponsiveContainer width="100%" height={120}><BarChart data={srmSocial} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}}/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
-      <Bar dataKey="total" fill="#E8E4DE" radius={[4,4,0,0]}/><Bar dataKey="social" fill="#7E9AB3" radius={[4,4,0,0]}/>
-    </BarChart></ResponsiveContainer></div><div className="cleg2"><span><span className="ll" style={{background:"#7E9AB3"}}/> Social</span><span><span className="ll" style={{background:"#E8E4DE"}}/> Total</span></div></div>}
+    {/* ── Social engagement score ── */}
+    {srmSocial.length>0&&srmSocial.some(d=>d.score>0)&&<div className="card">
+      <h3 className="ctit">Social Stimulation</h3>
+      <p className="card-sub">Sum of engagement levels across all social activities per day</p>
+      <div className="cw"><ResponsiveContainer width="100%" height={130}><LineChart data={srmSocial} margin={{top:8,right:8,left:-24,bottom:4}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
+        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
+        <YAxis tick={{fontSize:10,fill:"#9E9790"}} allowDecimals={false}/>
+        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f}</div><div>Score: {d.score}</div><div style={{color:"var(--t3)",fontSize:11}}>{d.count} social {d.count===1?"activity":"activities"}</div></div>);}}/>
+        <Line type="monotone" dataKey="score" stroke="#7E9AB3" strokeWidth={2} dot={{r:3,fill:"#7E9AB3",strokeWidth:0}} activeDot={{r:4}} connectNulls name="Social score"/>
+      </LineChart></ResponsiveContainer></div>
+      <div className="cleg2"><span style={{fontSize:11,color:"var(--t3)"}}>1 = just present · 2 = actively involved · 3 = very stimulating</span></div>
+    </div>}
 
-    {srmTimes.length>0&&srmTimes.some(d=>d.bed||d.bedtime||d.work||d.exercise||d.outside)&&<div className="card"><h3 className="ctit">Activity Times</h3><div className="cw"><ResponsiveContainer width="100%" height={160}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}}/><YAxis tick={{fontSize:10,fill:"#9E9790"}} domain={[5,25]} tickFormatter={fmtH}/>
-      <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
-      {srmTimes.some(d=>d.bed)&&<Line type="monotone" dataKey="bed" stroke="#7E9AB3" strokeWidth={1.5} dot={{r:2,fill:"#7E9AB3",strokeWidth:0}} connectNulls name="Wake up"/>}
-      {srmTimes.some(d=>d.bedtime)&&<Line type="monotone" dataKey="bedtime" stroke="#5A5F8A" strokeWidth={1.5} dot={{r:2,fill:"#5A5F8A",strokeWidth:0}} connectNulls name="Bed time"/>}
-      {srmTimes.some(d=>d.work)&&<Line type="monotone" dataKey="work" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Work"/>}
-      {srmTimes.some(d=>d.exercise)&&<Line type="monotone" dataKey="exercise" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Work out"/>}
-      {srmTimes.some(d=>d.outside)&&<Line type="monotone" dataKey="outside" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Outside"/>}
-    </LineChart></ResponsiveContainer></div><div className="cleg2" style={{flexWrap:"wrap"}}><span><span className="ll" style={{background:"#7E9AB3"}}/> Wake</span><span><span className="ll" style={{background:"#5A5F8A"}}/> Bed</span><span><span className="ll" style={{background:"#C9B07A"}}/> Work</span><span><span className="ll" style={{background:"#D49A6A"}}/> Work out</span><span><span className="ll" style={{background:"#7BA08B"}}/> Outside</span></div></div>}
+    {/* ── Activity stability: Morning anchors ── */}
+    {srmTimes.length>0&&srmTimes.some(d=>d.bed||d.beverage||d.breakfast)&&<div className="card">
+      <h3 className="ctit">Morning Rhythm</h3>
+      <p className="card-sub">Wake-up, morning beverage, breakfast times</p>
+      <div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
+        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
+        <YAxis tick={{fontSize:10,fill:"#9E9790"}} tickFormatter={fmtH} domain={["auto","auto"]}/>
+        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
+        {srmTimes.some(d=>d.bed)&&<Line type="monotone" dataKey="bed" stroke="#7E9AB3" strokeWidth={1.5} dot={{r:2,fill:"#7E9AB3",strokeWidth:0}} connectNulls name="Wake up"/>}
+        {srmTimes.some(d=>d.beverage)&&<Line type="monotone" dataKey="beverage" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Beverage"/>}
+        {srmTimes.some(d=>d.breakfast)&&<Line type="monotone" dataKey="breakfast" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Breakfast"/>}
+      </LineChart></ResponsiveContainer></div>
+      <div className="cleg2" style={{flexWrap:"wrap"}}>
+        {srmTimes.some(d=>d.bed)&&<span><span className="ll" style={{background:"#7E9AB3"}}/> Wake</span>}
+        {srmTimes.some(d=>d.beverage)&&<span><span className="ll" style={{background:"#C9B07A"}}/> Beverage</span>}
+        {srmTimes.some(d=>d.breakfast)&&<span><span className="ll" style={{background:"#D49A6A"}}/> Breakfast</span>}
+      </div>
+    </div>}
+
+    {/* ── Activity stability: Daytime ── */}
+    {srmTimes.length>0&&srmTimes.some(d=>d.outside||d.work||d.exercise||d.lunch)&&<div className="card">
+      <h3 className="ctit">Daytime Rhythm</h3>
+      <p className="card-sub">Outside, work, exercise, lunch times</p>
+      <div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
+        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
+        <YAxis tick={{fontSize:10,fill:"#9E9790"}} tickFormatter={fmtH} domain={["auto","auto"]}/>
+        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
+        {srmTimes.some(d=>d.outside)&&<Line type="monotone" dataKey="outside" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Outside"/>}
+        {srmTimes.some(d=>d.work)&&<Line type="monotone" dataKey="work" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Work"/>}
+        {srmTimes.some(d=>d.exercise)&&<Line type="monotone" dataKey="exercise" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Work out"/>}
+        {srmTimes.some(d=>d.lunch)&&<Line type="monotone" dataKey="lunch" stroke="#A89CC8" strokeWidth={1.5} dot={{r:2,fill:"#A89CC8",strokeWidth:0}} connectNulls name="Lunch"/>}
+      </LineChart></ResponsiveContainer></div>
+      <div className="cleg2" style={{flexWrap:"wrap"}}>
+        {srmTimes.some(d=>d.outside)&&<span><span className="ll" style={{background:"#7BA08B"}}/> Outside</span>}
+        {srmTimes.some(d=>d.work)&&<span><span className="ll" style={{background:"#C9B07A"}}/> Work</span>}
+        {srmTimes.some(d=>d.exercise)&&<span><span className="ll" style={{background:"#D49A6A"}}/> Work out</span>}
+        {srmTimes.some(d=>d.lunch)&&<span><span className="ll" style={{background:"#A89CC8"}}/> Lunch</span>}
+      </div>
+    </div>}
+
+    {/* ── Activity stability: Evening anchors ── */}
+    {srmTimes.length>0&&srmTimes.some(d=>d.dinner||d.home||d.bedtime)&&<div className="card">
+      <h3 className="ctit">Evening Rhythm</h3>
+      <p className="card-sub">Dinner, home return, bed time</p>
+      <div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
+        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
+        <YAxis tick={{fontSize:10,fill:"#9E9790"}} tickFormatter={fmtH} domain={["auto","auto"]}/>
+        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
+        {srmTimes.some(d=>d.dinner)&&<Line type="monotone" dataKey="dinner" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Dinner"/>}
+        {srmTimes.some(d=>d.home)&&<Line type="monotone" dataKey="home" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Home"/>}
+        {srmTimes.some(d=>d.bedtime)&&<Line type="monotone" dataKey="bedtime" stroke="#5A5F8A" strokeWidth={1.5} dot={{r:2,fill:"#5A5F8A",strokeWidth:0}} connectNulls name="Bed time"/>}
+      </LineChart></ResponsiveContainer></div>
+      <div className="cleg2" style={{flexWrap:"wrap"}}>
+        {srmTimes.some(d=>d.dinner)&&<span><span className="ll" style={{background:"#D49A6A"}}/> Dinner</span>}
+        {srmTimes.some(d=>d.home)&&<span><span className="ll" style={{background:"#7BA08B"}}/> Home</span>}
+        {srmTimes.some(d=>d.bedtime)&&<span><span className="ll" style={{background:"#5A5F8A"}}/> Bed time</span>}
+      </div>
+    </div>}
 
     {notes.length>0&&<div className="card"><h3 className="ctit">Journal Notes</h3><div className="nl">{notes.map(n=>(<div key={n.key} className="nr"><div className="nd">{n.label}</div><div className="nt">{n.notes}</div></div>))}</div></div>}
     {onSendReport&&<div className="card" style={{textAlign:"center"}}>
@@ -1368,9 +1434,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .srm-ti:focus{border-color:var(--tx)}
 .srm-now{padding:10px 14px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;transition:all .15s;white-space:nowrap}
 .srm-now:hover{border-color:var(--t3)}.srm-now:active{background:var(--warm)}
-.srm-ap{display:flex;gap:2px}
-.srm-ab{padding:10px 12px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;transition:all .15s}
-.srm-aon{border-color:var(--tx);background:var(--warm);color:var(--tx)}
+
 .srm-skip{padding:7px 12px;border-radius:var(--rs);border:none;background:transparent;font:300 12px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;transition:all .15s;text-align:left;margin-bottom:16px}
 .srm-skip:hover{color:var(--t2)}.srm-skip-on{color:var(--tx);font-weight:400}
 .srm-sec{margin-bottom:16px}
