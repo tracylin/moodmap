@@ -104,7 +104,7 @@ const SEED_MOOD = {
   "2026-02-18":{sleep:null,irritability:1,anxiety:2,mood:"mild_dep",notes:"",meds:{lamotrigine:{ct:1},quetiapine:{ct:1},lithium:{ct:4},levothyroxine:{ct:1}}},
 };
 const SEED_SRM = {
-  "2026-02-16":{items:[{id:"bed",time:"09:15",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"exercise",time:"03:30",am:false,didNot:false,withOthers:false,who:[],whoText:"",engagement:0}]},
+  "2026-02-16":{items:[{id:"bed",time:"09:15",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"exercise",time:"15:30",am:false,didNot:false,withOthers:false,who:[],whoText:"",engagement:0}]},
   "2026-02-17":{items:[{id:"bed",time:"10:35",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"beverage",time:"10:45",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"breakfast",time:"11:45",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"outside",time:"11:00",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0}]},
   "2026-02-19":{items:[{id:"bed",time:"10:00",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"beverage",time:"10:25",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"breakfast",time:"10:30",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0},{id:"outside",time:"10:45",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0}]},
 };
@@ -158,6 +158,12 @@ const normTime=(v)=>{
 };
 // Display 24h "HH:MM" as 12h "h:MMam/pm"
 const fmt12h=(v)=>{if(!v)return"";const[h,m]=v.split(":").map(Number);const ampm=h<12?"am":"pm";const h12=h%12||12;return`${h12}:${String(m).padStart(2,"0")}${ampm}`;};
+// Convert legacy 12h+am-flag time to 24h. New entries have h>=13 for PM so am is irrelevant.
+const to24h=(v,am)=>{if(!v)return v;const[h,m]=v.split(":").map(Number);if(h>12)return v;// already 24h PM
+if(am===undefined||am===null)return v;// no flag, trust as-is
+if(!am&&h!==12)return`${String(h+12).padStart(2,"0")}:${String(m).padStart(2,"0")}`;// PM
+if(am&&h===12)return`00:${String(m).padStart(2,"0")}`;// 12am → 00:xx
+return v;};
 const GREETS=[n=>`Take it one moment at a time${n?", "+n:""}.`,n=>`No rush. You're here, and that's enough${n?", "+n:""}.`,n=>`A small step is still a step${n?", "+n:""}.`,n=>`Glad you're here${n?", "+n:""}.`,n=>`${n?n+", you":"You"} don't have to do this perfectly.`,n=>`Checking in takes courage${n?", "+n:""}.`,n=>`${n?n+", b":"B"}e gentle with yourself today.`,n=>`Ready when you are${n?", "+n:""}.`];
 
 function loadJ(k,fb){try{const s=localStorage.getItem(k);return s?JSON.parse(s):fb;}catch{return fb;}}
@@ -168,10 +174,6 @@ function saveSRM(d){const u={};for(const k in d)if(!SEED_SRM[k])u[k]=d[k];localS
 function loadSet(){const s=loadJ("mt_set",{});if(!s.passcode)s.passcode="1234";if(!s.name)s.name="Wei";return s;}
 function saveSet(s){localStorage.setItem("mt_set",JSON.stringify(s));}
 function emptyItem(id){return{id,time:"",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0};}
-function loadSnap(){try{const s=localStorage.getItem("mt_snap");return s?JSON.parse(s):{};}catch{return{};}}
-function saveSnap(d){localStorage.setItem("mt_snap",JSON.stringify(d));}
-function pushSnap(date,snap){enqueueSync({type:"snapshot",date,snap});}
-function pushDeleteSnap(date,time){enqueueSync({type:"delete_snapshot",date,time});}
 function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds});}
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -213,27 +215,6 @@ export default function App(){
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
   const[srmDate,setSrmDate]=useState(tdk);
-  const[snap,setSnap]=useState(loadSnap);
-  const[snapEditIdx,setSnapEditIdx]=useState(null);
-  const doSaveSnap=(date,snapEntry)=>{
-    const n={...snap,[date]:[...(snap[date]||[]),snapEntry]};setSnap(n);saveSnap(n);pushSnap(date,snapEntry);
-    // Extract weight from snapshot → save into mood data structure as weight-only entry
-    if(snapEntry.weight!=null){
-      const existing=mood[date]||null;
-      // Only write weight if no real mood entry exists for this date, or update weight on existing
-      if(!existing||existing._weightOnly){
-        const we={...(existing||{}),weight:snapEntry.weight,mood:null,moods:[],_weightOnly:true};
-        const nm={...mood,[date]:we};setMood(nm);saveMood(nm);
-        pushMood(date,we,meds);
-      } else {
-        // Day already has real mood log — just update weight field silently
-        const nm={...mood,[date]:{...existing,weight:snapEntry.weight}};setMood(nm);saveMood(nm);
-        pushMood(date,nm[date],meds);
-      }
-    }
-  };
-  const doDeleteSnap=(date,idx)=>{const arr=[...(snap[date]||[])];const [removed]=arr.splice(idx,1);const n={...snap,[date]:arr};setSnap(n);saveSnap(n);if(removed?.time)pushDeleteSnap(date,removed.time);};
-  const doUpdateSnap=(date,idx,updated)=>{const arr=[...(snap[date]||[])];const old=arr[idx];arr[idx]={...updated};const n={...snap,[date]:arr};setSnap(n);saveSnap(n);if(old?.time)pushDeleteSnap(date,old.time);pushSnap(date,updated);};
   // Pull from Google Sheets on app open (cross-device sync)
   useEffect(()=>{(async()=>{
     const resp=await pullFromSheets();
@@ -295,37 +276,6 @@ export default function App(){
       const local=loadSRM();
       for(const dt in local){
         if(local[dt]?.items?.length) pushSrm(dt, local[dt].items);
-      }
-    }
-    // Merge Snapshots — additive: remote array is authoritative per date
-    if(resp.snap && typeof resp.snap==='object'){
-      const local=loadSnap();
-      let changed=false;
-      for(const dt in resp.snap){
-        const remoteSnaps=resp.snap[dt];
-        if(!Array.isArray(remoteSnaps)||!remoteSnaps.length) continue;
-        // Merge by time — remote entries win; local-only times are preserved
-        const localSnaps=local[dt]||[];
-        const remoteTimesSet=new Set(remoteSnaps.map(s=>s.time));
-        const localOnly=localSnaps.filter(s=>!remoteTimesSet.has(s.time));
-        local[dt]=[...remoteSnaps,...localOnly];
-        changed=true;
-      }
-      if(changed){setSnap({...local});saveSnap(local);}
-      // Push any local snap dates not on remote (first sync)
-      if(!hasPushedSeed){
-        const localSnap=loadSnap();
-        const remoteDates=new Set(Object.keys(resp.snap||{}));
-        for(const dt in localSnap){
-          if(!remoteDates.has(dt)&&localSnap[dt]?.length){
-            localSnap[dt].forEach(sn=>pushSnap(dt,sn));
-          }
-        }
-      }
-    } else if(!hasPushedSeed){
-      const localSnap=loadSnap();
-      for(const dt in localSnap){
-        if(localSnap[dt]?.length) localSnap[dt].forEach(sn=>pushSnap(dt,sn));
       }
     }
     // Merge Settings — remote wins (allows device-to-device sync)
@@ -394,30 +344,21 @@ export default function App(){
     <div className="app"><div className="page" key={screen}>
       {screen==="welcome"&&<Welcome name={name} onGo={()=>settings.passcode?setScreen("lock"):setScreen("calendar")}/>}
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>setScreen("calendar")}/>}
-      {screen==="calendar"&&<Cal mood={mood} srm={srm} snap={snap} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
-      {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} snap={snap} meds={meds} onBack={()=>setScreen("calendar")}
+      {screen==="calendar"&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
+      {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
         onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
         onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
         onEditMood={()=>setScreen("editDayMood")}
         onEditSRM={id=>{setSrmEditId(id);setScreen("editDaySrm");}}
-        onDelSnap={idx=>{doDeleteSnap(selDay,idx);}}
-        onEditSnap={idx=>{setSnapEditIdx(idx);setScreen("editSnap");}}
         onLogMood={()=>setScreen("editDayMood")}/>}
-      {screen==="editSnap"&&snapEditIdx!=null&&(()=>{
-        const snaps=snap[selDay]||[];
-        const sn=snaps[snapEditIdx];
-        if(!sn) return null;
-        return <SnapEditor snap={sn} onSave={updated=>{doUpdateSnap(selDay,snapEditIdx,updated);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>;
-      })()}
+
       {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onMoveMood={(to)=>{doMoveMood(selDay,to);setSelDay(to);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[selDay]:{items}};doSaveSRM(ns,selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
-      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} snap={snap} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onSaveSnap={(s,k)=>{doSaveSnap(k,s);setScreen("confirmSnap");}} onX={()=>setScreen("calendar")}/>}
+      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srm"&&<SRMPicker srm={srm} srmDate={srmDate} setSrmDate={setSrmDate} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srmEdit"&&<SRMSingle id={srmEditId} srm={srm} dateKey={srmDate} onSave={item=>{const k=srmDate;const ex=srm[k]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[k]:{items}};doSaveSRM(ns,k);setScreen("srm");}} onX={()=>setScreen("srm")}/>}
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
-      {screen==="confirmSnap"&&<Confirm msg="Snapshot saved" sub="Come back later to complete the full log." onDone={()=>setScreen("calendar")}/>}
-      {screen==="blankDay"&&<BlankDayCard dateKey={selDay} snap={snap} onLogMood={()=>setScreen("calEntry")} onBack={()=>setScreen("calendar")}/>}
-      {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} snap={snap} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onSaveSnap={(s,k)=>{doSaveSnap(k,s);setScreen("confirmSnap");}} onX={()=>setScreen("calendar")}/>}
+      {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;fetch(u,{method:"GET",cache:"no-store"}).catch(()=>{});}} reportEmail={settings.reportEmail||""}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} meds={meds} setMeds={setMeds} onBack={()=>setScreen("calendar")}/>}
     </div></div>
@@ -460,15 +401,15 @@ function Lock({passcode,onOk}){
 }
 
 /* ── CALENDAR ── */
-function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,onHist,onSet,onViewDay}){
+function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,onHist,onSet,onViewDay}){
   const[emptyDay,setEmptyDay]=useState(null);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
   const now=new Date();const td=now.getFullYear()===y&&now.getMonth()===m?now.getDate():-1;
   const cells=[];
   for(let i=0;i<off;i++) cells.push(<div key={`b${i}`} className="cc ce"/>);
   for(let d=1;d<=days;d++){
-    const k=dk(y,m,d);const e=mood[k];const s=srm[k];const hasSnap=(snap[k]||[]).length>0;
-    const isT=d===td;const isSel=selDay===k;const hasData=e||s||hasSnap;
+    const k=dk(y,m,d);const e=mood[k];const s=srm[k];
+    const isT=d===td;const isSel=selDay===k;const hasData=e||s;
     const pm=primaryMood(e);const mc=pm?MM[pm]:null;
     cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${isSel?" csel":""}`}
       onClick={()=>{
@@ -478,11 +419,10 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onS
       {mc&&<div className="cd" style={{background:mc.color,opacity:.18}}/>}
       {s&&<div className="c-srm-tick"/>}
       <span className="cn">{d}</span>
-      {hasSnap&&<div className="c-snap-pip"/>}
     </div>);
   }
   let streak=0;const sd=new Date();
-  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());const mk=mood[k];if((mk&&!mk._weightOnly)||srm[k]||(snap[k]||[]).length)streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
+  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());const mk=mood[k];if((mk&&!mk._weightOnly)||srm[k])streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
   const selMood=selDay?mood[selDay]:null;const selSrm=selDay?srm[selDay]:null;
   const selLabel=selDay?(()=>{const[sy,sm,sd]=selDay.split("-").map(Number);const dow=new Date(sy,sm-1,sd).getDay();return`${MO[sm-1].slice(0,3)} ${sd} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;})():"";
@@ -498,9 +438,8 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onS
 
     {(()=>{
       if(!selDay) return null;
-      const selSnaps=(snap[selDay]||[]);
-      const hasFullLog=selMood||selSrm;
-      if(!hasFullLog&&!selSnaps.length) return null;
+          const hasFullLog=selMood||selSrm;
+      if(!hasFullLog) return null;
       return(
         <div className="day-card" onClick={onViewDay} style={{cursor:"pointer"}}>
           <div className="day-card-head">
@@ -511,29 +450,15 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onS
           {primaryMood(selMood)&&<div className="day-card-mood" style={{color:MM[primaryMood(selMood)].color}}>{moodLabel(selMood)}</div>}
           {selMood?.notes&&<div className="day-card-note">{selMood.notes}</div>}
           {(selMood?.sleep!=null||selMood?.anxiety!=null||selSrm)&&(
-            <div className="day-chips" style={{marginBottom:selSnaps.length?8:0}}>
+            <div className="day-chips">
               {selMood?.sleep!=null&&<span className="day-chip">Sleep {selMood.sleep}h</span>}
               {selMood?.anxiety!=null&&selMood.anxiety>0&&<span className="day-chip">Anxiety {selMood.anxiety}/3</span>}
               {selSrm&&<span className="day-chip">{selSrm.items.filter(i=>!i.didNot).length} activities</span>}
             </div>
           )}
-          {/* Snapshot rows */}
-          {selSnaps.length>0&&(
-            <div className="day-card-snaps">
-              {selSnaps.map((sn,i)=>(
-                <div key={i} className="day-card-snap-row">
-                  <span className="day-card-snap-time">{sn.time}</span>
-                  <span className="day-card-snap-mood" style={{color:MM[sn.moods?.[0]]?.color}}>
-                    {sn.moods?.map(k=>MM[k]?.short||k).join(" / ")||"—"}
-                  </span>
-                  {sn.anxiety!=null&&sn.anxiety>0&&<span className="day-card-snap-sub">anxiety {sn.anxiety}/3</span>}
-                  {sn.irritability!=null&&sn.irritability>0&&<span className="day-card-snap-sub">irritability {sn.irritability}/3</span>}
-                </div>
-              ))}
-            </div>
-          )}
+
           {/* CTA to log mood when no real mood entry yet */}
-          {(!selMood||selMood._weightOnly)&&(selSrm||selSnaps.length>0)&&(
+          {(!selMood||selMood._weightOnly)&&selSrm&&(
             <button className="day-card-log-cta" onClick={e=>{e.stopPropagation();onLogForDay(selDay);}}>
               Log mood for this day →
             </button>
@@ -571,10 +496,9 @@ function Cal({mood,srm,snap,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onS
 }
 
 /* ── DAY VIEW — with edit and delete ── */
-function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onDelSnap,onEditSnap,onLogMood}){
+function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onLogMood}){
   const[confirmDel,setConfirmDel]=useState(null);
-  const[confirmSnapIdx,setConfirmSnapIdx]=useState(null);
-  const e=mood[dateKey];const s=srm[dateKey];const snaps=(snap||{})[dateKey]||[];
+  const e=mood[dateKey];const s=srm[dateKey];
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
   const _dow=new Date(yr,mo-1,dy).getDay();
   const label=`${MO[mo-1]} ${dy}, ${yr} · ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_dow]}`;
@@ -592,33 +516,6 @@ function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEdit
       {e.meds&&<div className="dv-row">Meds: {Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(m=>m.key===k);const d=v.dose||med?.dose;return`${med?.name||k}${d?` (${d})`:""} ×${v.ct}`;}).join(", ")}</div>}
       {e.notes&&<div className="dv-note">{e.notes}</div>}
     </div>)}
-    {snaps.length>0&&(<div className="card">
-      <h3 className="ctit">Snapshots</h3>
-      {snaps.map((sn,i)=>(
-        <div key={i} className="dv-snap-row">
-          <div className="dv-snap-left">
-            <span className="dv-snap-time">{sn.time}</span>
-            <span className="dv-snap-mood" style={{color:MM[sn.moods?.[0]]?.color}}>
-              {sn.moods?.map(k=>MM[k]?.short||k).join(" / ")||"—"}
-            </span>
-            {sn.anxiety!=null&&sn.anxiety>0&&<span className="dv-snap-meta">anxiety {sn.anxiety}/3</span>}
-            {sn.irritability!=null&&sn.irritability>0&&<span className="dv-snap-meta">irritability {sn.irritability}/3</span>}
-            {sn.notes&&<span className="dv-snap-note">{sn.notes}</span>}
-          </div>
-          <div className="dv-snap-acts">
-            <button className="rr-edit" onClick={()=>onEditSnap(i)}>Edit</button>
-            <button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmSnapIdx(i)}>Del</button>
-          </div>
-        </div>
-      ))}
-      {confirmSnapIdx!=null&&(
-        <div className="dv-confirm" style={{marginTop:8}}>
-          <span>Delete snapshot at {snaps[confirmSnapIdx]?.time}?</span>
-          <button className="btn-sm-p" style={{background:"#D4785C"}} onClick={()=>{onDelSnap(confirmSnapIdx);setConfirmSnapIdx(null);}}>Delete</button>
-          <button className="btn-ghost" onClick={()=>setConfirmSnapIdx(null)}>Cancel</button>
-        </div>
-      )}
-    </div>)}
     {s&&(<div className="card">
       <div className="dv-head"><h3 className="ctit">SRM</h3><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("srm")}>Delete all</button></div>
       {confirmDel==="srm"&&<div className="dv-confirm"><span>Delete SRM log?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelSRM}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
@@ -626,13 +523,13 @@ function DayView({dk:dateKey,mood,srm,snap,meds,onBack,onDelMood,onDelSRM,onEdit
         return(<div key={it.id} className="dv-srm-row">
           <div className="dv-srm-info"><span className="dv-srm-icon">{ac.icon}</span><span>{ac.label}</span></div>
           <div className="dv-srm-r">
-            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?fmt12h(normTime(it.time)):"—"}{it.withOthers?" · social":""}</span>
+            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?fmt12h(to24h(normTime(it.time),it.am)):"—"}{it.withOthers?" · social":""}</span>
             <button className="rr-edit" onClick={()=>onEditSRM(it.id)}>Edit</button>
           </div>
         </div>);
       })}
     </div>)}
-    {!e&&!snaps.length&&!s&&<p style={{color:"var(--t3)",fontSize:13,textAlign:"center",marginTop:40}}>No data for this day.</p>}
+    {!e&&!s&&<p style={{color:"var(--t3)",fontSize:13,textAlign:"center",marginTop:40}}>No data for this day.</p>}
   </div>);
 }
 
@@ -651,29 +548,18 @@ const MSTEPS_FULL=[
   {id:"weight",    q:{full:"Weight",                     now:"Weight check-in"},                  s:"Optional — syncs to your mood log"},
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
 ];
-const SNAP_IDS=new Set(["mood","anxiety","irritability","weight","notes"]);
 
-function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMood,onX}){
-  // mode: null=picker, "full"=full day, "now"=snapshot
-  // lockedDate skips mode picker and forces full
-  const[mode,setMode]=useState(editKey||lockedDate?"full":null);
+function MoodEntry({mood,meds,editKey,lockedDate,onSave,onMoveMood,onX}){
+  const mode="full";
   const initialKey=lockedDate||editKey||tdk();
   const[dateKey,setDateKey]=useState(initialKey);
   const targetKey=editKey||lockedDate||dateKey;
 
-  const activeSteps=mode==="now"
-    ? MSTEPS_FULL.filter(s=>SNAP_IDS.has(s.id))
-    : MSTEPS_FULL;
-
-  // Latest snapshot for this date (for reference + preselect)
-  const daySnaps=(snap||{})[targetKey]||[];
-  const latestSnap=daySnaps.length?daySnaps[daySnaps.length-1]:null;
+  const activeSteps=MSTEPS_FULL;
 
   const makeDefault=()=>{
     const m={};meds.forEach(med=>{m[med.key]={ct:med.defaultCt??0};});
-    // preselect mood from snapshot if present
-    const preselect=latestSnap?.moods||[];
-    return{moods:preselect,sleep:null,weight:null,anxiety:latestSnap?.anxiety??null,irritability:latestSnap?.irritability??null,meds:m,notes:""};
+    return{moods:[],sleep:null,weight:null,anxiety:null,irritability:null,meds:m,notes:""};
   };
 
   const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);const[skippedSteps,setSkippedSteps]=useState(new Set());
@@ -692,7 +578,7 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
 
   const tot=activeSteps.length;
   const isR=editIdx===null&&step===tot;
-  const prog=mode===null?0:((step+(isR?1:0))/(tot+1))*100;
+  const prog=((step+(isR?1:0))/(tot+1))*100;
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
   const updMC=(k,v,dose)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v),dose:dose||e.meds[k]?.dose}}}));
   const toggleMood=(key)=>{
@@ -704,20 +590,9 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
 
   const renderStep=(si)=>{
     const st=activeSteps[si];const isEdit=editIdx!==null;
-    const q=typeof st.q==="object"?st.q[mode]||st.q.full:st.q;
-    return(<div className="qa" key={si+"-"+isEdit+"-"+mode}>
+    const q=typeof st.q==="object"?st.q.full:st.q;
+    return(<div className="qa" key={si+"-"+isEdit}>
       <h2 className="qt">{q}</h2><p className="qs">{st.s}</p>
-
-      {/* snapshot reference callout on mood step */}
-      {st.id==="mood"&&latestSnap&&(
-        <div className="snap-ref">
-          <span className="snap-ref-label">Snapshot · {latestSnap.time}</span>
-          <span className="snap-ref-val" style={{color:MM[latestSnap.moods?.[0]]?.color}}>
-            {latestSnap.moods?.map(k=>MM[k]?.short||k).join(" / ")||"—"}
-          </span>
-          {latestSnap.anxiety!=null&&<span className="snap-ref-sub">anxiety {latestSnap.anxiety}/3</span>}
-        </div>
-      )}
 
       {st.id==="mood"&&(<div className="ol">{MOOD_OPTS.map(o=>{
         const sel=(entry.moods||[]).includes(o.key);const mc=MM[o.key];
@@ -745,51 +620,23 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
     </div>);
   };
 
-  // ── Mode picker ──
-  if(mode===null){
-    return(<div className="scr ent">
-      <div className="et"><button className="bi" onClick={onX}>‹</button><span className="es">LOG MOOD</span><button className="btn-ghost" onClick={onX}>Cancel</button></div>
-      <div className="pb"><div className="pf" style={{width:"0%"}}/></div>
-      <div className="qa">
-        <h2 className="qt">What are you logging?</h2>
-        <p className="qs">Choose how you want to check in</p>
-        <div className="mode-opts">
-          <button className="mode-opt" onClick={()=>setMode("full")}>
-            <div className="mode-opt-main">Full day log</div>
-            <div className="mode-opt-sub">Mood, sleep, meds — the whole picture</div>
-          </button>
-          <button className="mode-opt" onClick={()=>{setMode("now");setDateKey(tdk());}}>
-            <div className="mode-opt-main">Right now</div>
-            <div className="mode-opt-sub">Quick snapshot of how you feel this moment</div>
-          </button>
-        </div>
-      </div>
-    </div>);
-  }
-
   return(<div className="scr ent">
     <div className="et">
       <button className="bi" onClick={()=>{
         if(editIdx!==null)setEditIdx(null);
         else if(step>0)setStep(step-1);
-        else if(!editKey&&!lockedDate)setMode(null);
         else onX();
       }}>‹</button>
-      <span className="es">{isR?"Review":editIdx!==null?"Editing":mode==="now"?"Snapshot":`${(editIdx??step)+1} / ${tot}`}</span>
+      <span className="es">{isR?"Review":editIdx!==null?"Editing":`${(editIdx??step)+1} / ${tot}`}</span>
       <button className="btn-ghost" onClick={onX}>Cancel</button>
     </div>
 
     {!editKey&&!lockedDate&&editIdx===null&&(
       <div className="datebar">
-        {mode==="now"
-          ?<span className="datepill on">Today · now</span>
-          :<>
-            <button className={`datepill${dateKey===tdk()?" on":""}`} onClick={()=>setDateKey(tdk())}>Today</button>
-            <button className={`datepill${dateKey===ydk()?" on":""}`} onClick={()=>setDateKey(ydk())}>Yesterday</button>
-            <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))setDateKey(v);}}>Pick</button>
-            <span className="datecap">{new Date(dateKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
-          </>
-        }
+        <button className={`datepill${dateKey===tdk()?" on":""}`} onClick={()=>setDateKey(tdk())}>Today</button>
+        <button className={`datepill${dateKey===ydk()?" on":""}`} onClick={()=>setDateKey(ydk())}>Yesterday</button>
+        <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))setDateKey(v);}}>Pick</button>
+        <span className="datecap">{new Date(dateKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
       </div>
     )}
     {lockedDate&&editIdx===null&&(
@@ -802,117 +649,25 @@ function MoodEntry({mood,meds,snap,editKey,lockedDate,onSave,onSaveSnap,onMoveMo
     {editIdx!==null?renderStep(editIdx):(!isR?renderStep(step):(
       <div className="qa" key="rv">
         <h2 className="qt">Looks good?</h2>
-        <p className="qs">{new Date(targetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}{mode==="now"?" · snapshot":""}</p>
+        <p className="qs">{new Date(targetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
         <div className="rc">
           <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} style={{color:MM[k].color,fontWeight:500}}>{MM[k].label}{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
-          {mode==="full"&&<>
-            <RvRow l="Sleep" v={entry.sleep!=null?`${entry.sleep} hrs`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
+          <RvRow l="Sleep" v={entry.sleep!=null?`${entry.sleep} hrs`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anxiety"))}/>
             <RvRow l="Irritability" v={entry.irritability!=null?`${entry.irritability}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="irritability"))}/>
             <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
-          </>}
-          {mode==="now"&&<>
-            <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anxiety"))}/>
-            <RvRow l="Irritability" v={entry.irritability!=null?`${entry.irritability}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="irritability"))}/>
-          </>}
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
-        {mode==="now"
-          ?<button className="btn-p" onClick={()=>onSaveSnap({...entry,time:nowTime(),moods:entry.moods},targetKey)}>Save Snapshot</button>
-          :<>
-            <button className="btn-p" onClick={()=>{const finalEntry={...entry};if(skippedSteps.has("meds")){const cleared={};Object.keys(finalEntry.meds||{}).forEach(k=>{cleared[k]={ct:0};});finalEntry.meds=cleared;}onSave(finalEntry,targetKey);}}>Confirm</button>
-            {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
-              const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
-              if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==editKey){onMoveMood(v);}
-            }}>Move to another date…</button>}
-          </>
-        }
+        <button className="btn-p" onClick={()=>{const finalEntry={...entry};if(skippedSteps.has("meds")){const cleared={};Object.keys(finalEntry.meds||{}).forEach(k=>{cleared[k]={ct:0};});finalEntry.meds=cleared;}onSave(finalEntry,targetKey);}}>Confirm</button>
+        {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
+          const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
+          if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==editKey){onMoveMood(v);}
+        }}>Move to another date…</button>}
       </div>
     ))}
   </div>);
 }
-
-
-/* ── BLANK DAY CARD — shown when tapping an empty calendar cell ── */
-function BlankDayCard({dateKey,snap,onLogMood,onBack}){
-  const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
-  const _dow=new Date(yr,mo-1,dy).getDay();
-  const label=`${MO[mo-1]} ${dy}, ${yr} · ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_dow]}`;
-  const daySnaps=(snap||{})[dateKey]||[];
-  return(<div className="scr">
-    <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>×</button></div>
-    <div className="blank-day-card">
-      <p className="blank-day-empty">No entries for this day</p>
-      {daySnaps.length>0&&(
-        <div className="blank-day-snaps">
-          <p className="blank-day-snap-label">Snapshots</p>
-          {daySnaps.map((sn,i)=>(
-            <div key={i} className="blank-day-snap-row">
-              <span className="blank-day-snap-time">{sn.time}</span>
-              <span style={{color:MM[sn.moods?.[0]]?.color,fontWeight:500,fontSize:13}}>
-                {sn.moods?.map(k=>MM[k]?.short||k).join(" / ")||"—"}
-              </span>
-              {sn.anxiety!=null&&<span className="blank-day-snap-sub">anxiety {sn.anxiety}/3</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-    <div style={{marginTop:16}}>
-      <button className="btn-p" onClick={onLogMood}>Log mood for {label}</button>
-    </div>
-  </div>);
-}
-
-
-/* ── SNAP EDITOR — edit a single snapshot (mood/anxiety/irritability/notes) ── */
-function SnapEditor({snap:sn,onSave,onX}){
-  const[entry,setEntry]=useState({
-    moods:sn.moods||[],
-    anxiety:sn.anxiety??1,
-    irritability:sn.irritability??1,
-    notes:sn.notes||"",
-    time:sn.time||nowTime()
-  });
-  const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
-  const toggleMood=(key)=>{
-    const cur=entry.moods||[];
-    if(cur.includes(key)) upd("moods",cur.filter(k=>k!==key));
-    else if(cur.length<2) upd("moods",[...cur,key]);
-    else upd("moods",[cur[0],key]);
-  };
-  return(<div className="scr ent">
-    <div className="et">
-      <button className="bi" onClick={onX}>‹</button>
-      <span className="es">Edit Snapshot · {sn.time}</span>
-      <button className="btn-ghost" onClick={onX}>Cancel</button>
-    </div>
-    <div className="pb"><div className="pf" style={{width:"100%"}}/></div>
-    <div className="qa">
-      <h2 className="qt">How were you feeling?</h2>
-      <p className="qs">Snapshot from {sn.time}</p>
-      <div className="ol">{MOOD_OPTS.map(o=>{
-        const sel=(entry.moods||[]).includes(o.key);const mc=MM[o.key];
-        return(<button key={o.key} className={`oc${sel?" os":""}`} style={sel?{borderColor:mc.color,background:mc.bg}:{}} onClick={()=>toggleMood(o.key)}>
-          <div className="ocl"><span className="oce">{o.icon}</span><div><div className="ocn">{o.label}</div><div className="ocd">{o.sub}</div></div></div>
-          <div className={`or${sel?" orn":""}`} style={sel?{borderColor:mc.color,background:mc.color}:{}}>{sel&&"✓"}</div>
-        </button>);
-      })}</div>
-      <h2 className="qt" style={{marginTop:24}}>Anxiety</h2>
-      <div className="sg" style={{marginBottom:24}}>{SEV.map(s=>{const sel=entry.anxiety===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd("anxiety",s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div>
-      <h2 className="qt">Irritability</h2>
-      <div className="sg" style={{marginBottom:24}}>{SEV.map(s=>{const sel=entry.irritability===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd("irritability",s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div>
-      <h2 className="qt">Notes</h2>
-      <textarea className="ni" value={entry.notes} onChange={e=>upd("notes",e.target.value)} placeholder="Optional" rows={3} style={{marginBottom:16}}/>
-      <button className={`btn-p${!(entry.moods||[]).length?" bd":""}`} disabled={!(entry.moods||[]).length}
-        onClick={()=>onSave({...entry,time:sn.time})}>
-        Save Changes
-      </button>
-    </div>
-  </div>);
-}
-
 function RvRow({l,v,onEdit}){return(<div className="rr"><div className="rr-left"><span className="rl">{l}</span><span className="rv">{v}</span></div>{onEdit&&<button className="rr-edit" onClick={onEdit}>Edit</button>}</div>);}
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1043,7 +798,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     const count=socialActs.length;
     return{name:`${m}/${d}`,score,count,total:done.length,f:`${MO[m-1].slice(0,3)} ${d}`};
   });
-  const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const t=normTime(item.time);const[h,mi]=t.split(":").map(Number);out[item.id]=(h*60+mi)/60;}});return out;});
+  const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const t=to24h(normTime(item.time),item.am);const[h,mi]=t.split(":").map(Number);out[item.id]=(h*60+mi)/60;}});return out;});
 
   const MTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f||""}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);}catch{return null;}};
   const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}{d.irritability!=null&&<div>Irritability: {d.irritability}/3</div>}</div>);}catch{return null;}};
@@ -1553,50 +1308,9 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 /* ── SRM bottom-edge tick on calendar cells ── */
 .c-srm-tick{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:12px;height:2px;border-radius:1px;background:#7E9AB3;opacity:.7;pointer-events:none}
 
-/* ── DayView snapshot rows ── */
-.dv-snap-row{display:flex;align-items:flex-start;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bd);gap:8px}
-.dv-snap-row:last-child{border-bottom:none}
-.dv-snap-left{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1}
-.dv-snap-time{font-size:11px;color:var(--t3);font-weight:300;min-width:36px;flex-shrink:0}
-.dv-snap-mood{font-size:13px;font-weight:500}
-.dv-snap-meta{font-size:11px;color:var(--t3);font-weight:300}
-.dv-snap-note{font-size:12px;color:var(--t2);font-weight:300;font-style:italic;width:100%;margin-top:2px}
-.dv-snap-acts{display:flex;gap:4px;align-items:center;flex-shrink:0}
 
-/* ── day-card snapshot rows ── */
-.day-card-snaps{border-top:1px solid var(--bd);padding-top:8px;margin-top:4px;display:flex;flex-direction:column;gap:4px}
-.day-card-snap-row{display:flex;align-items:center;gap:8px}
-.day-card-snap-time{font-size:11px;color:var(--t3);font-weight:300;min-width:36px;flex-shrink:0}
-.day-card-snap-mood{font-size:12px;font-weight:500}
-.day-card-snap-sub{font-size:11px;color:var(--t3);font-weight:300}
 .day-card-log-cta{margin-top:10px;width:100%;padding:10px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:center;transition:all .15s}
 .day-card-log-cta:hover{border-color:var(--t3);color:var(--tx)}
 
-/* ── snapshot pip on calendar cell ── */
-.c-snap-pip{position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;border:1.5px solid var(--t3);background:transparent;pointer-events:none}
-
-/* ── mode picker ── */
-.mode-opts{display:flex;flex-direction:column;gap:10px;margin-bottom:20px}
-.mode-opt{display:flex;flex-direction:column;align-items:flex-start;padding:18px 16px;border-radius:var(--r);border:1.5px solid var(--bd);background:transparent;cursor:pointer;transition:all .15s;text-align:left;font-family:'DM Sans',sans-serif}
-.mode-opt:hover{border-color:var(--t3);background:rgba(0,0,0,.01)}
-.mode-opt:active{transform:scale(.99)}
-.mode-opt-main{font-size:16px;font-weight:500;color:var(--tx);margin-bottom:3px}
-.mode-opt-sub{font-size:12px;color:var(--t3);font-weight:300;line-height:1.4}
-
-/* ── snapshot reference callout in mood step ── */
-.snap-ref{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--warm);border-radius:var(--rs);margin-bottom:14px;flex-wrap:wrap}
-.snap-ref-label{font-size:11px;color:var(--t3);font-weight:400;flex-shrink:0}
-.snap-ref-val{font-size:13px;font-weight:500}
-.snap-ref-sub{font-size:11px;color:var(--t3);font-weight:300}
-
-/* ── blank day card ── */
-.blank-day-card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sh)}
-.blank-day-empty{font-size:13px;color:var(--t3);font-weight:300;margin-bottom:12px}
-.blank-day-snaps{border-top:1px solid var(--bd);padding-top:12px}
-.blank-day-snap-label{font-size:10px;font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
-.blank-day-snap-row{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--bd)}
-.blank-day-snap-row:last-child{border-bottom:none}
-.blank-day-snap-time{font-size:12px;color:var(--t3);font-weight:300;min-width:36px}
-.blank-day-snap-sub{font-size:11px;color:var(--t3);margin-left:auto}
 
 `;
