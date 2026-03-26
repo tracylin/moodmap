@@ -180,9 +180,9 @@ function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds}
 function buildTimeRange(sH,sM,eH,eM){const out=[];let h=sH,m=sM;for(let i=0;i<100;i++){out.push({h,m});m+=30;if(m>=60){m=0;h=(h+1)%24;}if(out.length>1&&h===((eH*60+eM+30)/60|0)%24&&m===((eM+30)%60))break;if(out.length>48)break;}return out;}
 const SLP_ALL=buildTimeRange(20,0,6,0);   // sleep: 8pm–6am
 const WK_ALL=buildTimeRange(4,0,16,0);    // wake: 4am–4pm
-const SLP_VIS=7;                          // visible chips at a time
+const SLP_VIS=8;                          // visible chips at a time
 const SLP_DEF_OFF=SLP_ALL.findIndex(c=>c.h===23&&c.m===0);
-const WK_DEF_OFF=WK_ALL.findIndex(c=>c.h===9&&c.m===0);
+const WK_DEF_OFF=WK_ALL.findIndex(c=>c.h===10&&c.m===0);
 function slpFmt12(h,m){const ap=h<12?"am":"pm";const h12=h%12||12;return`${h12}:${String(m).padStart(2,"0")} ${ap}`;}
 function slpChipLabel(h,m){const ap=h<12?" am":" pm";const h12=h%12||12;return m===0?`${h12}${ap}`:`${h12}:${String(m).padStart(2,"0")}${ap}`;}
 function slpDur(sH,sM,wH,wM){let d=(wH*60+wM)-(sH*60+sM);if(d<=0)d+=1440;return Math.round(d/30)*0.5;}
@@ -1382,11 +1382,11 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .slp-label{font-size:13px;color:var(--t2);font-weight:400;margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline}
 .slp-val{font-family:'Source Serif 4',serif;font-size:15px;font-weight:400;color:var(--tx)}
 .slp-val-calc{color:var(--t3);font-family:'Source Serif 4',serif;font-size:14px;font-weight:300}
-.slp-chips{display:flex;flex-wrap:wrap;gap:5px}
-.slp-chip{padding:7px 10px;border-radius:8px;border:1.5px solid var(--bd);background:transparent;font:400 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;white-space:nowrap}
+.slp-chips{display:flex;flex-wrap:wrap;gap:6px 7px}
+.slp-chip{padding:10px 12px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:400 13px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:center;transition:all .15s;white-space:nowrap}
 .slp-chip:active{transform:scale(.95)}
 .slp-chip-on{border-color:var(--tx);background:var(--warm);color:var(--tx);font-weight:500}
-.slp-chip-arr{color:var(--t3);font-size:14px}
+.slp-chip-arr{padding:10px 12px;color:var(--t3);font-size:15px}
 .slp-chip-arr:hover{color:var(--t2);border-color:var(--t3)}
 .slp-chip-arr:active{transform:scale(.92);background:var(--warm)}
 .slp-chip-offsel{border-color:var(--tx);background:var(--warm);color:var(--tx);font-weight:500;font-size:11px}
