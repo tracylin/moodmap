@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart, Area, CartesianGrid, ReferenceLine, BarChart, Bar } from "recharts";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -232,6 +232,8 @@ export default function App(){
   const[srm,setSrm]=useState(loadSRM);
   const[settings,setSS]=useState(loadSet);
   const[meds,setMedsS]=useState(()=>loadJ("mt_meds",DEF_MEDS));
+  const medsRef=useRef(meds);
+  useEffect(()=>{medsRef.current=meds;},[meds]);
   const[vm,setVm]=useState(()=>{const d=new Date();return[d.getFullYear(),d.getMonth()];});
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
@@ -303,26 +305,25 @@ export default function App(){
     if(resp.settings && typeof resp.settings==='object'){
       const rs=resp.settings;
       const cur=loadSet();
-      // Only overwrite fields that are present in remote and non-empty
       const merged={...cur};
       if(rs.name) merged.name=rs.name;
       if(rs.passcode) merged.passcode=rs.passcode;
       if(Array.isArray(rs.reminders)) merged.reminders=rs.reminders;
       setSS(merged); saveSet(merged);
-      if(resp.meds && Array.isArray(resp.meds) && resp.meds.length){
-        setMedsS(resp.meds); localStorage.setItem("mt_meds",JSON.stringify(resp.meds));
-      }
+    }
+    // Merge meds independently — don't gate on settings being present
+    if(resp.meds && Array.isArray(resp.meds) && resp.meds.length){
+      setMedsS(resp.meds); localStorage.setItem("mt_meds",JSON.stringify(resp.meds));
     }
     if(!hasPushedSeed) localStorage.setItem("mt_seed_pushed","1");
-    // Always push current settings on first load to initialise remote
     if(!hasPushedSeed) pushSettings(loadSet(), loadJ("mt_meds", DEF_MEDS));
   })();},[]);
   // No periodic polling — sync happens on app open only.
   // Each device pushes entries on save, pulls on load.
 
 
-  const setS=s=>{const n={...settings,...s};setSS(n);saveSet(n);pushSettings(n,meds);};
-  const setMeds=m=>{setMedsS(m);localStorage.setItem("mt_meds",JSON.stringify(m));pushSettings(settings,m);};
+  const setS=s=>{const n={...settings,...s};setSS(n);saveSet(n);pushSettings(n,medsRef.current);};
+  const setMeds=m=>{setMedsS(m);medsRef.current=m;localStorage.setItem("mt_meds",JSON.stringify(m));pushSettings(settings,m);};
   const name=settings.name||"";
 
   // Save mood: update local state + push ONLY this one entry to sheets
