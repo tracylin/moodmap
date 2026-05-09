@@ -712,8 +712,21 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
       />)}
       {st.id==="weight"&&(<div className="wgt"><input className="wgi" type="number" inputMode="decimal" step="0.01" value={entry.weight??""} onChange={e=>upd("weight",e.target.value===""?null:Math.round(parseFloat(e.target.value)*100)/100)} placeholder="e.g. 68.45"/><div className="wgu">kg</div></div>)}
       {st.id==="anx_irr"&&(<div className="ai-combo">
-        <div className="ai-section"><div className="ai-label">Anxiety</div><div className="sg">{SEV.map(s=>{const sel=entry.anxiety===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd("anxiety",s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div></div>
-        <div className="ai-section"><div className="ai-label">Irritability</div><div className="sg">{SEV.map(s=>{const sel=entry.irritability===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd("irritability",s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div></div>
+        {[{field:"anxiety",label:"Anxiety"},{field:"irritability",label:"Irritability"}].map(({field,label})=>{
+          const val=entry[field];const fillPct=val!=null?(val/3)*100:0;
+          return(<div key={field} className="ai-row">
+            <div className="ai-head"><span className="ai-label">{label}</span>{val!=null&&<span className="ai-val">{SEV[val].l}</span>}</div>
+            <div className="ai-track-wrap">
+              <div className="ai-track-bg"/>
+              <div className="ai-track-fill" style={{width:fillPct+"%"}}/>
+              <div className="ai-dots">{SEV.map(s=>{
+                const cls=val!=null&&s.v<val?"ai-past":val===s.v?"ai-active":"";
+                return(<button key={s.v} className={`ai-dot-btn ${cls}`} onClick={()=>upd(field,s.v)}><div className="ai-ring"/></button>);
+              })}</div>
+            </div>
+            <div className="ai-labels">{SEV.map(s=>(<span key={s.v} className={`ai-lbl${val===s.v?" ai-lbl-on":""}`}>{s.l}</span>))}</div>
+          </div>);
+        })}
       </div>)}
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
         return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
@@ -1408,9 +1421,23 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .slp-edge-ok:active{transform:scale(.95)}
 .slp-edge-x{padding:8px 10px;border:none;background:none;color:var(--t3);font:400 13px 'DM Sans',sans-serif;cursor:pointer}
 
-.ai-combo{display:flex;flex-direction:column;gap:24px}
-.ai-section{}
-.ai-label{font:500 14px 'DM Sans',sans-serif;color:var(--tx);margin-bottom:10px}
+.ai-combo{display:flex;flex-direction:column;gap:36px}
+.ai-row{}
+.ai-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px}
+.ai-label{font:500 15px 'DM Sans',sans-serif;color:var(--tx)}
+.ai-val{font:400 13px 'DM Sans',sans-serif;color:var(--t3)}
+.ai-track-wrap{position:relative;padding:0 14px;height:44px;display:flex;align-items:center}
+.ai-track-bg{position:absolute;left:14px;right:14px;height:3px;background:var(--bd);border-radius:2px}
+.ai-track-fill{position:absolute;left:14px;height:3px;background:var(--tx);border-radius:2px;transition:width .35s var(--ease)}
+.ai-dots{display:flex;justify-content:space-between;width:100%;position:relative;z-index:1}
+.ai-dot-btn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:0}
+.ai-dot-btn:active{transform:scale(.92)}
+.ai-ring{width:18px;height:18px;border-radius:50%;border:2px solid var(--bd);background:var(--bg);transition:all .3s var(--ease)}
+.ai-dot-btn.ai-active .ai-ring{width:22px;height:22px;border-color:var(--tx);background:var(--tx);box-shadow:0 0 0 4px rgba(44,40,37,.08)}
+.ai-dot-btn.ai-past .ai-ring{width:10px;height:10px;border-color:var(--tx);background:var(--tx)}
+.ai-labels{display:flex;justify-content:space-between;padding:0 6px;margin-top:4px}
+.ai-lbl{font:400 11px 'DM Sans',sans-serif;color:var(--t3);width:44px;text-align:center;transition:color .25s}
+.ai-lbl-on{color:var(--tx);font-weight:500}
 .sg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:0}
 .sc{padding:20px 8px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;cursor:pointer;text-align:center;transition:all .15s;font-family:'DM Sans',sans-serif}
 .sc:hover{border-color:var(--t3)}.ss{border-color:var(--tx);background:var(--warm)}
