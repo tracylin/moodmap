@@ -564,8 +564,7 @@ const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mi
 const MSTEPS_FULL=[
   {id:"mood",      q:{full:"How was your mood?",         now:"How are you feeling right now?"},  s:"Choose up to 2 (if it felt mixed)"},
   {id:"sleep",     q:{full:"Sleep",  now:null},                               s:"Log bedtime, wake time, or just hours"},
-  {id:"anxiety",   q:{full:"Anxiety level?",             now:"Anxiety right now?"},               s:"0 none · 1 mild · 2 moderate · 3 severe"},
-  {id:"irritability",q:{full:"Irritability level?",     now:"Irritability right now?"},           s:"0 none · 1 mild · 2 moderate · 3 severe"},
+  {id:"anx_irr",   q:{full:"Anxiety & Irritability",    now:"Anxiety & Irritability right now?"},s:"0 none · 1 mild · 2 moderate · 3 severe"},
   {id:"meds",      q:{full:"Medications last night",     now:null},                               s:"Pills taken yesterday evening / this morning"},
   {id:"weight",    q:{full:"Weight",                     now:"Weight check-in"},                  s:"Optional — syncs to your mood log"},
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
@@ -712,7 +711,10 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         onConfirmPicker={slpConfirmPicker} onCancelPicker={slpCancelPicker}
       />)}
       {st.id==="weight"&&(<div className="wgt"><input className="wgi" type="number" inputMode="decimal" step="0.01" value={entry.weight??""} onChange={e=>upd("weight",e.target.value===""?null:Math.round(parseFloat(e.target.value)*100)/100)} placeholder="e.g. 68.45"/><div className="wgu">kg</div></div>)}
-      {(st.id==="anxiety"||st.id==="irritability")&&(<div className="sg">{SEV.map(s=>{const sel=entry[st.id]===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd(st.id,s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div>)}
+      {st.id==="anx_irr"&&(<div className="ai-combo">
+        <div className="ai-section"><div className="ai-label">Anxiety</div><div className="sg">{SEV.map(s=>{const sel=entry.anxiety===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd("anxiety",s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div></div>
+        <div className="ai-section"><div className="ai-label">Irritability</div><div className="sg">{SEV.map(s=>{const sel=entry.irritability===s.v;return(<button key={s.v} className={`sc${sel?" ss":""}`} onClick={()=>upd("irritability",s.v)}><span className="sn">{s.v}</span><span className="sl">{s.l}</span></button>);})}</div></div>
+      </div>)}
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
         return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
       {st.id==="notes"&&(<textarea className="ni" value={entry.notes||""} onChange={e=>upd("notes",e.target.value)} placeholder="Had a good walk today..." rows={4}/>)}
@@ -723,7 +725,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           disabled={si===0&&!(entry.moods||[]).length}>
           {isEdit?"Done":si===tot-1?"Review":"Next"}
         </button>
-        {si>0&&!isEdit&&<button className="btn-skip" onClick={()=>{const sid=activeSteps[si]?.id;setSkippedSteps(prev=>{const n=new Set(prev);n.add(sid);return n;});setStep(Math.min(si+1,tot));}}>skip</button>}
+        {!isEdit&&<button className="btn-skip" onClick={()=>{const sid=activeSteps[si]?.id;setSkippedSteps(prev=>{const n=new Set(prev);n.add(sid);return n;});setStep(Math.min(si+1,tot));}}>skip</button>}
       </div>
     </div>);
   };
@@ -762,8 +764,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} style={{color:MM[k].color,fontWeight:500}}>{MM[k].label}{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
-            <RvRow l="Anxiety" v={entry.anxiety!=null?`${entry.anxiety}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anxiety"))}/>
-            <RvRow l="Irritability" v={entry.irritability!=null?`${entry.irritability}/3`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="irritability"))}/>
+            <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
             <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
@@ -1407,7 +1408,10 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .slp-edge-ok:active{transform:scale(.95)}
 .slp-edge-x{padding:8px 10px;border:none;background:none;color:var(--t3);font:400 13px 'DM Sans',sans-serif;cursor:pointer}
 
-.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px}
+.ai-combo{display:flex;flex-direction:column;gap:24px}
+.ai-section{}
+.ai-label{font:500 14px 'DM Sans',sans-serif;color:var(--tx);margin-bottom:10px}
+.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:0}
 .sc{padding:20px 8px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;cursor:pointer;text-align:center;transition:all .15s;font-family:'DM Sans',sans-serif}
 .sc:hover{border-color:var(--t3)}.ss{border-color:var(--tx);background:var(--warm)}
 .sn{display:block;font-family:'Source Serif 4',serif;font-size:24px;font-weight:300;margin-bottom:4px}.sl{font-size:11px;color:var(--t2)}
