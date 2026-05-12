@@ -195,6 +195,33 @@ function loadSRM(){try{const s=localStorage.getItem("mt_srm");return s?{...SEED_
 function saveSRM(d){const u={};for(const k in d)if(!SEED_SRM[k])u[k]=d[k];localStorage.setItem("mt_srm",JSON.stringify(u));}
 function loadSet(){const s=loadJ("mt_set",{});if(!s.passcode)s.passcode="1234";if(!s.name)s.name="Wei";return s;}
 function saveSet(s){localStorage.setItem("mt_set",JSON.stringify(s));}
+// Log-activity tracking: set of yyyy-MM-dd dates on which the user actually
+// saved an entry. Used for streak counting so back-dated entries (e.g.,
+// logging last night's sleep on today's date) don't inflate the streak.
+function loadLogActivity(){
+  try{const v=localStorage.getItem("mt_log_activity");if(v!==null)return new Set(JSON.parse(v)||[]);}catch{}
+  // First-time backfill: attribute each existing entry to its own date.
+  // Imperfect for entries that were back-dated, but preserves the user's
+  // existing streak when upgrading; recordLogToday() handles all new saves.
+  try{
+    const set=new Set();
+    const mood=loadMood();
+    for(const k in mood){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
+      const m=mood[k];
+      if(m && (m.mood||m.mood2||m.sleep!=null||m.anxiety!=null||m.irritability!=null||(m.notes&&m.notes.trim()))) set.add(k);
+    }
+    const srm=loadSRM();
+    for(const k in srm){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
+      if(srm[k]?.items?.length) set.add(k);
+    }
+    saveLogActivity(set);
+    return set;
+  }catch{return new Set();}
+}
+function saveLogActivity(set){try{localStorage.setItem("mt_log_activity",JSON.stringify([...set]));}catch{}}
+function recordLogToday(){const set=loadLogActivity();set.add(tdk());saveLogActivity(set);}
 function emptyItem(id){return{id,time:"",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0};}
 function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds});}
 
@@ -360,6 +387,7 @@ export default function App(){
   const doSaveMood=(newMood, changedDate)=>{
     setMood(newMood); saveMood(newMood);
     if(changedDate && newMood[changedDate]){
+      recordLogToday();
       pushMood(changedDate, newMood[changedDate], meds);
     }
   };
@@ -382,6 +410,7 @@ export default function App(){
   const doSaveSRM=(newSrm, changedDate)=>{
     setSrm(newSrm); saveSRM(newSrm);
     if(changedDate && newSrm[changedDate]){
+      recordLogToday();
       pushSrm(changedDate, newSrm[changedDate].items || []);
     }
   };
@@ -473,8 +502,14 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
       <span className="cn">{d}</span>
     </div>);
   }
+  // Streak = consecutive days the user actually saved an entry (any kind),
+  // walking back from today. Today is allowed to be empty (so the streak
+  // through yesterday still shows before today's save). Back-dated entries
+  // (e.g. logging last night's sleep today) don't inflate it — those record
+  // today's date in the activity set, not the entry's date.
+  const logActivity=loadLogActivity();
   let streak=0;const sd=new Date();
-  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());const mk=mood[k];if((mk&&!mk._weightOnly)||srm[k])streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
+  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
   const selMood=selDay?mood[selDay]:null;const selSrm=selDay?srm[selDay]:null;
   const selLabel=selDay?(()=>{const[sy,sm,sd]=selDay.split("-").map(Number);const dow=new Date(sy,sm-1,sd).getDay();return`${MO[sm-1].slice(0,3)} ${sd} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;})():"";
