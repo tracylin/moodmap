@@ -6,39 +6,61 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
    ═══════════════════════════════════════════════════════════════════════════ */
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"; // paste your deployed Apps Script URL here
 
-/* ── SYNC LAYER — sequential queue, one POST at a time ── */
+/* ── SYNC LAYER — sequential queue, persisted across reloads ── */
 
-const syncQueue=[];
+const SYNC_QUEUE_KEY="mt_sync_queue";
+function loadSyncQueue(){try{const v=localStorage.getItem(SYNC_QUEUE_KEY);return v?JSON.parse(v)||[]:[];}catch{return [];}}
+function saveSyncQueue(q){try{localStorage.setItem(SYNC_QUEUE_KEY,JSON.stringify(q));}catch{}}
+
+const syncQueue=loadSyncQueue();
 let syncRunning=false;
-let syncStatus={state:"idle",pending:0}; // "idle"|"syncing"|"done"|"error"
+let syncStatus={state:syncQueue.length?"syncing":"idle",pending:syncQueue.length}; // "idle"|"syncing"|"done"|"error"
 const syncListeners=new Set();
 function notifySync(){syncListeners.forEach(fn=>fn({...syncStatus}));}
 
 async function processQueue(){
   if(syncRunning||!syncQueue.length)return;
   syncRunning=true;
+  let failures=0;
   while(syncQueue.length){
     syncStatus={state:"syncing",pending:syncQueue.length};notifySync();
-    const job=syncQueue.shift();
+    const job=syncQueue[0]; // peek; only shift on success
     try{
       await fetch(SHEETS_URL,{
         method:"POST",mode:"no-cors",
         headers:{"Content-Type":"text/plain;charset=UTF-8"},
         body:JSON.stringify(job),
       });
-      // Small delay between requests to avoid overwhelming Apps Script
+      syncQueue.shift();
+      saveSyncQueue(syncQueue);
+      failures=0;
       await new Promise(r=>setTimeout(r,300));
-    }catch(e){console.warn("Sync:",e);}
+    }catch(e){
+      console.warn("Sync:",e);
+      failures++;
+      if(failures>=3) break; // give up this run; retry on next enqueue or reload
+      await new Promise(r=>setTimeout(r,1000*failures));
+    }
   }
   syncRunning=false;
-  syncStatus={state:"done",pending:0};notifySync();
-  setTimeout(()=>{if(syncStatus.state==="done"){syncStatus={state:"idle",pending:0};notifySync();}},2000);
+  if(syncQueue.length){
+    syncStatus={state:"error",pending:syncQueue.length};notifySync();
+  } else {
+    syncStatus={state:"done",pending:0};notifySync();
+    setTimeout(()=>{if(syncStatus.state==="done"){syncStatus={state:"idle",pending:0};notifySync();}},2000);
+  }
 }
 
 function enqueueSync(payload){
   if(!SHEETS_URL)return;
   syncQueue.push(payload);
+  saveSyncQueue(syncQueue);
   processQueue();
+}
+
+// Retry any persisted jobs left over from a previous session.
+if(typeof window!=="undefined" && SHEETS_URL && syncQueue.length){
+  setTimeout(()=>processQueue(),100);
 }
 
 function pushMood(date, entry, medsArr){
@@ -262,12 +284,11 @@ export default function App(){
         changed=true;
       }
       if(changed){setMood({...local});saveMood(local);}
-      // Push local-only entries ONCE (seed data)
-      if(!hasPushedSeed){
-        for(const dt in local){
-          if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null)){
-            pushMood(dt, local[dt], meds);
-          }
+      // Push any local entry that isn't in remote — runs every open so a
+      // failed/dropped sync (mobile network blip etc.) gets recovered next time.
+      for(const dt in local){
+        if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null)){
+          pushMood(dt, local[dt], meds);
         }
       }
     } else if(!hasPushedSeed) {
@@ -290,10 +311,8 @@ export default function App(){
         local[dt]=src; changed=true;
       }
       if(changed){setSrm({...local});saveSRM(local);}
-      if(!hasPushedSeed){
-        for(const dt in local){
-          if(!remoteDates.has(dt)&&local[dt]?.items?.length) pushSrm(dt, local[dt].items);
-        }
+      for(const dt in local){
+        if(!remoteDates.has(dt)&&local[dt]?.items?.length) pushSrm(dt, local[dt].items);
       }
     } else if(!hasPushedSeed) {
       const local=loadSRM();
