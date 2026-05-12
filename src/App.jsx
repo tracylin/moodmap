@@ -1018,7 +1018,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
   })();
 
   const notes=sorted.filter(e=>e.notes?.trim()).reverse();
-  const srmSorted=Object.entries(srm).sort(([a],[b])=>a.localeCompare(b));
+  const srmSorted=Object.entries(srm).filter(([k])=>/^\d{4}-\d{2}-\d{2}$/.test(k)).sort(([a],[b])=>a.localeCompare(b));
   const srmSocial=srmSorted.map(([k,v])=>{
     const[,m,d]=k.split("-").map(Number);
     const done=(v.items||[]).filter(i=>!i.didNot);
