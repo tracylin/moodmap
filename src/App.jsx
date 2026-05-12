@@ -284,11 +284,16 @@ export default function App(){
         changed=true;
       }
       if(changed){setMood({...local});saveMood(local);}
-      // Push any local entry that isn't in remote — runs every open so a
-      // failed/dropped sync (mobile network blip etc.) gets recovered next time.
+      // Recover entries that exist locally but aren't on the server.
+      // Restrict to the last RECENT_DAYS — older holes are rare and
+      // "Force re-sync all data" in Settings handles them on demand.
+      const RECENT_DAYS=30;
+      const cutoffMs=Date.now()-RECENT_DAYS*86400000;
       for(const dt in local){
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(dt)) continue;
         if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null)){
-          pushMood(dt, local[dt], meds);
+          const entryMs=new Date(dt+"T12:00:00").getTime();
+          if(entryMs>=cutoffMs) pushMood(dt, local[dt], meds);
         }
       }
     } else if(!hasPushedSeed) {
@@ -311,8 +316,14 @@ export default function App(){
         local[dt]=src; changed=true;
       }
       if(changed){setSrm({...local});saveSRM(local);}
+      const RECENT_DAYS_SRM=30;
+      const cutoffSrmMs=Date.now()-RECENT_DAYS_SRM*86400000;
       for(const dt in local){
-        if(!remoteDates.has(dt)&&local[dt]?.items?.length) pushSrm(dt, local[dt].items);
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(dt)) continue;
+        if(!remoteDates.has(dt) && local[dt]?.items?.length){
+          const entryMs=new Date(dt+"T12:00:00").getTime();
+          if(entryMs>=cutoffSrmMs) pushSrm(dt, local[dt].items);
+        }
       }
     } else if(!hasPushedSeed) {
       const local=loadSRM();
