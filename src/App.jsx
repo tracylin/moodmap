@@ -1446,16 +1446,18 @@ function RemindersCard({settings, setS}){
     setS({smartLog:next});
   };
 
-  // Pretty stats labels
-  const usualHour=null; // intentionally omitted — methodology isn't time-of-day driven
-  const totalLogs=stats?.totalLogs ?? 0;
-  const byActor=stats?.byActor || {};
-  const weiCount=byActor["Wei"] || 0;
-  const otherCount=Object.entries(byActor).filter(([k])=>k!=="Wei").reduce((s,[,v])=>s+v,0);
+  // Stats — keep it gentle. We only show "this week" (last 7 Wei-days) +
+  // last-log timestamp. Lifetime totals are useful for debug but not for
+  // the encouragement framing this card is going for.
   const lastLog=stats?.lastLog || null;
   const lastLogActor=stats?.lastLogActor || "";
-  const weiToday=stats?.weiToday || "";
-  const weiState=stats?.weiDayState || "";
+  const weekDays=stats?.thisWeek?.distinctDays ?? 0;
+  const weekByActor=stats?.thisWeek?.byActor || {};
+  const weekWei=weekByActor["Wei"] || 0;
+  const weekOthers=Object.entries(weekByActor).filter(([k])=>k!=="Wei");
+  const weekSplitLine=(weekOthers.length>0 && weekDays>0)
+    ? `Wei ${weekWei}${weekOthers.map(([k,v])=>` · ${k} ${v}`).join("")}`
+    : null;
 
   return(<div className="card">
     <h3 className="ctit">Reminders</h3>
@@ -1482,20 +1484,18 @@ function RemindersCard({settings, setS}){
       <div className="rem-smart-row">
         <div className="rem-smart-text">
           <div className="rem-smart-title">Smart log reminders</div>
-          <div className="rem-smart-sub">MooTracker nudges you when today's still open. Two gentle check-ins per day, fewer if you're in a quiet stretch.</div>
+          <div className="rem-smart-sub">Reminds only when today is unlogged. Backs off during quiet weeks. No streaks, no pressure.</div>
         </div>
         <button className={`rem-toggle${smartEnabled?" rem-toggle-on":""}`} role="switch" aria-checked={smartEnabled} aria-label={`Smart log reminders ${smartEnabled?"on":"off"}`} onClick={toggleSmart}>
           <div className="rem-toggle-knob"/>
         </button>
       </div>
       {smartEnabled&&pushState==="active"&&(<div className="rem-stats">
-        {lastLog
-          ? <div className="rem-stats-row">Last log: <span className="rem-stats-v">{lastLog}{lastLogActor?` · ${lastLogActor}`:""}</span></div>
-          : <div className="rem-stats-row">No logs yet.</div>}
-        {totalLogs>0&&(otherCount>0
-          ? <div className="rem-stats-row">{totalLogs} logs total · Wei {weiCount} · others {otherCount}</div>
-          : <div className="rem-stats-row">{totalLogs} logs total</div>)}
-        {weiState&&<div className="rem-stats-row rem-stats-faint">Today ({weiToday}): {weiState}</div>}
+        <div className="rem-stats-row">
+          <span className="rem-stats-week">{weekDays>0?`${weekDays} day${weekDays===1?"":"s"} logged this week`:"No logs yet this week"}</span>
+        </div>
+        {weekSplitLine&&<div className="rem-stats-row rem-stats-faint">{weekSplitLine}</div>}
+        {lastLog&&<div className="rem-stats-row rem-stats-faint">Last: {lastLog}{lastLogActor?` · ${lastLogActor}`:""}</div>}
       </div>)}
     </div>)}
 
@@ -1550,8 +1550,6 @@ function ActorCard(){
 }
 
 function Settings({settings,setS,meds,setMeds,onBack}){
-  const[nameVal,setNameVal]=useState(settings.name||"");
-  const[nameSaved,setNameSaved]=useState(false);
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
@@ -1570,7 +1568,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
     setReportSending(false);setTimeout(()=>setReportMsg(""),5000);
   };
 
-  const saveName=()=>{setS({name:nameVal.trim()});setNameSaved(true);setTimeout(()=>setNameSaved(false),2500);};
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
   const pcDel=()=>{if(pcStep==="new")setPc1(pc1.slice(0,-1));else setPc2(pc2.slice(0,-1));};
@@ -1582,11 +1579,9 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   return(<div className="scr">
     <div className="hh"><h2 className="ht">Settings</h2><button className="bi" onClick={onBack}>×</button></div>
 
-    <div className="card">
-      <h3 className="ctit">Your Name</h3>
-      <div className="set-nr"><input className="set-in" inputMode="text" style={{fontSize:16}} value={nameVal} onChange={e=>setNameVal(e.target.value)} placeholder="Nickname or first name"/><button className="btn-sm-p" onClick={saveName}>Save</button></div>
-      {nameSaved?<p className="set-saved">Saved — hello, {nameVal.trim()}!</p>:<p className="set-h">Personalizes greetings and insights</p>}
-    </div>
+    <ActorCard/>
+
+    <RemindersCard settings={settings} setS={setS}/>
 
     <div className="card">
       <h3 className="ctit">Passcode Lock</h3>
@@ -1599,10 +1594,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}} disabled={false}>{n==="del"?"‹":""+n}</button>))}</div>
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
-
-    <RemindersCard settings={settings} setS={setS}/>
-
-    <ActorCard/>
 
     <div className="card">
       <h3 className="ctit">Medications</h3>
@@ -1990,6 +1981,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .rem-stats-row{font-size:12px;color:var(--t2)}
 .rem-stats-v{color:var(--t1)}
 .rem-stats-faint{color:var(--t3);font-size:11px}
+.rem-stats-week{font-size:13px;color:var(--t1);font-family:'Source Serif 4',serif}
 .actor-pills{display:flex;gap:6px;flex-wrap:wrap}
 .actor-pill{flex:1;min-width:80px;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:transparent;font-size:13px;color:var(--t2);cursor:pointer;transition:all 150ms ease;font-family:inherit}
 .actor-pill:hover{background:var(--gbg)}
