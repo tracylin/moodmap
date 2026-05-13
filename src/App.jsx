@@ -1531,7 +1531,6 @@ function RemindersCard({settings, setS}){
       <div className="rem-smart-row">
         <div className="rem-smart-text">
           <div className="rem-smart-title">Notifications on this device</div>
-          <div className="rem-smart-sub">Gentle nudges only when today is unlogged. Backs off during quiet weeks. No streaks, no pressure.</div>
         </div>
         {isActive&&<button className="btn-ghost rem-status-btn" disabled={busy} onClick={()=>fireTest(false)}>{busy?"…":testResult==="ok"?"✓ Sent":testResult==="fail"?"× Failed":"Test"}</button>}
         <button className={`rem-toggle${isActive?" rem-toggle-on":""}${pulse?" rem-toggle-pulse":""}`} role="switch" aria-checked={isActive} aria-label={`Notifications on this device ${isActive?"on":"off"}`} disabled={busy} onClick={onToggle}>
@@ -1583,7 +1582,6 @@ function ActorCard(){
 
   return(<div className="card">
     <h3 className="ctit">This device's user</h3>
-    <p className="set-h" style={{marginBottom:10}}>Credits logs to the right person and routes notifications. Wei's devices get the soft check-ins; anyone else gets a caretaker heads-up.</p>
     <div className="actor-pills">
       {["Wei","Cuixi","Other"].map(label=>(
         <button key={label} className={`actor-pill${mode===label?" actor-pill-on":""}`} onClick={()=>pick(label)}>{label}</button>
@@ -1633,10 +1631,9 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     <div className="card">
       <h3 className="ctit">Passcode Lock</h3>
-      {settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Passcode is set. Shown after welcome.</p>
+      {settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Passcode is set.</p>
         <div className="set-pcb"><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Change</button><button className="btn-ghost" style={{color:"#D4785C"}} onClick={()=>setS({passcode:""})}>Remove</button></div></div>)}
-      {!settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Protect your tracker with a 4-digit passcode.</p>
-        <button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set Passcode</button></div>)}
+      {!settings.passcode&&!pcStep&&(<div><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set Passcode</button></div>)}
       {pcStep&&(<div className="set-pcf"><p className="set-h">{pcStep==="new"?"Enter 4-digit passcode":"Confirm passcode"}</p>
         <div className="lock-dots" style={{justifyContent:"flex-start",margin:"12px 0"}}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<curPc.length?" on":""}`}/>)}</div>
         <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}} disabled={false}>{n==="del"?"‹":""+n}</button>))}</div>
@@ -1645,7 +1642,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     <div className="card">
       <h3 className="ctit">Medications</h3>
-      <p className="set-h" style={{marginBottom:10}}>Dosage, daily default, and add new medications.</p>
       {meds.map((med,i)=>editMedIdx===i?(
         <div key={med.key} className="set-med-edit">
           <input className="add-input" value={emName} onChange={e=>setEmName(e.target.value)} placeholder="Name"/>
@@ -1665,7 +1661,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     <div className="card">
       <h3 className="ctit">Weekly Report</h3>
-      <p className="set-h" style={{marginBottom:10}}>HTML email with mood insights and stats. Auto-sends every Sunday via Google Sheets.</p>
       <div className="set-nr"><input className="set-in" inputMode="email" type="email" style={{fontSize:16}} value={emailVal} onChange={e=>setEmailVal(e.target.value)} placeholder="your@email.com"/><button className="btn-sm-p" onClick={saveEmail}>Save</button></div>
       {emailSaved&&<p className="set-saved">Email saved!</p>}
       {settings.reportEmail&&<>
@@ -2023,7 +2018,6 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .rem-smart-row{display:flex;align-items:flex-start;gap:12px;padding:8px 0}
 .rem-smart-text{flex:1;min-width:0}
 .rem-smart-title{font-size:14px;color:var(--t1);font-weight:500}
-.rem-smart-sub{font-size:12px;color:var(--t2);line-height:1.5;margin-top:3px}
 .rem-stats{margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:4px}
 .rem-stats-row{font-size:12px;color:var(--t2)}
 .rem-stats-v{color:var(--t1)}
