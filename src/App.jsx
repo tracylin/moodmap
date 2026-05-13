@@ -398,16 +398,27 @@ export default function App(){
   // doesn't bypass the passcode. Consumed by Lock's onOk and Welcome's onGo.
   const[pendingNav,setPendingNav]=useState(null);
 
+  // Mirror `screen` into a ref so the hashchange handler can read the
+  // current value without stale-closure issues (the effect binds once on
+  // mount with [] deps).
+  const screenRef=useRef(screen);
+  useEffect(()=>{screenRef.current=screen;},[screen]);
+
   // Handle deep-link from a tapped notification (#log/today).
-  // If a passcode is set, we route through Lock first and complete the
-  // navigation after unlock. Otherwise we go straight to today's entry.
+  // Behavior:
+  //   • Currently at welcome/lock with passcode set → queue and route
+  //     through Lock so we don't bypass the passcode.
+  //   • Anywhere else → go directly to today's entry. This avoids
+  //     re-locking a user mid-session just because a notif arrived.
   useEffect(()=>{
     function handleHash(){
       const h=(typeof window!=="undefined"?window.location.hash:"")||"";
       if(h==="#log/today"||h.startsWith("#log/today")){
         setSelDay(tdk());
         const stored=loadSet();
-        if(stored.passcode){
+        const here=screenRef.current;
+        const needsLock=stored.passcode&&(here==="welcome"||here==="lock");
+        if(needsLock){
           setPendingNav("calEntry");
           setScreen("lock");
         }else{
