@@ -57,15 +57,43 @@ async function disableWebPush() {
   return null;
 }
 
+// "primary" for Wei's own devices, "caretaker" for anyone helping (e.g. Cuixi).
+// Derived from the device's actor setting.
+function actorToRole(actor){
+  return String(actor || "").trim().toLowerCase() === "wei" ? "primary" : "caretaker";
+}
+
 function pushSubscribeToSheets(subscription) {
   if (!SHEETS_URL || !subscription) return;
-  enqueueSync({ type: "push_subscribe", subscription: subscription.toJSON ? subscription.toJSON() : subscription });
+  const actor=getDeviceActor();
+  enqueueSync({
+    type: "push_subscribe",
+    subscription: subscription.toJSON ? subscription.toJSON() : subscription,
+    role: actorToRole(actor),
+    actor: actor,
+  });
 }
 
 function pushUnsubscribeFromSheets(subscription) {
   if (!SHEETS_URL || !subscription) return;
   const endpoint = (subscription.toJSON ? subscription.toJSON() : subscription).endpoint;
-  enqueueSync({ type: "push_unsubscribe", endpoint });
+  enqueueSync({ type: "push_unsubscribe", endpoint, actor: getDeviceActor() });
+}
+
+// When the user changes this device's actor in Settings, re-tag the existing
+// subscription's role server-side so nudge routing follows immediately —
+// without forcing a re-subscribe round trip.
+async function pushUpdateRoleForCurrentSub(){
+  if(!SHEETS_URL) return;
+  const sub=await getPushSubscription();
+  if(!sub) return;
+  const actor=getDeviceActor();
+  enqueueSync({
+    type:"update_push_role",
+    endpoint:(sub.toJSON?sub.toJSON():sub).endpoint,
+    role:actorToRole(actor),
+    actor:actor,
+  });
 }
 
 /* ── SYNC LAYER — sequential queue, persisted across reloads ── */
@@ -125,17 +153,29 @@ if(typeof window!=="undefined" && SHEETS_URL && syncQueue.length){
   setTimeout(()=>processQueue(),100);
 }
 
+// This device's actor (Wei / Cuixi / free-text). Stored in its own localStorage
+// key — NOT inside settings — so it stays per-device and doesn't propagate
+// across users via the Sheet sync. Default "Wei".
+const ACTOR_KEY="mt_actor";
+function getDeviceActor(){
+  try{const v=localStorage.getItem(ACTOR_KEY);return (v&&v.trim())?v.trim():"Wei";}
+  catch{return "Wei";}
+}
+function setDeviceActor(v){
+  try{localStorage.setItem(ACTOR_KEY,String(v||"Wei"));}catch{}
+}
+
 function pushMood(date, entry, medsArr){
-  enqueueSync({type:"mood",date,entry,meds_ref:medsArr});
+  enqueueSync({type:"mood",date,entry,meds_ref:medsArr,actor:getDeviceActor()});
 }
 function pushSrm(date, items){
-  enqueueSync({type:"srm",date,items});
+  enqueueSync({type:"srm",date,items,actor:getDeviceActor()});
 }
 function pushDeleteMood(date){
-  enqueueSync({type:"delete_mood",date});
+  enqueueSync({type:"delete_mood",date,actor:getDeviceActor()});
 }
 function pushDeleteSrm(date){
-  enqueueSync({type:"delete_srm",date});
+  enqueueSync({type:"delete_srm",date,actor:getDeviceActor()});
 }
 
 async function pullFromSheets(){
@@ -226,7 +266,12 @@ const DW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const dk=(y,m,d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
 const dIn=(y,m)=>new Date(y,m+1,0).getDate();
 const fDay=(y,m)=>new Date(y,m,1).getDay();
-const tdk=()=>{const d=new Date();return dk(d.getFullYear(),d.getMonth(),d.getDate());};
+// Wei's day starts at 6 AM. Anything logged before then still counts as
+// "yesterday" — so if he opens at 2 AM, today's entry defaults to the
+// previous calendar date. tdk() is the canonical "what is today, for Wei"
+// reference used across the app (default selDay, streak, log activity).
+const WEI_DAY_OFFSET_HOURS=6;
+const tdk=()=>{const d=new Date(Date.now()-WEI_DAY_OFFSET_HOURS*3600*1000);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
 const ydk=()=>{const d=new Date();d.setDate(d.getDate()-1);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
 const nowTime=()=>{const d=new Date();return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;};
 const isAMnow=()=>new Date().getHours()<12;
@@ -349,6 +394,38 @@ export default function App(){
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
   const[srmDate,setSrmDate]=useState(tdk);
+  // Deep-link target queued during welcome/lock so a notification tap
+  // doesn't bypass the passcode. Consumed by Lock's onOk and Welcome's onGo.
+  const[pendingNav,setPendingNav]=useState(null);
+
+  // Handle deep-link from a tapped notification (#log/today).
+  // If a passcode is set, we route through Lock first and complete the
+  // navigation after unlock. Otherwise we go straight to today's entry.
+  useEffect(()=>{
+    function handleHash(){
+      const h=(typeof window!=="undefined"?window.location.hash:"")||"";
+      if(h==="#log/today"||h.startsWith("#log/today")){
+        setSelDay(tdk());
+        const stored=loadSet();
+        if(stored.passcode){
+          setPendingNav("calEntry");
+          setScreen("lock");
+        }else{
+          setScreen("calEntry");
+        }
+        try{ history.replaceState(null,"",window.location.pathname+window.location.search); }catch{}
+      }
+    }
+    handleHash();
+    window.addEventListener("hashchange",handleHash);
+    return()=>window.removeEventListener("hashchange",handleHash);
+  },[]);
+
+  const consumePendingNav=()=>{
+    if(pendingNav){const t=pendingNav;setPendingNav(null);setScreen(t);return true;}
+    return false;
+  };
+
   // Pull from Google Sheets on app open (cross-device sync)
   useEffect(()=>{(async()=>{
     const resp=await pullFromSheets();
@@ -485,8 +562,8 @@ export default function App(){
   return(<>
     <style>{CSS}</style>
     <div className="app"><div className="page" key={screen}>
-      {screen==="welcome"&&<Welcome name={name} onGo={()=>settings.passcode?setScreen("lock"):setScreen("calendar")}/>}
-      {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>setScreen("calendar")}/>}
+      {screen==="welcome"&&<Welcome name={name} onGo={()=>{if(settings.passcode){setScreen("lock");}else if(!consumePendingNav()){setScreen("calendar");}}}/>}
+      {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>{if(!consumePendingNav()) setScreen("calendar");}}/>}
       {screen==="calendar"&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
         onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
@@ -1274,43 +1351,28 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
 /* ═══════════════════════════════════════════════════════════════════════════
    SETTINGS
    ═══════════════════════════════════════════════════════════════════════════ */
-function formatTime12_(t){
-  if(!t) return "";
-  const [h,m]=t.split(":").map(Number);
-  const period=h>=12?"PM":"AM";
-  const h12=h%12||12;
-  return `${h12}:${String(m).padStart(2,"0")} ${period}`;
-}
-
-function ReminderForm({rt,setRt,rl,setRl,onSave,onCancel,onDelete,editing}){
-  return(<div className="rem-form">
-    <label className="rem-form-lbl">Time</label>
-    <input type="time" className="srm-ti rem-form-time" value={rt} onChange={e=>setRt(e.target.value)}/>
-    <label className="rem-form-lbl">Label</label>
-    <input className="add-input rem-form-label" value={rl} onChange={e=>setRl(e.target.value)} placeholder="What's this for?"/>
-    <div className="rem-form-acts">
-      {editing&&<button className="rem-form-del" onClick={onDelete}>Delete</button>}
-      <div style={{flex:1}}/>
-      <button className="btn-ghost" onClick={onCancel}>Cancel</button>
-      <button className="btn-sm-p" onClick={onSave}>Save</button>
-    </div>
-  </div>);
-}
-
-function RemindersCard({reminders,setReminders,setS}){
+function RemindersCard({settings, setS}){
+  // Push pipeline state machine
   const [pushState,setPushState]=useState("loading"); // loading | unsupported | needsHomescreen | needsPermission | denied | active
   const [busy,setBusy]=useState(false);
   const [msg,setMsg]=useState("");
-  const [testResult,setTestResult]=useState(null); // null | "ok" | "fail"
-  const [editIdx,setEditIdx]=useState(null);
-  const [adding,setAdding]=useState(false);
-  const [rt,setRt]=useState("21:00");
-  const [rl,setRl]=useState("Log mood");
+  const [testResult,setTestResult]=useState(null);
   const [pulse,setPulse]=useState(false);
+  const [stats,setStats]=useState(null);
 
   const supportsPush=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window;
   const isPWA=isStandalonePWA();
   const isIOS=typeof navigator!=="undefined"&&/iPhone|iPad|iPod/.test(navigator.userAgent);
+
+  // Smart reminder toggle. Defaults to true if not set.
+  const smartEnabled=(settings.smartLog?.enabled)!==false;
+
+  const refreshStats=async()=>{
+    try{
+      const res=await fetch(`${SHEETS_URL}?action=log_stats`,{method:"GET",cache:"no-store"});
+      if(res?.ok) setStats(await res.json());
+    }catch{}
+  };
 
   useEffect(()=>{
     (async()=>{
@@ -1324,6 +1386,11 @@ function RemindersCard({reminders,setReminders,setS}){
     })();
   },[supportsPush,isIOS,isPWA]);
 
+  // Pull live stats whenever push state changes to active, or smart toggle flips on.
+  useEffect(()=>{
+    if(pushState==="active"&&smartEnabled) refreshStats();
+  },[pushState,smartEnabled]);
+
   const enable=async()=>{
     setBusy(true);setMsg("");
     try{
@@ -1331,7 +1398,6 @@ function RemindersCard({reminders,setReminders,setS}){
       pushSubscribeToSheets(sub);
       setPushState("active");
       setPulse(true);setTimeout(()=>setPulse(false),1200);
-      // Auto-fire a test after the subscription has had time to land in the Sheet.
       setMsg("Notifications on — sending a test…");
       setTimeout(()=>fireTest(true),2500);
     }catch(e){
@@ -1364,18 +1430,21 @@ function RemindersCard({reminders,setReminders,setS}){
     setTimeout(()=>setTestResult(null),3000);
   };
 
-  const startAdd=()=>{setAdding(true);setEditIdx(null);setRt("21:00");setRl("Log mood");setMsg("");};
-  const startEdit=i=>{setEditIdx(i);setAdding(false);setRt(reminders[i].time);setRl(reminders[i].label||"");setMsg("");};
-  const cancelForm=()=>{setAdding(false);setEditIdx(null);};
-  const saveForm=()=>{
-    if(adding){const nr=[...reminders,{time:rt,label:rl,on:true}];setReminders(nr);setS({reminders:nr});}
-    else if(editIdx!=null){const nr=[...reminders];nr[editIdx]={...nr[editIdx],time:rt,label:rl};setReminders(nr);setS({reminders:nr});}
-    cancelForm();
+  const toggleSmart=()=>{
+    const next={enabled:!smartEnabled};
+    setS({smartLog:next});
   };
-  const remove=i=>{const nr=reminders.filter((_,j)=>j!==i);setReminders(nr);setS({reminders:nr});cancelForm();};
-  const toggle=i=>{const nr=[...reminders];nr[i]={...nr[i],on:!nr[i].on};setReminders(nr);setS({reminders:nr});};
 
-  const showInactiveBanner=reminders.length>0&&pushState!=="active"&&pushState!=="loading";
+  // Pretty stats labels
+  const usualHour=null; // intentionally omitted — methodology isn't time-of-day driven
+  const totalLogs=stats?.totalLogs ?? 0;
+  const byActor=stats?.byActor || {};
+  const weiCount=byActor["Wei"] || 0;
+  const otherCount=Object.entries(byActor).filter(([k])=>k!=="Wei").reduce((s,[,v])=>s+v,0);
+  const lastLog=stats?.lastLog || null;
+  const lastLogActor=stats?.lastLogActor || "";
+  const weiToday=stats?.weiToday || "";
+  const weiState=stats?.weiDayState || "";
 
   return(<div className="card">
     <h3 className="ctit">Reminders</h3>
@@ -1397,38 +1466,75 @@ function RemindersCard({reminders,setReminders,setS}){
       </div>
     </div>}
 
-    {showInactiveBanner&&<div className="rem-inactive">These reminders won't fire when MooTracker is closed.</div>}
-
-    {reminders.length===0&&!adding&&pushState!=="needsHomescreen"&&(
-      <div className="rem-empty">
-        <div className="rem-empty-emoji">🌅</div>
-        <div className="rem-empty-title">Set your first reminder</div>
-        <div className="rem-empty-sub">MooTracker will nudge you at the times that work for your rhythm.</div>
-        <button className="btn-sm-p" onClick={startAdd}>+ Add reminder</button>
+    {/* Smart-toggle row — only meaningful when push pipeline can actually deliver. */}
+    {pushState!=="needsHomescreen"&&pushState!=="unsupported"&&(<div className="rem-smart">
+      <div className="rem-smart-row">
+        <div className="rem-smart-text">
+          <div className="rem-smart-title">Smart log reminders</div>
+          <div className="rem-smart-sub">MooTracker nudges you when today's still open. Two gentle check-ins per day, fewer if you're in a quiet stretch.</div>
+        </div>
+        <button className={`rem-toggle${smartEnabled?" rem-toggle-on":""}`} role="switch" aria-checked={smartEnabled} aria-label={`Smart log reminders ${smartEnabled?"on":"off"}`} onClick={toggleSmart}>
+          <div className="rem-toggle-knob"/>
+        </button>
       </div>
-    )}
-
-    {reminders.length>0&&(
-      <div className="rem-list">
-        {reminders.map((r,i)=>editIdx===i?(
-          <ReminderForm key={i} rt={rt} setRt={setRt} rl={rl} setRl={setRl} onSave={saveForm} onCancel={cancelForm} onDelete={()=>remove(i)} editing/>
-        ):(
-          <div key={i} className={`rem-row${!r.on?" rem-row-off":""}`}>
-            <button className="rem-row-main" onClick={()=>startEdit(i)}>
-              <div className="rem-row-time">{formatTime12_(r.time)}</div>
-              <div className="rem-row-label">{r.label||"Reminder"}</div>
-            </button>
-            <button className={`rem-toggle${r.on?" rem-toggle-on":""}`} role="switch" aria-checked={r.on} aria-label={`Reminder at ${formatTime12_(r.time)}, currently ${r.on?"on":"off"}`} onClick={()=>toggle(i)}>
-              <div className="rem-toggle-knob"/>
-            </button>
-          </div>
-        ))}
-        {adding&&<ReminderForm rt={rt} setRt={setRt} rl={rl} setRl={setRl} onSave={saveForm} onCancel={cancelForm}/>}
-        {!adding&&editIdx===null&&<button className="btn-add rem-add" onClick={startAdd}>+ Add reminder</button>}
-      </div>
-    )}
+      {smartEnabled&&pushState==="active"&&(<div className="rem-stats">
+        {lastLog
+          ? <div className="rem-stats-row">Last log: <span className="rem-stats-v">{lastLog}{lastLogActor?` · ${lastLogActor}`:""}</span></div>
+          : <div className="rem-stats-row">No logs yet.</div>}
+        {totalLogs>0&&(otherCount>0
+          ? <div className="rem-stats-row">{totalLogs} logs total · Wei {weiCount} · others {otherCount}</div>
+          : <div className="rem-stats-row">{totalLogs} logs total</div>)}
+        {weiState&&<div className="rem-stats-row rem-stats-faint">Today ({weiToday}): {weiState}</div>}
+      </div>)}
+    </div>)}
 
     {msg&&<p className="set-h rem-msg">{msg}</p>}
+  </div>);
+}
+
+// Actor selector — who's using this device. Stored per-device (NOT synced),
+// so Cuixi marking her device "Cuixi" doesn't change Wei's other devices.
+// Affects who's credited for saves and which audience this device's push
+// subscription falls into ("primary" = Wei, anything else = "caretaker").
+function ActorCard(){
+  const [current,setCurrent]=useState(()=>getDeviceActor());
+  const isCustom=current!=="Wei"&&current!=="Cuixi";
+  const [mode,setMode]=useState(isCustom?"Other":current);
+  const [customVal,setCustomVal]=useState(isCustom?current:"");
+  const [savedFlash,setSavedFlash]=useState(false);
+
+  const commit=async(actor)=>{
+    if(!actor) return;
+    setDeviceActor(actor);
+    setCurrent(actor);
+    setSavedFlash(true);setTimeout(()=>setSavedFlash(false),1500);
+    try{ await pushUpdateRoleForCurrentSub(); }catch{}
+  };
+
+  const pick=(label)=>{
+    setMode(label);
+    if(label==="Wei"||label==="Cuixi") commit(label);
+    else if(label==="Other"&&customVal.trim()) commit(customVal.trim());
+  };
+
+  const commitCustom=()=>{
+    const v=customVal.trim();
+    if(v) commit(v);
+  };
+
+  return(<div className="card">
+    <h3 className="ctit">This device's user</h3>
+    <p className="set-h" style={{marginBottom:10}}>Credits logs to the right person and routes notifications. Wei's devices get the soft check-ins; anyone else gets a caretaker heads-up.</p>
+    <div className="actor-pills">
+      {["Wei","Cuixi","Other"].map(label=>(
+        <button key={label} className={`actor-pill${mode===label?" actor-pill-on":""}`} onClick={()=>pick(label)}>{label}</button>
+      ))}
+    </div>
+    {mode==="Other"&&(<div style={{marginTop:8,display:"flex",gap:8}}>
+      <input className="add-input" style={{marginBottom:0,flex:1}} value={customVal} onChange={e=>setCustomVal(e.target.value)} onBlur={commitCustom} onKeyDown={e=>{if(e.key==="Enter") commitCustom();}} placeholder="Name (e.g. Mom)"/>
+      <button className="btn-sm-p" onClick={commitCustom} disabled={!customVal.trim()}>Save</button>
+    </div>)}
+    {savedFlash&&<p className="set-saved" style={{marginTop:8}}>Set to {current}.</p>}
   </div>);
 }
 
@@ -1438,7 +1544,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
-  const[reminders,setReminders]=useState(settings.reminders||[]);
   const[emailVal,setEmailVal]=useState(settings.reportEmail||"");const[emailSaved,setEmailSaved]=useState(false);const[reportSending,setReportSending]=useState(false);const[reportMsg,setReportMsg]=useState("");
   const saveEmail=()=>{setS({reportEmail:emailVal.trim()});setEmailSaved(true);setTimeout(()=>setEmailSaved(false),2500);};
   const sendReport=async()=>{
@@ -1484,7 +1589,9 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
-    <RemindersCard reminders={reminders} setReminders={setReminders} setS={setS}/>
+    <RemindersCard settings={settings} setS={setS}/>
+
+    <ActorCard/>
 
     <div className="card">
       <h3 className="ctit">Medications</h3>
@@ -1863,6 +1970,19 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .rem-form-del{background:transparent;border:none;color:#D4785C;font-size:13px;cursor:pointer;padding:4px 8px}
 .rem-add{margin-top:8px}
 .rem-msg{margin-top:10px;font-size:12px;line-height:1.5}
+.rem-smart{padding-top:4px}
+.rem-smart-row{display:flex;align-items:flex-start;gap:12px;padding:8px 0}
+.rem-smart-text{flex:1;min-width:0}
+.rem-smart-title{font-size:14px;color:var(--t1);font-weight:500}
+.rem-smart-sub{font-size:12px;color:var(--t2);line-height:1.5;margin-top:3px}
+.rem-stats{margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:4px}
+.rem-stats-row{font-size:12px;color:var(--t2)}
+.rem-stats-v{color:var(--t1)}
+.rem-stats-faint{color:var(--t3);font-size:11px}
+.actor-pills{display:flex;gap:6px;flex-wrap:wrap}
+.actor-pill{flex:1;min-width:80px;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:transparent;font-size:13px;color:var(--t2);cursor:pointer;transition:all 150ms ease;font-family:inherit}
+.actor-pill:hover{background:var(--gbg)}
+.actor-pill-on{border-color:var(--gn);color:var(--gn);background:var(--gbg)}
 @media(prefers-reduced-motion:reduce){.rem-pulse,.rem-toggle-knob,.rem-row{animation:none!important;transition:none!important}}
 .ver-label{font-size:11px;color:var(--t3);text-align:center;margin-top:20px;font-weight:300}
 
