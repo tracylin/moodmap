@@ -100,7 +100,7 @@ async function pushUpdateRoleForCurrentSub(){
 
 const SYNC_QUEUE_KEY="mt_sync_queue";
 function loadSyncQueue(){try{const v=localStorage.getItem(SYNC_QUEUE_KEY);return v?JSON.parse(v)||[]:[];}catch{return [];}}
-function saveSyncQueue(q){try{localStorage.setItem(SYNC_QUEUE_KEY,JSON.stringify(q));}catch{}}
+function saveSyncQueue(q){try{localStorage.setItem(SYNC_QUEUE_KEY,JSON.stringify(q));}catch{/* localStorage unavailable or quota full; in-memory queue still retries this session */}}
 
 const syncQueue=loadSyncQueue();
 let syncRunning=false;
@@ -176,7 +176,7 @@ function getDeviceActor(){
   catch{return "Wei";}
 }
 function setDeviceActor(v){
-  try{localStorage.setItem(ACTOR_KEY,String(v||"Wei"));}catch{}
+  try{localStorage.setItem(ACTOR_KEY,String(v||"Wei"));}catch{/* localStorage unavailable; actor remains per-session default */}
 }
 
 function pushMood(date, entry, medsArr){
@@ -197,16 +197,16 @@ async function pullFromSheets(){
   try{
     const res=await fetch(`${SHEETS_URL}?action=sync`,{method:"GET",cache:"no-store"});
     if(res&&res.ok) return await res.json();
-  }catch{}
+  }catch{/* direct Sheets fetch blocked or failed; JSONP fallback handles sync */}
   // JSONP fallback
   try{
     const cb=`__mt_cb_${Date.now()}`;
     return await new Promise((resolve,reject)=>{
-      const t=setTimeout(()=>{try{delete window[cb]}catch{};reject("timeout")},10000);
-      window[cb]=(d)=>{clearTimeout(t);resolve(d);try{delete window[cb]}catch{};if(s&&s.parentNode)s.parentNode.removeChild(s);};
+      const t=setTimeout(()=>{try{delete window[cb]}catch{/* callback already cleared during JSONP timeout cleanup */};reject("timeout")},10000);
+      window[cb]=(d)=>{clearTimeout(t);resolve(d);try{delete window[cb]}catch{/* callback already cleared after JSONP success */};if(s&&s.parentNode)s.parentNode.removeChild(s);};
       var s=document.createElement("script");
       s.src=`${SHEETS_URL}?action=sync&callback=${cb}&_=${Date.now()}`;
-      s.onerror=()=>{clearTimeout(t);try{delete window[cb]}catch{};if(s&&s.parentNode)s.parentNode.removeChild(s);reject("err");};
+      s.onerror=()=>{clearTimeout(t);try{delete window[cb]}catch{/* callback already cleared during JSONP error cleanup */};if(s&&s.parentNode)s.parentNode.removeChild(s);reject("err");};
       document.body.appendChild(s);
     });
   }catch{ return null; }
@@ -294,7 +294,7 @@ const normTime=(v)=>{
   if(!v)return"";const s=String(v).trim();
   if(/^\d{1,2}:\d{2}$/.test(s)){const[h,m]=s.split(":").map(Number);return`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;}
   // ISO string — use local time, not UTC
-  if(s.includes("T")){try{const d=new Date(s);if(!isNaN(d))return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}catch{}}
+  if(s.includes("T")){try{const d=new Date(s);if(!isNaN(d))return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}catch{/* malformed legacy date string; later parsers or raw value can handle it */}}
   // Long date string — extract HH:MM
   const m=s.match(/(\d{1,2}):(\d{2}):\d{2}/);if(m)return`${String(Number(m[1])).padStart(2,"0")}:${m[2]}`;
   return s;
@@ -320,7 +320,7 @@ function saveSet(s){localStorage.setItem("mt_set",JSON.stringify(s));}
 // saved an entry. Used for streak counting so back-dated entries (e.g.,
 // logging last night's sleep on today's date) don't inflate the streak.
 function loadLogActivity(){
-  try{const v=localStorage.getItem("mt_log_activity");if(v!==null)return new Set(JSON.parse(v)||[]);}catch{}
+  try{const v=localStorage.getItem("mt_log_activity");if(v!==null)return new Set(JSON.parse(v)||[]);}catch{/* corrupt or unavailable activity cache; first-time backfill rebuilds it */}
   // First-time backfill: attribute each existing entry to its own date.
   // Imperfect for entries that were back-dated, but preserves the user's
   // existing streak when upgrading; recordLogToday() handles all new saves.
@@ -341,7 +341,7 @@ function loadLogActivity(){
     return set;
   }catch{return new Set();}
 }
-function saveLogActivity(set){try{localStorage.setItem("mt_log_activity",JSON.stringify([...set]));}catch{}}
+function saveLogActivity(set){try{localStorage.setItem("mt_log_activity",JSON.stringify([...set]));}catch{/* localStorage unavailable or quota full; streak activity stays in memory */}}
 function recordLogToday(){const set=loadLogActivity();set.add(tdk());saveLogActivity(set);}
 function emptyItem(id){return{id,time:"",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0};}
 function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds});}
@@ -438,7 +438,7 @@ export default function App(){
         }else{
           setScreen("calEntry");
         }
-        try{ history.replaceState(null,"",window.location.pathname+window.location.search); }catch{}
+        try{ history.replaceState(null,"",window.location.pathname+window.location.search); }catch{/* history API blocked; hash route may remain in URL */}
       }
     }
     handleHash();
@@ -1393,7 +1393,7 @@ function RemindersCard({settings, setS}){
     try{
       const res=await fetch(`${SHEETS_URL}?action=log_stats`,{method:"GET",cache:"no-store"});
       if(res?.ok) setStats(await res.json());
-    }catch{}
+    }catch{/* log-stats fetch failed; reminders card can render without stats */}
   };
 
   useEffect(()=>{
@@ -1446,7 +1446,7 @@ function RemindersCard({settings, setS}){
       try{
         const localSub=await getPushSubscription();
         endpoint=(localSub && (localSub.toJSON?localSub.toJSON():localSub).endpoint) || "";
-      }catch{}
+      }catch{/* subscription lookup failed; test flow will show the missing-device message */}
       if(!endpoint){
         setTestResult("fail");
         setMsg("Couldn't find this device's subscription. Disable and re-enable notifications.");
@@ -1566,7 +1566,7 @@ function ActorCard(){
     setDeviceActor(actor);
     setCurrent(actor);
     setSavedFlash(true);setTimeout(()=>setSavedFlash(false),1500);
-    try{ await pushUpdateRoleForCurrentSub(); }catch{}
+    try{ await pushUpdateRoleForCurrentSub(); }catch{/* role retag enqueue failed; actor is still saved locally */}
   };
 
   const pick=(label)=>{
@@ -1683,7 +1683,7 @@ if(typeof window!=="undefined"){
     const now=new Date();const t=`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
     set.reminders.forEach(r=>{if(r.on&&r.time===t&&Notification.permission==="granted"){const lk="mt_n_"+r.time;const last=localStorage.getItem(lk);const td=now.toDateString();
       if(last!==td){new Notification("MooTracker",{body:r.label||"Time to log"});localStorage.setItem(lk,td);}}});
-  }catch{}},30000);
+  }catch{/* legacy reminder state invalid or notification blocked; interval can try again later */}},30000);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
