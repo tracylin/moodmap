@@ -148,6 +148,20 @@ function enqueueSync(payload){
   processQueue();
 }
 
+// Resolves once the queue has fully drained (or after timeoutMs if it gets
+// stuck). Used by the "Enable notifications" flow to make sure the new
+// push_subscribe row has hit the sheet before we ask the server to fire a
+// test push at this specific endpoint.
+async function waitForSyncIdle(timeoutMs=6000){
+  await new Promise(r=>setTimeout(r,200)); // let processQueue notice the new job
+  const start=Date.now();
+  while(Date.now()-start<timeoutMs){
+    if(!syncRunning && syncQueue.length===0) return true;
+    await new Promise(r=>setTimeout(r,150));
+  }
+  return false;
+}
+
 // Retry any persisted jobs left over from a previous session.
 if(typeof window!=="undefined" && SHEETS_URL && syncQueue.length){
   setTimeout(()=>processQueue(),100);
@@ -1375,9 +1389,6 @@ function RemindersCard({settings, setS}){
   const isPWA=isStandalonePWA();
   const isIOS=typeof navigator!=="undefined"&&/iPhone|iPad|iPod/.test(navigator.userAgent);
 
-  // Smart reminder toggle. Defaults to true if not set.
-  const smartEnabled=(settings.smartLog?.enabled)!==false;
-
   const refreshStats=async()=>{
     try{
       const res=await fetch(`${SHEETS_URL}?action=log_stats`,{method:"GET",cache:"no-store"});
@@ -1397,10 +1408,10 @@ function RemindersCard({settings, setS}){
     })();
   },[supportsPush,isIOS,isPWA]);
 
-  // Pull live stats whenever push state changes to active, or smart toggle flips on.
+  // Pull live stats whenever push becomes active on this device.
   useEffect(()=>{
-    if(pushState==="active"&&smartEnabled) refreshStats();
-  },[pushState,smartEnabled]);
+    if(pushState==="active") refreshStats();
+  },[pushState]);
 
   const enable=async()=>{
     setBusy(true);setMsg("");
@@ -1410,7 +1421,10 @@ function RemindersCard({settings, setS}){
       setPushState("active");
       setPulse(true);setTimeout(()=>setPulse(false),1200);
       setMsg("Notifications on — sending a test…");
-      setTimeout(()=>fireTest(true),2500);
+      // Wait for the push_subscribe row to land on the sheet before testing,
+      // otherwise the server won't yet know about this device's endpoint.
+      await waitForSyncIdle();
+      fireTest(true);
     }catch(e){
       const m=String(e?.message||e);
       setMsg(m);
@@ -1423,11 +1437,31 @@ function RemindersCard({settings, setS}){
     if(!isAutoTest) setBusy(true);
     setTestResult(null);
     try{
-      const res=await fetch(`${SHEETS_URL}?action=test_push`,{method:"GET",cache:"no-store"});
+      // Scope the test strictly to this device's subscription. If we can't
+      // read a local endpoint we bail rather than fan out to every device —
+      // that fan-out behavior is preserved only for the URL-bar debug path
+      // (hitting ?action=test_push directly with no endpoint param).
+      let endpoint="";
+      try{
+        const localSub=await getPushSubscription();
+        endpoint=(localSub && (localSub.toJSON?localSub.toJSON():localSub).endpoint) || "";
+      }catch{}
+      if(!endpoint){
+        setTestResult("fail");
+        setMsg("Couldn't find this device's subscription. Disable and re-enable notifications.");
+        if(!isAutoTest) setBusy(false);
+        setTimeout(()=>setTestResult(null),3000);
+        return;
+      }
+      const url=`${SHEETS_URL}?action=test_push&endpoint=${encodeURIComponent(endpoint)}`;
+      const res=await fetch(url,{method:"GET",cache:"no-store"});
       const data=await res.json();
       if(data?.count>=1&&data.results.every(r=>r.ok)){
         setTestResult("ok");
         setMsg(isAutoTest?"Notifications on — check your Notification Center.":"Test sent — check your Notification Center.");
+      }else if(data?.count===0){
+        setTestResult("fail");
+        setMsg("This device isn't registered yet — try again in a few seconds.");
       }else{
         setTestResult("fail");
         const detail=data?.results?.[0]?.body||"";
@@ -1439,11 +1473,6 @@ function RemindersCard({settings, setS}){
     }
     if(!isAutoTest) setBusy(false);
     setTimeout(()=>setTestResult(null),3000);
-  };
-
-  const toggleSmart=()=>{
-    const next={enabled:!smartEnabled};
-    setS({smartLog:next});
   };
 
   // Unsubscribe this device — removes the push subscription locally AND from
@@ -1473,21 +1502,20 @@ function RemindersCard({settings, setS}){
     ? `Wei ${weekWei}${weekOthers.map(([k,v])=>` · ${k} ${v}`).join("")}`
     : null;
 
+  const isActive=pushState==="active";
+  const canToggle=pushState==="active"||pushState==="needsPermission";
+  const onToggle=()=>{
+    if(busy) return;
+    if(isActive) disableOnDevice();
+    else if(pushState==="needsPermission") enable();
+  };
+
   return(<div className="card">
     <h3 className="ctit">Reminders</h3>
 
     {pushState==="unsupported"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-amber"/><span>Background reminders aren't supported here.</span></div>}
 
-    {pushState==="needsPermission"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-amber"/><span style={{flex:1}}>Allow notifications to receive reminders.</span><button className="btn-s rem-status-btn" disabled={busy} onClick={enable}>{busy?"…":"Allow"}</button></div>}
-
     {pushState==="denied"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-red"/><span>Notifications blocked. iOS Settings → MooTracker → Notifications → Allow.</span></div>}
-
-    {pushState==="active"&&<div className="rem-status rem-ok">
-      <span className={`rem-dot rem-dot-green${pulse?" rem-pulse":""}`}/>
-      <span style={{flex:1}}>Active on this device</span>
-      <button className="btn-ghost rem-status-btn" disabled={busy} onClick={()=>fireTest(false)}>{busy?"…":testResult==="ok"?"✓ Sent":testResult==="fail"?"× Failed":"Test"}</button>
-      <button className="btn-ghost rem-status-link" disabled={busy} onClick={disableOnDevice}>Disable</button>
-    </div>}
 
     {pushState==="needsHomescreen"&&<div className="rem-install">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
@@ -1498,18 +1526,18 @@ function RemindersCard({settings, setS}){
       </div>
     </div>}
 
-    {/* Smart-toggle row — only meaningful when push pipeline can actually deliver. */}
-    {pushState!=="needsHomescreen"&&pushState!=="unsupported"&&(<div className="rem-smart">
+    {canToggle&&(<div className="rem-smart">
       <div className="rem-smart-row">
         <div className="rem-smart-text">
-          <div className="rem-smart-title">Smart log reminders</div>
-          <div className="rem-smart-sub">Reminds only when today is unlogged. Backs off during quiet weeks. No streaks, no pressure.</div>
+          <div className="rem-smart-title">Notifications on this device</div>
+          <div className="rem-smart-sub">Gentle nudges only when today is unlogged. Backs off during quiet weeks. No streaks, no pressure.</div>
         </div>
-        <button className={`rem-toggle${smartEnabled?" rem-toggle-on":""}`} role="switch" aria-checked={smartEnabled} aria-label={`Smart log reminders ${smartEnabled?"on":"off"}`} onClick={toggleSmart}>
+        {isActive&&<button className="btn-ghost rem-status-btn" disabled={busy} onClick={()=>fireTest(false)}>{busy?"…":testResult==="ok"?"✓ Sent":testResult==="fail"?"× Failed":"Test"}</button>}
+        <button className={`rem-toggle${isActive?" rem-toggle-on":""}${pulse?" rem-toggle-pulse":""}`} role="switch" aria-checked={isActive} aria-label={`Notifications on this device ${isActive?"on":"off"}`} disabled={busy} onClick={onToggle}>
           <div className="rem-toggle-knob"/>
         </button>
       </div>
-      {smartEnabled&&pushState==="active"&&(<div className="rem-stats">
+      {isActive&&(<div className="rem-stats">
         <div className="rem-stats-row">
           <span className="rem-stats-week">{weekDays>0?`${weekDays} day${weekDays===1?"":"s"} logged this week`:"No logs yet this week"}</span>
         </div>
@@ -1950,17 +1978,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .set-r-on{border-color:var(--gn);color:var(--gn);background:var(--gbg)}
 /* ── new merged Reminders card ── */
 .rem-status{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;min-height:44px}
-.rem-status.rem-ok{background:var(--gbg);color:var(--gn)}
 .rem-status.rem-warn{background:#FAF6ED;color:#8A6A1E}
 .rem-status-btn{padding:6px 14px;font-size:12px;flex-shrink:0}
-.rem-status-link{padding:6px 8px;font-size:11px;color:var(--t3);flex-shrink:0}
-.rem-status-link:hover{color:#D4785C}
 .rem-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.rem-dot-green{background:#7BA08B}
 .rem-dot-amber{background:#E5B86B}
 .rem-dot-red{background:#D4785C}
 @keyframes remPulse{0%{box-shadow:0 0 0 0 rgba(123,160,139,.6)}70%{box-shadow:0 0 0 8px rgba(123,160,139,0)}100%{box-shadow:0 0 0 0 rgba(123,160,139,0)}}
-.rem-pulse{animation:remPulse 1.2s ease-out 1}
+.rem-toggle-pulse{animation:remPulse 1.2s ease-out 1}
+.rem-toggle:disabled{opacity:.55;cursor:wait}
 .rem-install{display:flex;gap:12px;padding:14px;border-radius:8px;background:#FAF6ED;color:#8A6A1E;margin-bottom:12px;align-items:flex-start}
 .rem-install svg{margin-top:2px;flex-shrink:0}
 .rem-install-body{flex:1;font-size:13px;line-height:1.5}
@@ -2007,7 +2032,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .actor-pill{flex:1;min-width:80px;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:transparent;font-size:13px;color:var(--t2);cursor:pointer;transition:all 150ms ease;font-family:inherit}
 .actor-pill:hover{background:var(--gbg)}
 .actor-pill-on{border-color:var(--gn);color:var(--gn);background:var(--gbg)}
-@media(prefers-reduced-motion:reduce){.rem-pulse,.rem-toggle-knob,.rem-row{animation:none!important;transition:none!important}}
+@media(prefers-reduced-motion:reduce){.rem-toggle-pulse,.rem-toggle-knob,.rem-row{animation:none!important;transition:none!important}}
 .ver-label{font-size:11px;color:var(--t3);text-align:center;margin-top:20px;font-weight:300}
 
 @media(max-width:440px){.app{max-width:100%}.scr{padding:0 16px 32px}}
