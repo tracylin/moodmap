@@ -6,6 +6,68 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
    ═══════════════════════════════════════════════════════════════════════════ */
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"; // paste your deployed Apps Script URL here
 
+// VAPID public key — paired with the private key held by the Cloudflare Worker
+// that signs Web Push requests on behalf of this app. Safe to expose publicly.
+const VAPID_PUBLIC_KEY = "BD_e-9qa7XJwI2m1ib83cWXP98HrFUdRDUeQmnA7eTLCt3F8OHkZzn-hubkvKBe8uJkfHjSG5CyHhT-0BfPPH7c";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function isStandalonePWA() {
+  if (typeof window === "undefined") return false;
+  if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) return true;
+  if (window.navigator && window.navigator.standalone === true) return true;
+  return false;
+}
+
+async function getPushSubscription() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+async function enableWebPush() {
+  if (!("serviceWorker" in navigator)) throw new Error("Service worker not supported in this browser.");
+  if (!("PushManager" in window)) throw new Error("Push notifications not supported in this browser.");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Notification permission denied. Enable it in Settings → Notifications.");
+  const reg = await navigator.serviceWorker.ready;
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) return existing;
+  return reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+  });
+}
+
+async function disableWebPush() {
+  if (!("serviceWorker" in navigator)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (sub) {
+    await sub.unsubscribe();
+    return sub;
+  }
+  return null;
+}
+
+function pushSubscribeToSheets(subscription) {
+  if (!SHEETS_URL || !subscription) return;
+  enqueueSync({ type: "push_subscribe", subscription: subscription.toJSON ? subscription.toJSON() : subscription });
+}
+
+function pushUnsubscribeFromSheets(subscription) {
+  if (!SHEETS_URL || !subscription) return;
+  const endpoint = (subscription.toJSON ? subscription.toJSON() : subscription).endpoint;
+  enqueueSync({ type: "push_unsubscribe", endpoint });
+}
+
 /* ── SYNC LAYER — sequential queue, persisted across reloads ── */
 
 const SYNC_QUEUE_KEY="mt_sync_queue";
@@ -1212,6 +1274,60 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
 /* ═══════════════════════════════════════════════════════════════════════════
    SETTINGS
    ═══════════════════════════════════════════════════════════════════════════ */
+function PushCard(){
+  const [status,setStatus]=useState("unknown"); // "unknown" | "off" | "on"
+  const [msg,setMsg]=useState("");
+  const [busy,setBusy]=useState(false);
+  const isPWA=isStandalonePWA();
+
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const sub=await getPushSubscription();
+        setStatus(sub?"on":"off");
+      }catch{setStatus("off");}
+    })();
+  },[]);
+
+  const enable=async()=>{
+    setBusy(true);setMsg("");
+    try{
+      const sub=await enableWebPush();
+      pushSubscribeToSheets(sub);
+      setStatus("on");
+      setMsg("Notifications enabled on this device.");
+    }catch(e){setMsg(String(e?.message||e));}
+    setBusy(false);
+  };
+  const disable=async()=>{
+    setBusy(true);setMsg("");
+    try{
+      const sub=await disableWebPush();
+      if(sub) pushUnsubscribeFromSheets(sub);
+      setStatus("off");
+      setMsg("Notifications disabled on this device.");
+    }catch(e){setMsg(String(e?.message||e));}
+    setBusy(false);
+  };
+
+  const supportsPush=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window;
+
+  return(<div className="card">
+    <h3 className="ctit">iPhone Notifications</h3>
+    {!supportsPush&&<p className="set-h">This browser doesn't support push notifications.</p>}
+    {supportsPush&&!isPWA&&<p className="set-h" style={{marginBottom:8}}>To receive background reminders on iPhone: open this site in Safari → Share → <b>Add to Home Screen</b>, then launch from the Home Screen icon and enable here.</p>}
+    {supportsPush&&isPWA&&status==="on"&&<p className="set-h" style={{marginBottom:8,color:"var(--gn)"}}>● Active on this device.</p>}
+    {supportsPush&&isPWA&&status==="off"&&<p className="set-h" style={{marginBottom:8}}>Tap below to receive reminders from your Reminders list — works even when the app is closed.</p>}
+    {supportsPush&&isPWA&&(
+      <div style={{display:"flex",gap:8}}>
+        {status!=="on"&&<button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} disabled={busy} onClick={enable}>{busy?"…":"Enable"}</button>}
+        {status==="on"&&<button className="btn-ghost" style={{color:"#D4785C"}} disabled={busy} onClick={disable}>{busy?"…":"Disable on this device"}</button>}
+      </div>
+    )}
+    {msg&&<p className="set-h" style={{marginTop:8,fontSize:12}}>{msg}</p>}
+  </div>);
+}
+
 function Settings({settings,setS,meds,setMeds,onBack}){
   const[nameVal,setNameVal]=useState(settings.name||"");
   const[nameSaved,setNameSaved]=useState(false);
@@ -1268,9 +1384,11 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
+    <PushCard/>
+
     <div className="card">
       <h3 className="ctit">Reminders</h3>
-      <p className="set-h" style={{marginBottom:10}}>Browser notifications. Keep your tab open.</p>
+      <p className="set-h" style={{marginBottom:10}}>Times to fire notifications. On iPhone, install to Home Screen and enable Push above for background delivery.</p>
       {reminders.map((r,i)=>(<div key={i} className="set-reminder">
         <div><span className="set-r-time">{r.time}</span><span className="set-r-label">{r.label}</span></div>
         <div className="set-r-acts"><button className={`set-r-toggle${r.on?" set-r-on":""}`} onClick={()=>toggleR(i)}>{r.on?"On":"Off"}</button><button className="btn-ghost" style={{color:"#D4785C",fontSize:11,padding:"2px 6px"}} onClick={()=>removeR(i)}>×</button></div>
