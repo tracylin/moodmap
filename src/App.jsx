@@ -1403,15 +1403,15 @@ function RemindersCard({settings, setS}){
       if(typeof Notification!=="undefined"&&Notification.permission==="denied"){setPushState("denied");return;}
       try{
         const sub=await getPushSubscription();
-        setPushState(sub?"active":"needsPermission");
+        if(sub){
+          setPushState("active");
+          refreshStats();
+        }else{
+          setPushState("needsPermission");
+        }
       }catch{setPushState("needsPermission");}
     })();
   },[supportsPush,isIOS,isPWA]);
-
-  // Pull live stats whenever push becomes active on this device.
-  useEffect(()=>{
-    if(pushState==="active") refreshStats();
-  },[pushState]);
 
   const enable=async()=>{
     setBusy(true);setMsg("");
@@ -1419,6 +1419,7 @@ function RemindersCard({settings, setS}){
       const sub=await enableWebPush();
       pushSubscribeToSheets(sub);
       setPushState("active");
+      refreshStats();
       setPulse(true);setTimeout(()=>setPulse(false),1200);
       setMsg("Notifications on — sending a test…");
       // Wait for the push_subscribe row to land on the sheet before testing,
