@@ -1446,6 +1446,20 @@ function RemindersCard({settings, setS}){
     setS({smartLog:next});
   };
 
+  // Unsubscribe this device — removes the push subscription locally AND from
+  // the server. Reverts the status row to "Allow notifications" so the user
+  // can re-enable later (will create a fresh subscription).
+  const disableOnDevice=async()=>{
+    setBusy(true);setMsg("");
+    try{
+      const sub=await disableWebPush();
+      if(sub) pushUnsubscribeFromSheets(sub);
+      setPushState("needsPermission");
+      setMsg("Notifications disabled on this device.");
+    }catch(e){setMsg(String(e?.message||e));}
+    setBusy(false);
+  };
+
   // Stats — keep it gentle. We only show "this week" (last 7 Wei-days) +
   // last-log timestamp. Lifetime totals are useful for debug but not for
   // the encouragement framing this card is going for.
@@ -1468,7 +1482,12 @@ function RemindersCard({settings, setS}){
 
     {pushState==="denied"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-red"/><span>Notifications blocked. iOS Settings → MooTracker → Notifications → Allow.</span></div>}
 
-    {pushState==="active"&&<div className="rem-status rem-ok"><span className={`rem-dot rem-dot-green${pulse?" rem-pulse":""}`}/><span style={{flex:1}}>Active on this device</span><button className="btn-ghost rem-status-btn" disabled={busy} onClick={()=>fireTest(false)}>{busy?"…":testResult==="ok"?"✓ Sent":testResult==="fail"?"× Failed":"Test"}</button></div>}
+    {pushState==="active"&&<div className="rem-status rem-ok">
+      <span className={`rem-dot rem-dot-green${pulse?" rem-pulse":""}`}/>
+      <span style={{flex:1}}>Active on this device</span>
+      <button className="btn-ghost rem-status-btn" disabled={busy} onClick={()=>fireTest(false)}>{busy?"…":testResult==="ok"?"✓ Sent":testResult==="fail"?"× Failed":"Test"}</button>
+      <button className="btn-ghost rem-status-link" disabled={busy} onClick={disableOnDevice}>Disable</button>
+    </div>}
 
     {pushState==="needsHomescreen"&&<div className="rem-install">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
@@ -1934,6 +1953,8 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .rem-status.rem-ok{background:var(--gbg);color:var(--gn)}
 .rem-status.rem-warn{background:#FAF6ED;color:#8A6A1E}
 .rem-status-btn{padding:6px 14px;font-size:12px;flex-shrink:0}
+.rem-status-link{padding:6px 8px;font-size:11px;color:var(--t3);flex-shrink:0}
+.rem-status-link:hover{color:#D4785C}
 .rem-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .rem-dot-green{background:#7BA08B}
 .rem-dot-amber{background:#E5B86B}
