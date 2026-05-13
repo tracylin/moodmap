@@ -15,10 +15,23 @@
 
 export default {
   async fetch(request, env) {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/debug" && request.method === "GET") {
+      const pub = (env.VAPID_PUBLIC_KEY || "").trim();
+      const priv = (env.VAPID_PRIVATE_KEY || "").trim();
+      const sec = (env.SHARED_SECRET || "").trim();
+      return new Response(JSON.stringify({
+        publicKey: { length: pub.length, head: pub.slice(0, 6), tail: pub.slice(-6), invalidChars: /[^A-Za-z0-9_-]/.test(pub) },
+        privateKey: { length: priv.length, head: priv.slice(0, 4), tail: priv.slice(-4), invalidChars: /[^A-Za-z0-9_-]/.test(priv) },
+        sharedSecret: { length: sec.length },
+      }, null, 2), { headers: { "Content-Type": "application/json" } });
+    }
+
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
     if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
 
-    if (request.headers.get("X-Auth") !== env.SHARED_SECRET) {
+    if ((request.headers.get("X-Auth") || "").trim() !== (env.SHARED_SECRET || "").trim()) {
       return new Response("forbidden", { status: 403 });
     }
 
@@ -68,9 +81,13 @@ async function sendPush(subscription, ttl, env) {
 }
 
 async function signVapidJwt(audience, env) {
+  const sub = (env.VAPID_SUBJECT || "").trim();
+  if (!sub || !(sub.startsWith("mailto:") || sub.startsWith("https://"))) {
+    throw new Error("VAPID_SUBJECT secret must be set to a 'mailto:...' or 'https://...' value");
+  }
   const header = b64uJson({ typ: "JWT", alg: "ES256" });
   const exp = Math.floor(Date.now() / 1000) + 12 * 3600; // 12 h validity
-  const payload = b64uJson({ aud: audience, exp, sub: "mailto:noreply@mootracker.local" });
+  const payload = b64uJson({ aud: audience, exp, sub });
   const signingInput = `${header}.${payload}`;
 
   const key = await importVapidPrivateKey(env.VAPID_PRIVATE_KEY, env.VAPID_PUBLIC_KEY);
@@ -83,8 +100,12 @@ async function signVapidJwt(audience, env) {
 }
 
 async function importVapidPrivateKey(privBase64Url, pubBase64Url) {
-  const priv = b64uDecodeBytes(privBase64Url);
-  const pub = b64uDecodeBytes(pubBase64Url);
+  const privClean = (privBase64Url || "").trim().replace(/^["']|["']$/g, "");
+  const pubClean  = (pubBase64Url  || "").trim().replace(/^["']|["']$/g, "");
+  if (!privClean) throw new Error("VAPID_PRIVATE_KEY env var is empty or missing");
+  if (!pubClean)  throw new Error("VAPID_PUBLIC_KEY env var is empty or missing");
+  const priv = b64uDecodeBytes(privClean);
+  const pub = b64uDecodeBytes(pubClean);
   if (pub[0] !== 0x04 || pub.length !== 65) throw new Error("VAPID public key must be uncompressed P-256 (65 bytes, leading 0x04)");
   const x = pub.slice(1, 33);
   const y = pub.slice(33, 65);

@@ -1274,57 +1274,161 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
 /* ═══════════════════════════════════════════════════════════════════════════
    SETTINGS
    ═══════════════════════════════════════════════════════════════════════════ */
-function PushCard(){
-  const [status,setStatus]=useState("unknown"); // "unknown" | "off" | "on"
-  const [msg,setMsg]=useState("");
+function formatTime12_(t){
+  if(!t) return "";
+  const [h,m]=t.split(":").map(Number);
+  const period=h>=12?"PM":"AM";
+  const h12=h%12||12;
+  return `${h12}:${String(m).padStart(2,"0")} ${period}`;
+}
+
+function ReminderForm({rt,setRt,rl,setRl,onSave,onCancel,onDelete,editing}){
+  return(<div className="rem-form">
+    <label className="rem-form-lbl">Time</label>
+    <input type="time" className="srm-ti rem-form-time" value={rt} onChange={e=>setRt(e.target.value)}/>
+    <label className="rem-form-lbl">Label</label>
+    <input className="add-input rem-form-label" value={rl} onChange={e=>setRl(e.target.value)} placeholder="What's this for?"/>
+    <div className="rem-form-acts">
+      {editing&&<button className="rem-form-del" onClick={onDelete}>Delete</button>}
+      <div style={{flex:1}}/>
+      <button className="btn-ghost" onClick={onCancel}>Cancel</button>
+      <button className="btn-sm-p" onClick={onSave}>Save</button>
+    </div>
+  </div>);
+}
+
+function RemindersCard({reminders,setReminders,setS}){
+  const [pushState,setPushState]=useState("loading"); // loading | unsupported | needsHomescreen | needsPermission | denied | active
   const [busy,setBusy]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [testResult,setTestResult]=useState(null); // null | "ok" | "fail"
+  const [editIdx,setEditIdx]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const [rt,setRt]=useState("21:00");
+  const [rl,setRl]=useState("Log mood");
+  const [pulse,setPulse]=useState(false);
+
+  const supportsPush=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window;
   const isPWA=isStandalonePWA();
+  const isIOS=typeof navigator!=="undefined"&&/iPhone|iPad|iPod/.test(navigator.userAgent);
 
   useEffect(()=>{
     (async()=>{
+      if(!supportsPush){setPushState("unsupported");return;}
+      if(isIOS&&!isPWA){setPushState("needsHomescreen");return;}
+      if(typeof Notification!=="undefined"&&Notification.permission==="denied"){setPushState("denied");return;}
       try{
         const sub=await getPushSubscription();
-        setStatus(sub?"on":"off");
-      }catch{setStatus("off");}
+        setPushState(sub?"active":"needsPermission");
+      }catch{setPushState("needsPermission");}
     })();
-  },[]);
+  },[supportsPush,isIOS,isPWA]);
 
   const enable=async()=>{
     setBusy(true);setMsg("");
     try{
       const sub=await enableWebPush();
       pushSubscribeToSheets(sub);
-      setStatus("on");
-      setMsg("Notifications enabled on this device.");
-    }catch(e){setMsg(String(e?.message||e));}
-    setBusy(false);
-  };
-  const disable=async()=>{
-    setBusy(true);setMsg("");
-    try{
-      const sub=await disableWebPush();
-      if(sub) pushUnsubscribeFromSheets(sub);
-      setStatus("off");
-      setMsg("Notifications disabled on this device.");
-    }catch(e){setMsg(String(e?.message||e));}
+      setPushState("active");
+      setPulse(true);setTimeout(()=>setPulse(false),1200);
+      // Auto-fire a test after the subscription has had time to land in the Sheet.
+      setMsg("Notifications on — sending a test…");
+      setTimeout(()=>fireTest(true),2500);
+    }catch(e){
+      const m=String(e?.message||e);
+      setMsg(m);
+      if(/denied/i.test(m)) setPushState("denied");
+    }
     setBusy(false);
   };
 
-  const supportsPush=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window;
+  const fireTest=async(isAutoTest=false)=>{
+    if(!isAutoTest) setBusy(true);
+    setTestResult(null);
+    try{
+      const res=await fetch(`${SHEETS_URL}?action=test_push`,{method:"GET",cache:"no-store"});
+      const data=await res.json();
+      if(data?.count>=1&&data.results.every(r=>r.ok)){
+        setTestResult("ok");
+        setMsg(isAutoTest?"Notifications on — check your Notification Center.":"Test sent — check your Notification Center.");
+      }else{
+        setTestResult("fail");
+        const detail=data?.results?.[0]?.body||"";
+        setMsg(`Test failed${detail?": "+String(detail).slice(0,80):"."} Open MooTracker from the Home Screen icon, not Safari.`);
+      }
+    }catch{
+      setTestResult("fail");
+      setMsg("Couldn't reach the server.");
+    }
+    if(!isAutoTest) setBusy(false);
+    setTimeout(()=>setTestResult(null),3000);
+  };
+
+  const startAdd=()=>{setAdding(true);setEditIdx(null);setRt("21:00");setRl("Log mood");setMsg("");};
+  const startEdit=i=>{setEditIdx(i);setAdding(false);setRt(reminders[i].time);setRl(reminders[i].label||"");setMsg("");};
+  const cancelForm=()=>{setAdding(false);setEditIdx(null);};
+  const saveForm=()=>{
+    if(adding){const nr=[...reminders,{time:rt,label:rl,on:true}];setReminders(nr);setS({reminders:nr});}
+    else if(editIdx!=null){const nr=[...reminders];nr[editIdx]={...nr[editIdx],time:rt,label:rl};setReminders(nr);setS({reminders:nr});}
+    cancelForm();
+  };
+  const remove=i=>{const nr=reminders.filter((_,j)=>j!==i);setReminders(nr);setS({reminders:nr});cancelForm();};
+  const toggle=i=>{const nr=[...reminders];nr[i]={...nr[i],on:!nr[i].on};setReminders(nr);setS({reminders:nr});};
+
+  const showInactiveBanner=reminders.length>0&&pushState!=="active"&&pushState!=="loading";
 
   return(<div className="card">
-    <h3 className="ctit">iPhone Notifications</h3>
-    {!supportsPush&&<p className="set-h">This browser doesn't support push notifications.</p>}
-    {supportsPush&&!isPWA&&<p className="set-h" style={{marginBottom:8}}>To receive background reminders on iPhone: open this site in Safari → Share → <b>Add to Home Screen</b>, then launch from the Home Screen icon and enable here.</p>}
-    {supportsPush&&isPWA&&status==="on"&&<p className="set-h" style={{marginBottom:8,color:"var(--gn)"}}>● Active on this device.</p>}
-    {supportsPush&&isPWA&&status==="off"&&<p className="set-h" style={{marginBottom:8}}>Tap below to receive reminders from your Reminders list — works even when the app is closed.</p>}
-    {supportsPush&&isPWA&&(
-      <div style={{display:"flex",gap:8}}>
-        {status!=="on"&&<button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} disabled={busy} onClick={enable}>{busy?"…":"Enable"}</button>}
-        {status==="on"&&<button className="btn-ghost" style={{color:"#D4785C"}} disabled={busy} onClick={disable}>{busy?"…":"Disable on this device"}</button>}
+    <h3 className="ctit">Reminders</h3>
+
+    {pushState==="unsupported"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-amber"/><span>Background reminders aren't supported here.</span></div>}
+
+    {pushState==="needsPermission"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-amber"/><span style={{flex:1}}>Allow notifications to receive reminders.</span><button className="btn-s rem-status-btn" disabled={busy} onClick={enable}>{busy?"…":"Allow"}</button></div>}
+
+    {pushState==="denied"&&<div className="rem-status rem-warn"><span className="rem-dot rem-dot-red"/><span>Notifications blocked. iOS Settings → MooTracker → Notifications → Allow.</span></div>}
+
+    {pushState==="active"&&<div className="rem-status rem-ok"><span className={`rem-dot rem-dot-green${pulse?" rem-pulse":""}`}/><span style={{flex:1}}>Active on this device</span><button className="btn-ghost rem-status-btn" disabled={busy} onClick={()=>fireTest(false)}>{busy?"…":testResult==="ok"?"✓ Sent":testResult==="fail"?"× Failed":"Test"}</button></div>}
+
+    {pushState==="needsHomescreen"&&<div className="rem-install">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
+      <div className="rem-install-body">
+        <div className="rem-install-title">Install on Home Screen</div>
+        <p>For reminders even when MooTracker is closed:</p>
+        <ol><li>Tap the <b>Share</b> button at the bottom of Safari</li><li>Choose <b>Add to Home Screen</b></li><li>Open MooTracker from your icon</li></ol>
+      </div>
+    </div>}
+
+    {showInactiveBanner&&<div className="rem-inactive">These reminders won't fire when MooTracker is closed.</div>}
+
+    {reminders.length===0&&!adding&&pushState!=="needsHomescreen"&&(
+      <div className="rem-empty">
+        <div className="rem-empty-emoji">🌅</div>
+        <div className="rem-empty-title">Set your first reminder</div>
+        <div className="rem-empty-sub">MooTracker will nudge you at the times that work for your rhythm.</div>
+        <button className="btn-sm-p" onClick={startAdd}>+ Add reminder</button>
       </div>
     )}
-    {msg&&<p className="set-h" style={{marginTop:8,fontSize:12}}>{msg}</p>}
+
+    {reminders.length>0&&(
+      <div className="rem-list">
+        {reminders.map((r,i)=>editIdx===i?(
+          <ReminderForm key={i} rt={rt} setRt={setRt} rl={rl} setRl={setRl} onSave={saveForm} onCancel={cancelForm} onDelete={()=>remove(i)} editing/>
+        ):(
+          <div key={i} className={`rem-row${!r.on?" rem-row-off":""}`}>
+            <button className="rem-row-main" onClick={()=>startEdit(i)}>
+              <div className="rem-row-time">{formatTime12_(r.time)}</div>
+              <div className="rem-row-label">{r.label||"Reminder"}</div>
+            </button>
+            <button className={`rem-toggle${r.on?" rem-toggle-on":""}`} role="switch" aria-checked={r.on} aria-label={`Reminder at ${formatTime12_(r.time)}, currently ${r.on?"on":"off"}`} onClick={()=>toggle(i)}>
+              <div className="rem-toggle-knob"/>
+            </button>
+          </div>
+        ))}
+        {adding&&<ReminderForm rt={rt} setRt={setRt} rl={rl} setRl={setRl} onSave={saveForm} onCancel={cancelForm}/>}
+        {!adding&&editIdx===null&&<button className="btn-add rem-add" onClick={startAdd}>+ Add reminder</button>}
+      </div>
+    )}
+
+    {msg&&<p className="set-h rem-msg">{msg}</p>}
   </div>);
 }
 
@@ -1335,7 +1439,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
   const[reminders,setReminders]=useState(settings.reminders||[]);
-  const[showAddR,setShowAddR]=useState(false);const[newRT,setNewRT]=useState("21:00");const[newRL,setNewRL]=useState("Log mood");
   const[emailVal,setEmailVal]=useState(settings.reportEmail||"");const[emailSaved,setEmailSaved]=useState(false);const[reportSending,setReportSending]=useState(false);const[reportMsg,setReportMsg]=useState("");
   const saveEmail=()=>{setS({reportEmail:emailVal.trim()});setEmailSaved(true);setTimeout(()=>setEmailSaved(false),2500);};
   const sendReport=async()=>{
@@ -1359,9 +1462,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const startEditMed=i=>{setEditMedIdx(i);setEmName(meds[i].name);setEmDose(meds[i].dose);setEmDefaultCt(meds[i].defaultCt??0);};
   const saveEditMed=()=>{if(!emName.trim())return;const nm=[...meds];nm[editMedIdx]={...nm[editMedIdx],name:emName.trim(),dose:emDose.trim(),defaultCt:Number(emDefaultCt)||0};setMeds(nm);setEditMedIdx(null);};
   const addMed=()=>{if(!newMedName.trim())return;const key=newMedName.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();setMeds([...meds,{key,name:newMedName.trim(),dose:newMedDose.trim()||"—",defaultCt:Number(newMedCt)||0}]);setNewMedName("");setNewMedDose("");setNewMedCt(1);setShowAddMed(false);};
-  const addReminder=()=>{const nr=[...reminders,{time:newRT,label:newRL,on:true}];setReminders(nr);setS({reminders:nr});setShowAddR(false);if("Notification" in window)Notification.requestPermission();};
-  const removeR=i=>{const nr=reminders.filter((_,j)=>j!==i);setReminders(nr);setS({reminders:nr});};
-  const toggleR=i=>{const nr=[...reminders];nr[i]={...nr[i],on:!nr[i].on};setReminders(nr);setS({reminders:nr});};
 
   return(<div className="scr">
     <div className="hh"><h2 className="ht">Settings</h2><button className="bi" onClick={onBack}>×</button></div>
@@ -1384,20 +1484,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
-    <PushCard/>
-
-    <div className="card">
-      <h3 className="ctit">Reminders</h3>
-      <p className="set-h" style={{marginBottom:10}}>Times to fire notifications. On iPhone, install to Home Screen and enable Push above for background delivery.</p>
-      {reminders.map((r,i)=>(<div key={i} className="set-reminder">
-        <div><span className="set-r-time">{r.time}</span><span className="set-r-label">{r.label}</span></div>
-        <div className="set-r-acts"><button className={`set-r-toggle${r.on?" set-r-on":""}`} onClick={()=>toggleR(i)}>{r.on?"On":"Off"}</button><button className="btn-ghost" style={{color:"#D4785C",fontSize:11,padding:"2px 6px"}} onClick={()=>removeR(i)}>×</button></div>
-      </div>))}
-      {showAddR?(<div className="add-form" style={{marginTop:8}}>
-        <div style={{display:"flex",gap:8,marginBottom:8}}><input type="time" className="srm-ti" style={{flex:1}} value={newRT} onChange={e=>setNewRT(e.target.value)}/><input className="add-input" style={{marginBottom:0}} value={newRL} onChange={e=>setNewRL(e.target.value)} placeholder="Label"/></div>
-        <div className="add-btns"><button className="btn-ghost" onClick={()=>setShowAddR(false)}>Cancel</button><button className="btn-sm-p" onClick={addReminder}>Add</button></div>
-      </div>):(<button className="btn-add" style={{marginTop:4}} onClick={()=>setShowAddR(true)}>+ Add reminder</button>)}
-    </div>
+    <RemindersCard reminders={reminders} setReminders={setReminders} setS={setS}/>
 
     <div className="card">
       <h3 className="ctit">Medications</h3>
@@ -1733,6 +1820,50 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .set-r-acts{display:flex;gap:6px;align-items:center}
 .set-r-toggle{padding:4px 10px;border-radius:6px;border:1px solid var(--bd);background:transparent;font:500 11px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer}
 .set-r-on{border-color:var(--gn);color:var(--gn);background:var(--gbg)}
+/* ── new merged Reminders card ── */
+.rem-status{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:12px;min-height:44px}
+.rem-status.rem-ok{background:var(--gbg);color:var(--gn)}
+.rem-status.rem-warn{background:#FAF6ED;color:#8A6A1E}
+.rem-status-btn{padding:6px 14px;font-size:12px;flex-shrink:0}
+.rem-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.rem-dot-green{background:#7BA08B}
+.rem-dot-amber{background:#E5B86B}
+.rem-dot-red{background:#D4785C}
+@keyframes remPulse{0%{box-shadow:0 0 0 0 rgba(123,160,139,.6)}70%{box-shadow:0 0 0 8px rgba(123,160,139,0)}100%{box-shadow:0 0 0 0 rgba(123,160,139,0)}}
+.rem-pulse{animation:remPulse 1.2s ease-out 1}
+.rem-install{display:flex;gap:12px;padding:14px;border-radius:8px;background:#FAF6ED;color:#8A6A1E;margin-bottom:12px;align-items:flex-start}
+.rem-install svg{margin-top:2px;flex-shrink:0}
+.rem-install-body{flex:1;font-size:13px;line-height:1.5}
+.rem-install-title{font-weight:600;margin-bottom:4px}
+.rem-install p{margin:0 0 6px}
+.rem-install ol{margin:0;padding-left:18px}
+.rem-install ol li{margin-bottom:2px}
+.rem-inactive{padding:8px 12px;background:#FAF6ED;color:#8A6A1E;border-radius:6px;font-size:12px;margin-bottom:12px}
+.rem-empty{text-align:center;padding:32px 16px}
+.rem-empty-emoji{font-size:32px;margin-bottom:8px}
+.rem-empty-title{font-family:'Source Serif 4',serif;font-size:18px;margin-bottom:6px;color:var(--t1)}
+.rem-empty-sub{font-size:13px;color:var(--t2);margin-bottom:16px;line-height:1.5}
+.rem-list{display:flex;flex-direction:column;gap:0}
+.rem-row{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid var(--bd);transition:opacity 150ms ease}
+.rem-row:last-child{border-bottom:none}
+.rem-row-off{opacity:.55}
+.rem-row-main{flex:1;text-align:left;background:transparent;border:none;padding:0;cursor:pointer;font-family:inherit;min-height:44px;display:flex;flex-direction:column;justify-content:center}
+.rem-row-main:active{background:var(--gbg);border-radius:6px;margin:-4px;padding:4px}
+.rem-row-time{font-family:'Source Serif 4',serif;font-size:17px;color:var(--t1)}
+.rem-row-label{font-size:13px;color:var(--t2);margin-top:2px}
+.rem-toggle{position:relative;width:42px;height:24px;border-radius:12px;background:#D8D2C9;border:none;cursor:pointer;padding:0;transition:background-color 150ms ease;flex-shrink:0;margin-left:8px}
+.rem-toggle.rem-toggle-on{background:#7BA08B}
+.rem-toggle-knob{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15);transition:left 200ms cubic-bezier(.4,0,.2,1)}
+.rem-toggle.rem-toggle-on .rem-toggle-knob{left:20px}
+.rem-form{padding:14px;border:1.5px solid var(--bd);border-radius:8px;margin:8px 0;background:var(--gbg)}
+.rem-form-lbl{display:block;font-size:11px;color:var(--t2);margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.rem-form-time{margin-bottom:12px}
+.rem-form-label{margin-bottom:12px}
+.rem-form-acts{display:flex;gap:8px;align-items:center}
+.rem-form-del{background:transparent;border:none;color:#D4785C;font-size:13px;cursor:pointer;padding:4px 8px}
+.rem-add{margin-top:8px}
+.rem-msg{margin-top:10px;font-size:12px;line-height:1.5}
+@media(prefers-reduced-motion:reduce){.rem-pulse,.rem-toggle-knob,.rem-row{animation:none!important;transition:none!important}}
 .ver-label{font-size:11px;color:var(--t3);text-align:center;margin-top:20px;font-weight:300}
 
 @media(max-width:440px){.app{max-width:100%}.scr{padding:0 16px 32px}}
