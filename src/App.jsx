@@ -62,6 +62,9 @@ async function disableWebPush() {
 function actorToRole(actor){
   return String(actor || "").trim().toLowerCase() === "wei" ? "primary" : "caretaker";
 }
+function getDeviceTz(){
+  try{return Intl.DateTimeFormat().resolvedOptions().timeZone||"";}catch{return "";}
+}
 
 function pushSubscribeToSheets(subscription) {
   if (!SHEETS_URL || !subscription) return;
@@ -71,6 +74,7 @@ function pushSubscribeToSheets(subscription) {
     subscription: subscription.toJSON ? subscription.toJSON() : subscription,
     role: actorToRole(actor),
     actor: actor,
+    tz: getDeviceTz(),
   });
 }
 
@@ -93,6 +97,21 @@ async function pushUpdateRoleForCurrentSub(){
     endpoint:(sub.toJSON?sub.toJSON():sub).endpoint,
     role:actorToRole(actor),
     actor:actor,
+    tz:getDeviceTz(),
+  });
+}
+
+async function pushUpdateTzForCurrentSub(){
+  if(!SHEETS_URL) return;
+  if(tzUpdateQueuedThisSession) return;
+  const sub=await getPushSubscription();
+  if(!sub) return;
+  tzUpdateQueuedThisSession=true;
+  enqueueSync({
+    type:"update_push_tz",
+    endpoint:(sub.toJSON?sub.toJSON():sub).endpoint,
+    tz:getDeviceTz(),
+    actor:getDeviceActor(),
   });
 }
 
@@ -104,6 +123,7 @@ function saveSyncQueue(q){try{localStorage.setItem(SYNC_QUEUE_KEY,JSON.stringify
 
 const syncQueue=loadSyncQueue();
 let syncRunning=false;
+let tzUpdateQueuedThisSession=false;
 let syncStatus={state:syncQueue.length?"syncing":"idle",pending:syncQueue.length}; // "idle"|"syncing"|"done"|"error"
 const syncListeners=new Set();
 function notifySync(){syncListeners.forEach(fn=>fn({...syncStatus}));}
@@ -165,6 +185,10 @@ async function waitForSyncIdle(timeoutMs=6000){
 // Retry any persisted jobs left over from a previous session.
 if(typeof window!=="undefined" && SHEETS_URL && syncQueue.length){
   setTimeout(()=>processQueue(),100);
+}
+if(typeof window!=="undefined" && SHEETS_URL){
+  window.addEventListener("online",()=>{if(syncQueue.length)processQueue();});
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&syncQueue.length)processQueue();});
 }
 
 // This device's actor (Wei / Cuixi / free-text). Stored in its own localStorage
@@ -397,6 +421,7 @@ function useAutoUpdate() {
 
 export default function App(){
   useAutoUpdate();
+  useEffect(()=>{pushUpdateTzForCurrentSub();},[]);
   const[screen,setScreen]=useState("welcome");
   const[mood,setMood]=useState(loadMood);
   const[srm,setSrm]=useState(loadSRM);
