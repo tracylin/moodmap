@@ -810,9 +810,12 @@ const NOTES_COPY_BY_MOOD={
   partial:{q:"Anything to note?",s:"Optional — fragments are fine."},
 };
 const NOTES_MOOD_ORDER=["sev_dep","mod_dep","mild_dep","normal","mild_elev","mod_elev","sev_elev"];
-const NOTE_STARTERS=["Today I…","Mostly just…","Felt like…"];
-const NOTE_STARTER_INSERTS=NOTE_STARTERS.map(s=>s+" ");
-const LONGEST_NOTE_STARTER_PREFIX=Math.max(...NOTE_STARTER_INSERTS.map(s=>s.length));
+const NOTE_STARTERS=[
+  {label:"Today I…",insert:"Today I "},
+  {label:"Mostly just…",insert:"Mostly just "},
+  {label:"Felt like…",insert:"Felt like "},
+];
+const LONGEST_NOTE_STARTER_PREFIX=Math.max(...NOTE_STARTERS.map(s=>s.insert.length));
 function notesCopyForMoods(moods){
   const ms=Array.isArray(moods)?moods:[];
   const key=NOTES_MOOD_ORDER.find(k=>ms.includes(k))||"partial";
@@ -833,7 +836,6 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   };
 
   const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);const[skippedSteps,setSkippedSteps]=useState(new Set());
-  const[lastTappedStarter,setLastTappedStarter]=useState("");
   const notesRef=useRef(null);
   const[entry,setEntry]=useState(()=>{
     const t=mood[targetKey];
@@ -933,7 +935,8 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
   const updMC=(k,v,dose)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v),dose:dose||e.meds[k]?.dose}}}));
   const notesText=entry.notes||"";
-  const showNoteStarters=notesText.length<=LONGEST_NOTE_STARTER_PREFIX;
+  const activeNoteStarter=NOTE_STARTERS.find(starter=>starter.insert===notesText)||null;
+  const showNoteStarters=notesText===""||!!activeNoteStarter;
   const toggleMood=(key)=>{
     const cur=entry.moods||[];
     if(cur.includes(key)) upd("moods",cur.filter(k=>k!==key));
@@ -941,14 +944,16 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     else upd("moods",[cur[0],key]);
   };
   const handleNoteStarter=(starter)=>{
-    const text=starter+" ";
-    upd("notes",text);
-    setLastTappedStarter(starter);
+    if(notesText===starter.insert){
+      upd("notes","");
+      return;
+    }
+    upd("notes",starter.insert);
     requestAnimationFrame(()=>{
       const el=notesRef.current;
       if(!el) return;
       el.focus();
-      el.setSelectionRange(text.length,text.length);
+      el.setSelectionRange(starter.insert.length,starter.insert.length);
     });
   };
 
@@ -1000,10 +1005,10 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         <div className={`note-starter-wrap${showNoteStarters?"":" note-starter-hidden"}`} aria-hidden={!showNoteStarters}>
           <div className="starter-label">if it helps —</div>
           <div className="starters">{NOTE_STARTERS.map(starter=>(
-            <button key={starter} type="button" className={`starter${showNoteStarters&&lastTappedStarter===starter?" starter-dim":""}`} tabIndex={showNoteStarters?0:-1} onClick={()=>handleNoteStarter(starter)}>{starter}</button>
+            <button key={starter.label} type="button" className={`starter${activeNoteStarter?.insert===starter.insert?" starter-dim":""}`} tabIndex={showNoteStarters?0:-1} onClick={()=>handleNoteStarter(starter)}>{starter.label}</button>
           ))}</div>
         </div>
-        <textarea ref={notesRef} className="ni" value={notesText} onChange={e=>{const v=e.target.value;if(!v||v.length>LONGEST_NOTE_STARTER_PREFIX)setLastTappedStarter("");upd("notes",v);}} placeholder="Whatever's on your mind. Fragments are fine." rows={4}/>
+        <textarea ref={notesRef} className="ni" value={notesText} onChange={e=>upd("notes",e.target.value)} placeholder="Whatever's on your mind. Fragments are fine." rows={4}/>
       </>)}
 
       <div className="step-btns">
@@ -1924,7 +1929,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .mi{flex:1}.mn{font-size:14px}.md-sub{font-size:11px;color:var(--t3);margin-top:1px}
 .mc{display:flex;align-items:center;gap:10px}.mv{font-size:15px;font-weight:500;min-width:20px;text-align:center}
 
-.ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);transition:border .15s;margin-bottom:12px}
+.ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);caret-color:#8A847B;transition:border .15s;margin-bottom:12px}
 .ni:focus{outline:none;border-color:var(--tx)}.ni::placeholder{color:var(--t3)}
 
 .rc{background:var(--card);border-radius:var(--r);padding:4px 16px;box-shadow:var(--sh);margin-bottom:16px}
