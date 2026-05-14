@@ -799,6 +799,26 @@ const MSTEPS_FULL=[
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
 ];
 
+const NOTES_COPY_BY_MOOD={
+  sev_dep:{q:"You showed up. Anything to set down?",s:"Or skip — coming back is the part that matters."},
+  mod_dep:{q:"You showed up. Anything to set down?",s:"Or skip — coming back is the part that matters."},
+  mild_dep:{q:"Anything you want to remember about today?",s:"A line is enough."},
+  normal:{q:"What made today feel like today?",s:"A few words, if any come."},
+  mild_elev:{q:"A lot moving today — anything to note?",s:"Even a fragment helps future-you read back."},
+  mod_elev:{q:"A lot moving today — anything to note?",s:"Even a fragment helps future-you read back."},
+  sev_elev:{q:"Anything you want to set down before bed?",s:"No pressure. Just one line if it helps."},
+  partial:{q:"Anything to note?",s:"Optional — fragments are fine."},
+};
+const NOTES_MOOD_ORDER=["sev_dep","mod_dep","mild_dep","normal","mild_elev","mod_elev","sev_elev"];
+const NOTE_STARTERS=["Today I…","Mostly just…","Felt like…"];
+const NOTE_STARTER_INSERTS=NOTE_STARTERS.map(s=>s+" ");
+const LONGEST_NOTE_STARTER_PREFIX=Math.max(...NOTE_STARTER_INSERTS.map(s=>s.length));
+function notesCopyForMoods(moods){
+  const ms=Array.isArray(moods)?moods:[];
+  const key=NOTES_MOOD_ORDER.find(k=>ms.includes(k))||"partial";
+  return NOTES_COPY_BY_MOOD[key];
+}
+
 function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood,onX}){
   const mode="full";
   const initialKey=lockedDate||editKey||tdk();
@@ -813,6 +833,8 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   };
 
   const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);const[skippedSteps,setSkippedSteps]=useState(new Set());
+  const[lastTappedStarter,setLastTappedStarter]=useState("");
+  const notesRef=useRef(null);
   const[entry,setEntry]=useState(()=>{
     const t=mood[targetKey];
     if(t) return{...t,moods:moodsArr(t),meds:{...t.meds}};
@@ -910,18 +932,33 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const prog=((step+(isR?1:0))/(tot+1))*100;
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
   const updMC=(k,v,dose)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v),dose:dose||e.meds[k]?.dose}}}));
+  const notesText=entry.notes||"";
+  const showNoteStarters=notesText.length<=LONGEST_NOTE_STARTER_PREFIX;
   const toggleMood=(key)=>{
     const cur=entry.moods||[];
     if(cur.includes(key)) upd("moods",cur.filter(k=>k!==key));
     else if(cur.length<2) upd("moods",[...cur,key]);
     else upd("moods",[cur[0],key]);
   };
+  const handleNoteStarter=(starter)=>{
+    const text=starter+" ";
+    upd("notes",text);
+    setLastTappedStarter(starter);
+    requestAnimationFrame(()=>{
+      const el=notesRef.current;
+      if(!el) return;
+      el.focus();
+      el.setSelectionRange(text.length,text.length);
+    });
+  };
 
   const renderStep=(si)=>{
     const st=activeSteps[si];const isEdit=editIdx!==null;
-    const q=typeof st.q==="object"?st.q.full:st.q;
+    const notesCopy=st.id==="notes"?notesCopyForMoods(entry.moods):null;
+    const q=notesCopy?.q||(typeof st.q==="object"?st.q.full:st.q);
+    const sub=notesCopy?.s||st.s;
     return(<div className="qa" key={si+"-"+isEdit}>
-      <h2 className="qt">{q}</h2><p className="qs">{st.s}</p>
+      <h2 className="qt">{q}</h2><p className="qs">{sub}</p>
 
       {st.id==="mood"&&(<div className="ol">{MOOD_OPTS.map(o=>{
         const sel=(entry.moods||[]).includes(o.key);const mc=MM[o.key];
@@ -959,7 +996,15 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
       </div>)}
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
         return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
-      {st.id==="notes"&&(<textarea className="ni" value={entry.notes||""} onChange={e=>upd("notes",e.target.value)} placeholder="Had a good walk today..." rows={4}/>)}
+      {st.id==="notes"&&(<>
+        <div className={`note-starter-wrap${showNoteStarters?"":" note-starter-hidden"}`} aria-hidden={!showNoteStarters}>
+          <div className="starter-label">if it helps —</div>
+          <div className="starters">{NOTE_STARTERS.map(starter=>(
+            <button key={starter} type="button" className={`starter${showNoteStarters&&lastTappedStarter===starter?" starter-dim":""}`} tabIndex={showNoteStarters?0:-1} onClick={()=>handleNoteStarter(starter)}>{starter}</button>
+          ))}</div>
+        </div>
+        <textarea ref={notesRef} className="ni" value={notesText} onChange={e=>{const v=e.target.value;if(!v||v.length>LONGEST_NOTE_STARTER_PREFIX)setLastTappedStarter("");upd("notes",v);}} placeholder="Whatever's on your mind. Fragments are fine." rows={4}/>
+      </>)}
 
       <div className="step-btns">
         <button className={`btn-p en${(si===0&&!(entry.moods||[]).length)?" bd":""}`}
@@ -1803,6 +1848,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 @keyframes si{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
 .qt{font-family:'Source Serif 4',serif;font-size:24px;font-weight:400;letter-spacing:-.2px;margin-bottom:6px}
 .qs{font-size:13px;color:var(--t3);font-weight:300;margin-bottom:28px}.en{margin-top:8px}
+.note-starter-wrap{opacity:1;transition:opacity .15s var(--ease);margin-bottom:10px}
+.note-starter-hidden{opacity:0;pointer-events:none}
+.starter-label{font-size:11px;color:var(--t3);font-weight:300;font-style:italic;margin-bottom:8px}
+.starters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.starter{flex:1 1 0;min-width:0;border:1.5px solid var(--bd);border-radius:4px;background:var(--warm);color:var(--t2);font:400 13px 'DM Sans',sans-serif;text-align:left;line-height:1.3;padding:10px 12px;cursor:pointer;transition:background .15s,border-color .15s,color .15s,opacity .15s,transform .15s}
+.starter:hover{border-color:#C9C2B5;background:#ECE7DD;color:var(--tx)}
+.starter:active{transform:scale(.98)}
+.starter-dim{opacity:.48}
 
 .ol{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
 .oc{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;cursor:pointer;transition:all .15s;text-align:left;font-family:'DM Sans',sans-serif}
