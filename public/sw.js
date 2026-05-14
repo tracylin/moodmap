@@ -2,7 +2,8 @@
 // Handles Web Push events from Apple/Mozilla/FCM and shows local notifications.
 // When a push arrives with a payload, that wins. Empty-payload pushes pick
 // a phrase at random from a small pool so the same words don't repeat each
-// time — keeps the nudge feeling fresh rather than robotic.
+// time — keeps the nudge feeling fresh rather than robotic. Payload tags
+// intentionally replace earlier notifications from the same slot/day.
 
 const NOTIF_DEFAULTS = {
   title: "MooTracker",

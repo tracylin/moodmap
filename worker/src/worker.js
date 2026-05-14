@@ -4,6 +4,7 @@
 //   Headers: X-Auth: <SHARED_SECRET>
 //   Body:    {"subscription": {...PushSubscription...},
 //             "payload"?: {title, body, url, ...},
+//             "tag"?: "stable-notification-tag",
 //             "ttl"?: 60}
 //
 // When payload is provided + the subscription has both p256dh and auth keys,
@@ -48,7 +49,13 @@ export default {
     if (!sub || !sub.endpoint) return new Response("missing subscription", { status: 400 });
 
     try {
-      const result = await sendPush(sub, body.payload ?? null, body.ttl ?? 60, env);
+      let payload = body.payload ?? null;
+      if (body.tag) {
+        payload = (payload && typeof payload === "object")
+          ? { ...payload, tag: String(body.tag) }
+          : { tag: String(body.tag) };
+      }
+      const result = await sendPush(sub, payload, body.ttl ?? 60, env);
       return cors(new Response(JSON.stringify(result), {
         status: result.ok ? 200 : 502,
         headers: { "Content-Type": "application/json" },
