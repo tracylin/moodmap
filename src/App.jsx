@@ -821,6 +821,24 @@ function notesCopyForMoods(moods){
   const key=NOTES_MOOD_ORDER.find(k=>ms.includes(k))||"partial";
   return NOTES_COPY_BY_MOOD[key];
 }
+function nextCtUp(v){
+  const n=Number(v)||0;
+  if(n<=0) return 0.5;
+  if(n===0.5) return 1;
+  if(n>=1 && Number.isInteger(n)) return n+1;
+  return Math.ceil(n);
+}
+function nextCtDown(v){
+  const n=Number(v)||0;
+  if(n<=0) return 0;
+  if(n<0.5) return 0;
+  if(n===0.5) return 0;
+  if(n<1) return 0.5;
+  if(n===1) return 0.5;
+  if(n>1 && Number.isInteger(n)) return n-1;
+  if(n>1) return Math.floor(n);
+  return 0;
+}
 
 function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood,onX}){
   const mode="full";
@@ -1000,7 +1018,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         })}
       </div>)}
       {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
-        return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,me.ct-1)}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,me.ct+1)}>+</button></div></div>);})}</div>)}
+        return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,nextCtDown(me.ct))}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,nextCtUp(me.ct))}>+</button></div></div>);})}</div>)}
       {st.id==="notes"&&(<>
         <div className={`note-starter-wrap${showNoteStarters?"":" note-starter-hidden"}`} aria-hidden={!showNoteStarters}>
           <div className="starter-label">if it helps —</div>
