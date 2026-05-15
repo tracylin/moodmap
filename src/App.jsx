@@ -1300,16 +1300,31 @@ function Confirm({msg,sub,onDone}){
    HISTORY — export includes SRM, notes newest first
    ═══════════════════════════════════════════════════════════════════════════ */
 function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
-  const sorted=Object.entries(mood).filter(([k,e])=>{
+  const [range,setRange]=useState("1m");
+  const [overlays,setOverlays]=useState({sleep:false,weight:false,social:false});
+  const [sleepTip,setSleepTip]=useState(null);
+  const validKey=k=>!!k&&/^\d{4}-\d{2}-\d{2}$/.test(k);
+  const parseKey=k=>new Date(`${k}T00:00:00`);
+  const nextKey=k=>{const d=parseKey(k);d.setDate(d.getDate()+1);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
+  const latestKey=[...Object.keys(mood||{}),...Object.keys(srm||{})].filter(validKey).sort().pop();
+  const inRange=k=>{
+    if(!latestKey||range==="all") return true;
+    const days={["1w"]:7,["1m"]:30,["3m"]:90}[range]||9999;
+    const cutoff=parseKey(latestKey);cutoff.setDate(cutoff.getDate()-days);
+    return parseKey(k)>=cutoff;
+  };
+  const validMoodEntry=([k,e])=>{
     if(!e||typeof e!=='object') return false;
-    if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k)) return false;
+    if(!validKey(k)) return false;
     return e.mood||e.mood2||(Array.isArray(e.moods)&&e.moods.length)||e.sleep!=null||e.anxiety!=null||e.weight!=null;
-  }).sort(([a],[b])=>a.localeCompare(b))
+  };
+  const hasMoodData=Object.entries(mood||{}).some(validMoodEntry);
+  const sorted=Object.entries(mood||{}).filter(entry=>validMoodEntry(entry)&&inRange(entry[0])).sort(([a],[b])=>a.localeCompare(b))
     .map(([k,e])=>{const[y,m,d]=k.split("-").map(Number);return{key:k,day:d,month:m,year:y,label:`${MO[m-1]?.slice(0,3)||"?"} ${d}`,sl:`${m}/${d}`,...e,mv:moodValue(e)};});
-  const wM=sorted.filter(e=>e.mv!=null);const wS=sorted.filter(e=>e.sleep!=null);const wA=sorted.filter(e=>e.anxiety!=null);
+  const wM=sorted.filter(e=>e.mv!=null);const wA=sorted.filter(e=>e.anxiety!=null);
   const avg=a=>a.length?(a.reduce((s,x)=>s+x,0)/a.length):null;
   const moodData=wM.map(e=>({n:e.sl,mood:e.mv,f:e.label}));
-  const comboData=sorted.filter(e=>e.sleep!=null||e.anxiety!=null||e.irritability!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,irritability:e.irritability,f:e.label}));
+  const comboData=sorted.filter(e=>e.anxiety!=null||e.irritability!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,irritability:e.irritability,f:e.label,key:e.key}));
   const weightData=sorted.filter(e=>e.weight!=null).map(e=>({n:e.sl,weight:e.weight,f:e.label}));
   const weightStats=(()=>{
     if(!weightData||weightData.length===0) return null;
@@ -1321,7 +1336,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
   })();
 
   const notes=sorted.filter(e=>e.notes?.trim()).reverse();
-  const srmSorted=Object.entries(srm).filter(([k])=>/^\d{4}-\d{2}-\d{2}$/.test(k)).sort(([a],[b])=>a.localeCompare(b));
+  const srmSorted=Object.entries(srm||{}).filter(([k])=>validKey(k)&&inRange(k)).sort(([a],[b])=>a.localeCompare(b));
   const srmSocial=srmSorted.map(([k,v])=>{
     const[,m,d]=k.split("-").map(Number);
     const done=(v.items||[]).filter(i=>!i.didNot);
@@ -1330,11 +1345,51 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     const count=socialActs.length;
     return{name:`${m}/${d}`,score,count,total:done.length,f:`${MO[m-1].slice(0,3)} ${d}`};
   });
-  const srmTimes=srmSorted.map(([k,v])=>{const[,m,d]=k.split("-").map(Number);const out={name:`${m}/${d}`};(v.items||[]).forEach(item=>{if(item.time&&!item.didNot){const t=to24h(normTime(item.time),item.am);const[h,mi]=t.split(":").map(Number);out[item.id]=(h*60+mi)/60;}});return out;});
+  const socialMap=Object.fromEntries(srmSocial.map(d=>[d.name,d.score]));
+  const weightMap=Object.fromEntries(weightData.map(d=>[d.n,d.weight]));
+  const comboOverlayData=comboData.map(d=>({...d,weight:weightMap[d.n]??null,social:socialMap[d.n]??null}));
+  const fitDomain=(vals,pad=1)=>{
+    const nums=vals.filter(v=>v!=null&&Number.isFinite(v));
+    if(!nums.length) return ["auto","auto"];
+    const mn=Math.min(...nums),mx=Math.max(...nums);
+    if(mn===mx) return [mn-pad,mx+pad];
+    return [mn-pad,mx+pad];
+  };
+  const timeHours=item=>{
+    if(!item||item.didNot||!item.time)return null;
+    const t=to24h(normTime(item.time),item.am);
+    const[h,mi]=String(t||"").split(":").map(Number);
+    if(!Number.isFinite(h)||!Number.isFinite(mi))return null;
+    return h+mi/60;
+  };
+  const nightClock=h=>{
+    const hh=((h%24)+24)%24;
+    const hr=Math.floor(hh);
+    const mn=Math.round((hh-hr)*60);
+    const ampm=hr>=12?"pm":"am";
+    const h12=hr%12||12;
+    return mn===0?`${h12}${ampm}`:`${h12}:${String(mn).padStart(2,"0")}${ampm}`;
+  };
+  const sleepZone=h=>h<6?"short":h<9?"healthy":h<11?"long":"verylong";
+  const sleepColor=z=>({short:"var(--z-short)",healthy:"var(--z-healthy)",long:"var(--z-long)",verylong:"var(--z-verylong)"}[z]);
+  const nights=srmSorted.map(([k,v])=>{
+    const bedtime=(v.items||[]).find(i=>i.id==="bedtime");
+    const wake=((srm||{})[nextKey(k)]?.items||[]).find(i=>i.id==="bed");
+    let bt=timeHours(bedtime);const wk=timeHours(wake);
+    if(bt!=null&&bt<6)bt+=24;
+    const[,m,d]=k.split("-").map(Number);
+    if(bt==null||wk==null)return{key:k,n:`${m}/${d}`,label:`${MO[m-1].slice(0,3)} ${d}`,bed:null,wake:null,dur:null};
+    const dur=(wk+24)-bt;
+    return{key:k,n:`${m}/${d}`,label:`${MO[m-1].slice(0,3)} ${d}`,bed:bt,wake:wk+24,dur,zone:sleepZone(dur)};
+  });
+  const validNights=nights.filter(n=>n.dur!=null);
+  const sleepAvg=avg(validNights.map(n=>n.dur));
+  const sleepTop=validNights.length?Math.floor(Math.min(...validNights.map(n=>n.bed)))-.5:22;
+  const sleepBot=validNights.length?Math.ceil(Math.max(...validNights.map(n=>n.wake)))+.5:33;
+  const yPct=h=>`${((h-sleepTop)/(sleepBot-sleepTop))*100}%`;
 
   const MTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f||""}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);}catch{return null;}};
-  const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}{d.irritability!=null&&<div>Irritability: {d.irritability}/3</div>}</div>);}catch{return null;}};
-  const fmtH=v=>{const h=Math.floor(v);return`${h>12?h-12:h||12}${h>=12?"pm":"am"}`;};
+  const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}{d.irritability!=null&&<div>Irritability: {d.irritability}/3</div>}{overlays.sleep&&d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{overlays.weight&&d.weight!=null&&<div>Weight: {d.weight} kg</div>}{overlays.social&&d.social!=null&&<div>Social: {d.social}</div>}</div>);}catch{return null;}};
 
   const exCSV=()=>{
     let csv="Date,Mood,Sleep,Weight,Anxiety,Irritability,Medications,Notes,Rhythm Activities\n";
@@ -1350,12 +1405,12 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
 
   return(<div className="scr">
     <div className="hh"><h2 className="ht">{name?`${name}'s `:""}{sorted.length>0?"Insights":"Insights"}</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
-    {sorted.length===0&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
-    {sorted.length>0&&<div className="sr">
+    {!hasMoodData&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
+    {hasMoodData&&<div className="sr">
       <div className="sb"><div className="sv">{sorted.length}</div><div className="sbl">Days</div></div>
-      <div className="sb"><div className="sv">{avg(wS.map(e=>e.sleep))?.toFixed(1)??"—"}</div><div className="sbl">Avg Sleep</div></div>
       <div className="sb"><div className="sv">{avg(wA.map(e=>e.anxiety))?.toFixed(1)??"—"}</div><div className="sbl">Avg Anxiety</div></div>
     </div>}
+    {hasMoodData&&<div className="range-bar">{[["1w","1W"],["1m","1M"],["3m","3M"],["all","All"]].map(([k,l])=><button key={k} className={`range-chip ${range===k?"on":""}`} onClick={()=>{setRange(k);setSleepTip(null);}}>{l}</button>)}</div>}
 
     {moodData.length>0&&<div className="card"><h3 className="ctit">Mood</h3><div className="cw"><ResponsiveContainer width="100%" height={180}><AreaChart data={moodData} margin={{top:8,right:8,left:-24,bottom:4}}>
       <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4785C" stopOpacity={.12}/><stop offset="50%" stopColor="#7BA08B" stopOpacity={.06}/><stop offset="100%" stopColor="#5A5F8A" stopOpacity={.15}/></linearGradient></defs>
@@ -1365,13 +1420,36 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
       <Area type="monotone" dataKey="mood" stroke="#6478A0" strokeWidth={2} fill="url(#mg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
     </AreaChart></ResponsiveContainer></div></div>}
 
-    {comboData.length>0&&<div className="card"><h3 className="ctit">Sleep · Anxiety · Irritability</h3><div className="cw"><ResponsiveContainer width="100%" height={150}><LineChart data={comboData} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}}/>
+    {nights.length>0&&<div className="card">
+      <div className="slp-head"><span className="v">{sleepAvg==null?"—":sleepAvg.toFixed(1)}</span><span className="u">h avg</span><span className="meta">{validNights.length} {validNights.length===1?"night":"nights"} · {validNights.length?`${Math.min(...validNights.map(n=>n.dur)).toFixed(1)}–${Math.max(...validNights.map(n=>n.dur)).toFixed(1)}h`:"—"}</span></div>
+      <p className="slp-sub">When Wei went to sleep, and when he woke up.</p>
+      <div className="slp-chart">
+        <div className="slp-anchor" style={{top:0}}>{nightClock(sleepTop)}</div>
+        <div className="slp-anchor right" style={{bottom:0}}>{nightClock(sleepBot)}</div>
+        <div className="slp-bars">{nights.map((n,i)=>{
+          const first=i===0,mid=i===Math.floor(nights.length/2),last=i===nights.length-1;
+          return(<div key={n.key} className={`slp-col ${sleepTip===i?"show":""}`} onClick={e=>{e.stopPropagation();setSleepTip(sleepTip===i?null:i);}}>
+            {n.dur==null?<div className="slp-empty"/>:<div className="slp-bar" style={{top:yPct(n.bed),height:`${((n.wake-n.bed)/(sleepBot-sleepTop))*100}%`,background:sleepColor(n.zone)}}/>}
+            <div className={`slp-tip ${n.bed!=null&&((n.bed-sleepTop)/(sleepBot-sleepTop))*100<25?"dn":"up"}`}>{n.dur==null?<>{n.label} · not logged</>:<><b>{n.dur.toFixed(1)}h</b> · {n.label}<br/>{nightClock(n.bed)} → {nightClock(n.wake)}</>}</div>
+            <span className="slp-x">{first||mid||last?n.n:""}</span>
+          </div>);
+        })}</div>
+      </div>
+      <div className="slp-leg"><span className="z"><span className="d" style={{background:"var(--z-short)"}}/>under 6h</span><span className="z"><span className="d" style={{background:"var(--z-healthy)"}}/>6–9h</span><span className="z"><span className="d" style={{background:"var(--z-long)"}}/>9–11h</span><span className="z"><span className="d" style={{background:"var(--z-verylong)"}}/>11h+</span></div>
+    </div>}
+
+    {comboData.length>0&&<div className="card"><h3 className="ctit">Anxiety · Irritability</h3><div className="cw"><ResponsiveContainer width="100%" height={150}><LineChart data={comboOverlayData} margin={{top:8,right:8,left:-24,bottom:4}}>
+      <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis yAxisId="symptoms" domain={[0,3]} ticks={[0,1,2,3]} tick={{fontSize:10,fill:"#9E9790"}}/>
+      <YAxis yAxisId="sleep" orientation="right" hide domain={fitDomain(comboOverlayData.map(d=>d.sleep),1)}/>
+      <YAxis yAxisId="weight" orientation="right" hide domain={fitDomain(comboOverlayData.map(d=>d.weight),2)}/>
+      <YAxis yAxisId="social" orientation="right" hide domain={fitDomain(comboOverlayData.map(d=>d.social),1)}/>
       <Tooltip content={<CTT/>}/>
-      <Line type="monotone" dataKey="sleep" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Sleep"/>
-      <Line type="monotone" dataKey="anxiety" stroke="#D4785C" strokeWidth={1.5} dot={{r:2,fill:"#D4785C",strokeWidth:0}} connectNulls strokeDasharray="4 2" name="Anxiety"/>
-      <Line type="monotone" dataKey="irritability" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls strokeDasharray="2 3" name="Irritability"/>
-    </LineChart></ResponsiveContainer></div><div className="cleg2"><span><span className="ll" style={{background:"#7BA08B"}}/> Sleep</span><span><span className="ll" style={{background:"#D4785C"}}/> Anxiety</span><span><span className="ll" style={{background:"#C9B07A"}}/> Irritability</span></div></div>}
+      <Line yAxisId="symptoms" type="monotone" dataKey="anxiety" stroke="#D4785C" strokeWidth={1.8} dot={{r:2,fill:"#D4785C",strokeWidth:0}} connectNulls name="Anxiety"/>
+      <Line yAxisId="symptoms" type="monotone" dataKey="irritability" stroke="#C9B07A" strokeWidth={1.8} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Irritability"/>
+      {overlays.sleep&&<Line yAxisId="sleep" type="monotone" dataKey="sleep" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls strokeDasharray="5 3" name="Sleep"/>}
+      {overlays.weight&&<Line yAxisId="weight" type="monotone" dataKey="weight" stroke="#A89CC8" strokeWidth={1.5} dot={{r:2,fill:"#A89CC8",strokeWidth:0}} connectNulls strokeDasharray="4 3" name="Weight"/>}
+      {overlays.social&&<Line yAxisId="social" type="monotone" dataKey="social" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2.5,fill:"#D49A6A",strokeWidth:0}} connectNulls strokeDasharray="3 3" name="Social"/>}
+    </LineChart></ResponsiveContainer></div><div className="ov-bar">{[{key:"sleep",label:"Sleep",color:"#7BA08B"},{key:"weight",label:"Weight",color:"#A89CC8"},{key:"social",label:"Social",color:"#D49A6A"}].map(o=><button key={o.key} className={`ov-chip ${overlays[o.key]?"on":""}`} onClick={()=>setOverlays({...overlays,[o.key]:!overlays[o.key]})}><span className="ov-dot" style={{background:o.color}}/>{o.label}</button>)}</div><div className="cleg2"><span><span className="ll" style={{background:"#D4785C"}}/> Anxiety</span><span><span className="ll" style={{background:"#C9B07A"}}/> Irritability</span>{overlays.sleep&&<span><span className="ll" style={{background:"#7BA08B"}}/> Sleep</span>}{overlays.weight&&<span><span className="ll" style={{background:"#A89CC8"}}/> Weight</span>}{overlays.social&&<span><span className="ll" style={{background:"#D49A6A"}}/> Social</span>}</div></div>}
 
     
 
@@ -1395,69 +1473,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
       <div className="cleg2"><span style={{fontSize:11,color:"var(--t3)"}}>1 = just present · 2 = actively involved · 3 = very stimulating</span></div>
     </div>}
 
-    {/* ── Activity stability: Morning anchors ── */}
-    {srmTimes.length>0&&srmTimes.some(d=>d.bed||d.beverage||d.breakfast)&&<div className="card">
-      <h3 className="ctit">Morning Rhythm</h3>
-      <p className="card-sub">Wake-up, morning beverage, breakfast times</p>
-      <div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
-        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
-        <YAxis tick={{fontSize:10,fill:"#9E9790"}} tickFormatter={fmtH} domain={["auto","auto"]}/>
-        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
-        {srmTimes.some(d=>d.bed)&&<Line type="monotone" dataKey="bed" stroke="#7E9AB3" strokeWidth={1.5} dot={{r:2,fill:"#7E9AB3",strokeWidth:0}} connectNulls name="Wake up"/>}
-        {srmTimes.some(d=>d.beverage)&&<Line type="monotone" dataKey="beverage" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Beverage"/>}
-        {srmTimes.some(d=>d.breakfast)&&<Line type="monotone" dataKey="breakfast" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Breakfast"/>}
-      </LineChart></ResponsiveContainer></div>
-      <div className="cleg2" style={{flexWrap:"wrap"}}>
-        {srmTimes.some(d=>d.bed)&&<span><span className="ll" style={{background:"#7E9AB3"}}/> Wake</span>}
-        {srmTimes.some(d=>d.beverage)&&<span><span className="ll" style={{background:"#C9B07A"}}/> Beverage</span>}
-        {srmTimes.some(d=>d.breakfast)&&<span><span className="ll" style={{background:"#D49A6A"}}/> Breakfast</span>}
-      </div>
-    </div>}
-
-    {/* ── Activity stability: Daytime ── */}
-    {srmTimes.length>0&&srmTimes.some(d=>d.outside||d.work||d.exercise||d.lunch)&&<div className="card">
-      <h3 className="ctit">Daytime Rhythm</h3>
-      <p className="card-sub">Outside, work, exercise, lunch times</p>
-      <div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
-        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
-        <YAxis tick={{fontSize:10,fill:"#9E9790"}} tickFormatter={fmtH} domain={["auto","auto"]}/>
-        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
-        {srmTimes.some(d=>d.outside)&&<Line type="monotone" dataKey="outside" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Outside"/>}
-        {srmTimes.some(d=>d.work)&&<Line type="monotone" dataKey="work" stroke="#C9B07A" strokeWidth={1.5} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Work"/>}
-        {srmTimes.some(d=>d.exercise)&&<Line type="monotone" dataKey="exercise" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Work out"/>}
-        {srmTimes.some(d=>d.lunch)&&<Line type="monotone" dataKey="lunch" stroke="#A89CC8" strokeWidth={1.5} dot={{r:2,fill:"#A89CC8",strokeWidth:0}} connectNulls name="Lunch"/>}
-      </LineChart></ResponsiveContainer></div>
-      <div className="cleg2" style={{flexWrap:"wrap"}}>
-        {srmTimes.some(d=>d.outside)&&<span><span className="ll" style={{background:"#7BA08B"}}/> Outside</span>}
-        {srmTimes.some(d=>d.work)&&<span><span className="ll" style={{background:"#C9B07A"}}/> Work</span>}
-        {srmTimes.some(d=>d.exercise)&&<span><span className="ll" style={{background:"#D49A6A"}}/> Work out</span>}
-        {srmTimes.some(d=>d.lunch)&&<span><span className="ll" style={{background:"#A89CC8"}}/> Lunch</span>}
-      </div>
-    </div>}
-
-    {/* ── Activity stability: Evening anchors ── */}
-    {srmTimes.length>0&&srmTimes.some(d=>d.dinner||d.home||d.bedtime)&&<div className="card">
-      <h3 className="ctit">Evening Rhythm</h3>
-      <p className="card-sub">Dinner, home return, bed time</p>
-      <div className="cw"><ResponsiveContainer width="100%" height={140}><LineChart data={srmTimes} margin={{top:8,right:8,left:-24,bottom:4}}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/>
-        <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
-        <YAxis tick={{fontSize:10,fill:"#9E9790"}} tickFormatter={fmtH} domain={["auto","auto"]}/>
-        <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;return(<div className="tt">{payload.filter(p=>p.value!=null).map((p,i)=>(<div key={i} style={{color:p.stroke}}>{p.name}: {fmtH(p.value)}</div>))}</div>);}}/>
-        {srmTimes.some(d=>d.dinner)&&<Line type="monotone" dataKey="dinner" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2,fill:"#D49A6A",strokeWidth:0}} connectNulls name="Dinner"/>}
-        {srmTimes.some(d=>d.home)&&<Line type="monotone" dataKey="home" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls name="Home"/>}
-        {srmTimes.some(d=>d.bedtime)&&<Line type="monotone" dataKey="bedtime" stroke="#5A5F8A" strokeWidth={1.5} dot={{r:2,fill:"#5A5F8A",strokeWidth:0}} connectNulls name="Bed time"/>}
-      </LineChart></ResponsiveContainer></div>
-      <div className="cleg2" style={{flexWrap:"wrap"}}>
-        {srmTimes.some(d=>d.dinner)&&<span><span className="ll" style={{background:"#D49A6A"}}/> Dinner</span>}
-        {srmTimes.some(d=>d.home)&&<span><span className="ll" style={{background:"#7BA08B"}}/> Home</span>}
-        {srmTimes.some(d=>d.bedtime)&&<span><span className="ll" style={{background:"#5A5F8A"}}/> Bed time</span>}
-      </div>
-    </div>}
-
-    {notes.length>0&&<div className="card"><h3 className="ctit">Journal Notes</h3><div className="nl">{notes.map(n=>(<div key={n.key} className="nr"><div className="nd">{n.label}</div><div className="nt">{n.notes}</div></div>))}</div></div>}
+    {notes.length>0&&<div className="notes-card"><h3 className="notes-h">Notes</h3><p className="notes-sub">in Wei's own words · {notes.length} {notes.length===1?"note":"notes"} in range</p><div className="nl">{notes.map(n=>{const mk=primaryMood(n);const meta=MM[mk];const showMood=mk&&mk!=="normal";return(<div key={n.key} className="nr"><div className="n-meta"><span className="n-dot" style={{background:meta?.color||"var(--t3)"}}/><span className="n-date">{n.label}</span>{showMood&&<span className="n-mood">· {meta?.label.toLowerCase()}</span>}</div><div className="nt">{n.notes}</div></div>);})}</div></div>}
     {onSendReport&&<div className="card" style={{textAlign:"center"}}>
       <p style={{fontSize:12,color:"var(--t3)",marginBottom:10,fontWeight:300}}>{reportEmail?"Weekly report will also auto-send every Sunday.":"Set your email in Settings to enable weekly reports."}</p>
       <button className="btn-s" style={{fontSize:13,padding:"11px 16px",width:"100%",opacity:reportEmail?1:.5}} onClick={reportEmail?onSendReport:undefined} disabled={!reportEmail}>{reportEmail?"Send this week's report":"Configure email in Settings"}</button>
@@ -1784,7 +1800,7 @@ if(typeof window!=="undefined"){
    ═══════════════════════════════════════════════════════════════════════════ */
 const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;1,8..60,300&display=swap');
-:root{--bg:#FAF8F5;--card:#FFF;--tx:#2C2825;--t2:#6B6560;--t3:#A09890;--bd:#EBE7E1;--warm:#F5F0E8;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 3px rgba(0,0,0,.03),0 4px 12px rgba(0,0,0,.02);--ease:cubic-bezier(.16,1,.3,1)}
+:root{--bg:#FAF8F5;--card:#FFF;--tx:#2C2825;--t2:#6B6560;--t3:#A09890;--bd:#EBE7E1;--warm:#F5F0E8;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 3px rgba(0,0,0,.03),0 4px 12px rgba(0,0,0,.02);--ease:cubic-bezier(.16,1,.3,1);--z-short:#D08465;--z-healthy:#8FA889;--z-long:#C9A878;--z-verylong:#6E7AA0}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
 .app{max-width:420px;margin:0 auto;min-height:100dvh;overflow-x:hidden}
@@ -2032,15 +2048,54 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .sr{display:flex;gap:10px;margin-bottom:14px}
 .sb{flex:1;background:var(--card);border-radius:var(--r);padding:14px 10px;box-shadow:var(--sh);text-align:center}
 .sv{font-family:'Source Serif 4',serif;font-size:26px;font-weight:300}.sbl{font-size:10px;color:var(--t3);margin-top:2px}
+.range-bar{display:flex;gap:6px;margin-bottom:14px;padding:0 2px}
+.range-chip{padding:8px 12px;border-radius:999px;border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;transition:all .15s}
+.range-chip:active{transform:scale(.95)}
+.range-chip.on{border-color:var(--tx);background:var(--warm);color:var(--tx)}
 .card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sh);margin-bottom:12px}
 .ctit{font-size:10px;font-weight:500;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
 .cw{margin:0 -6px}
+.ov-bar{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.ov-chip{padding:6px 12px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:400 11px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.ov-chip:active{transform:scale(.95)}
+.ov-chip.on{border-color:var(--tx);background:var(--warm);color:var(--tx);font-weight:500}
+.ov-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .cleg2{display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--t2);flex-wrap:wrap}
 .ll{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:3px}
+.slp-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.slp-head .v{font-family:'Source Serif 4',serif;font-size:32px;font-weight:300;line-height:1;letter-spacing:0}
+.slp-head .u{font-family:'Source Serif 4',serif;font-size:15px;font-weight:300;color:var(--t2)}
+.slp-head .meta{margin-left:auto;font-size:10.5px;color:var(--t3);font-weight:400;text-align:right;line-height:1.5}
+.slp-sub{font-size:11px;color:var(--t3);font-weight:300;margin-bottom:14px}
+.slp-chart{position:relative;height:208px;margin-bottom:6px}
+.slp-anchor{position:absolute;left:0;right:0;font-size:10px;color:var(--t3);font-weight:400;pointer-events:none;display:flex;align-items:center;gap:8px;z-index:1}
+.slp-anchor::after{content:"";flex:1;height:1px;background:var(--bd);opacity:.5}
+.slp-anchor.right{justify-content:flex-end}
+.slp-anchor.right::after{display:none}
+.slp-anchor.right::before{content:"";flex:1;height:1px;background:var(--bd);opacity:.5;margin-right:8px}
+.slp-bars{position:absolute;left:0;right:0;top:0;bottom:18px;display:flex;align-items:stretch;gap:3px;padding:0 2px}
+.slp-col{flex:1;position:relative;display:flex;justify-content:center;cursor:pointer;min-width:0}
+.slp-bar{position:absolute;left:50%;transform:translateX(-50%);width:8px;border-radius:4px;transition:opacity .15s}
+.slp-col:hover .slp-bar{opacity:.7}
+.slp-empty{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:3px;height:3px;border-radius:50%;background:var(--t3);opacity:.4}
+.slp-tip{position:absolute;left:50%;background:var(--tx);color:#FFFDF9;font-size:10.5px;font-weight:400;padding:5px 9px;border-radius:7px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:5;line-height:1.45}
+.slp-tip.up{bottom:calc(100% + 6px);transform:translateX(-50%)}
+.slp-tip.dn{top:calc(100% + 6px);transform:translateX(-50%)}
+.slp-tip b{font-weight:500}
+.slp-col.show .slp-tip{opacity:1}
+.slp-x{position:absolute;bottom:-18px;font-size:10px;color:var(--t3);font-weight:400;text-align:center;white-space:nowrap}
+.slp-leg{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--bd);font-size:10.5px;color:var(--t2)}
+.slp-leg .z{display:inline-flex;align-items:center;gap:5px}
+.slp-leg .d{width:8px;height:8px;border-radius:2px}
 .tt{background:var(--card);border:1px solid var(--bd);border-radius:var(--rs);padding:8px 12px;box-shadow:var(--sh);font-size:11px;z-index:10}
 .ttd{font-weight:500;margin-bottom:2px}
-.nl{display:flex;flex-direction:column}.nr{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd)}.nr:last-child{border-bottom:none}
-.nd{font-size:11px;color:var(--t3);font-weight:500;min-width:44px;flex-shrink:0;padding-top:1px}.nt{font-size:13px;color:var(--t2);font-weight:300;line-height:1.5}
+.notes-card{background:var(--card);border-radius:var(--r);padding:24px 22px 20px;box-shadow:var(--sh);margin-bottom:12px}
+.notes-h{font-family:'Source Serif 4',serif;font-weight:400;font-size:20px;letter-spacing:0;margin-bottom:4px}
+.notes-sub{font-size:11px;color:var(--t3);font-weight:300;margin-bottom:18px}
+.nl{display:flex;flex-direction:column;gap:18px}.nr{display:grid;grid-template-columns:auto 1fr;column-gap:14px;row-gap:6px;padding-bottom:18px;border-bottom:1px solid var(--bd)}.nr:last-child{padding-bottom:0;border-bottom:none}
+.n-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);font-weight:500;letter-spacing:.02em;grid-column:1/-1}
+.n-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;opacity:.85}.n-date{font-family:'DM Sans',sans-serif}.n-mood{color:var(--t3);font-weight:400;font-size:10.5px;text-transform:lowercase}
+.nd{font-size:11px;color:var(--t3);font-weight:500;min-width:44px;flex-shrink:0;padding-top:1px}.nt{font-family:'Source Serif 4',serif;font-size:15px;line-height:1.55;color:var(--tx);font-weight:400;grid-column:1/-1}
 
 .dv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .dv-acts{display:flex;gap:8px}
