@@ -1375,12 +1375,10 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     const h12=hr%12||12;
     return mn===0?`${h12}${ampm}`:`${h12}:${String(mn).padStart(2,"0")}${ampm}`;
   };
-  const sleepZone=h=>h<6?"short":h<9?"healthy":h<11?"long":"verylong";
-  const sleepColor=z=>({short:"var(--z-short)",healthy:"var(--z-healthy)",long:"var(--z-long)",verylong:"var(--z-verylong)"}[z]);
-  const X_LEFT=20,X_RIGHT=36,WEI_LINE=30;
-  const sleepTicks=[20,23,26,30,33,36];
-  const xPct=h=>`${((h-X_LEFT)/(X_RIGHT-X_LEFT))*100}%`;
-  const isWeekend=k=>{const d=new Date(`${k}T00:00:00`).getDay();return d===0||d===6;};
+  const sleepZone=h=>h<5?"very-short":h<7?"short":h<10?"healthy":"long";
+  const sleepColor=z=>({"very-short":"var(--z-very-short)",short:"var(--z-short)",healthy:"var(--z-healthy)",long:"var(--z-long)"}[z]);
+  const Y_TOP=20,Y_BOTTOM=36;
+  const yPct=h=>`${((h-Y_TOP)/(Y_BOTTOM-Y_TOP))*100}%`;
   const nights=srmSorted.map(([k,v])=>{
     const bedtime=(v.items||[]).find(i=>i.id==="bedtime");
     const wake=((srm||{})[nextKey(k)]?.items||[]).find(i=>i.id==="bed");
@@ -1393,6 +1391,18 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
   });
   const validNights=nights.filter(n=>n.dur!=null);
   const sleepAvg=avg(validNights.map(n=>n.dur));
+  const sleepAvgBed=avg(validNights.map(n=>n.bed));
+  const sleepAvgWake=avg(validNights.map(n=>n.wake));
+  const sleepXLabels=new Set(nights.length?[0,Math.floor(nights.length*.25),Math.floor(nights.length*.5),Math.floor(nights.length*.75),nights.length-1]:[]);
+  const sleepZones=[
+    {key:"very-short",label:"<5h",color:"var(--z-very-short)"},
+    {key:"short",label:"5–7h",color:"var(--z-short)"},
+    {key:"healthy",label:"7–10h",color:"var(--z-healthy)"},
+    {key:"long",label:">10h",color:"var(--z-long)"}
+  ];
+  const sleepZoneCounts=Object.fromEntries(sleepZones.map(z=>[z.key,0]));
+  validNights.forEach(n=>{sleepZoneCounts[n.zone]=(sleepZoneCounts[n.zone]||0)+1;});
+  const sleepDist=sleepZones.map(z=>({...z,pct:validNights.length?Math.round((sleepZoneCounts[z.key]/validNights.length)*100):0})).filter(z=>z.pct>0);
 
   const MTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;const mk=Object.entries(MM).find(([,v])=>v.v===d.mood);return(<div className="tt"><div className="ttd">{d.f||""}</div>{mk&&<div style={{color:mk[1].color}}>{mk[1].label}</div>}</div>);}catch{return null;}};
   const CTT=({active,payload})=>{try{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f||""}</div>{d.anxiety!=null&&<div>Anxiety: {d.anxiety}/3</div>}{d.irritability!=null&&<div>Irritability: {d.irritability}/3</div>}{overlays.sleep&&d.sleep!=null&&<div>Sleep: {d.sleep}h</div>}{overlays.weight&&d.weight!=null&&<div>Weight: {d.weight} kg</div>}{overlays.social&&d.social!=null&&<div>Social: {d.social}</div>}</div>);}catch{return null;}};
@@ -1426,26 +1436,30 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
       <Area type="monotone" dataKey="mood" stroke="#6478A0" strokeWidth={2} fill="url(#mg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
     </AreaChart></ResponsiveContainer></div></div>}
 
-    {nights.length>0&&<div className="card">
+    {nights.length>0&&<div className="card sleep-card">
       <div className="slp-head"><span className="v">{sleepAvg==null?"—":sleepAvg.toFixed(1)}</span><span className="u">h avg</span><span className="meta">{validNights.length} {validNights.length===1?"night":"nights"} · {validNights.length?`${Math.min(...validNights.map(n=>n.dur)).toFixed(1)}–${Math.max(...validNights.map(n=>n.dur)).toFixed(1)}h`:"—"}</span></div>
-      <p className="slp-sub">Each row is one night. The bar runs from bedtime to wake.</p>
       <div className="sleep-grid">
-        <div className="date-head"/>
-        <div className="axis">{sleepTicks.map(h=><span key={h} className={`axis-tick ${h===WEI_LINE?"wei":""}`} style={{left:xPct(h)}}>{nightClock(h)}</span>)}</div>
-        <div>{nights.map((n,i)=>{
-          const show=i%4===0||i===nights.length-1;
-          return <div key={n.key} className={`row-date ${isWeekend(n.key)?"weekend":""}`}>{show?n.n:""}</div>;
-        })}</div>
         <div className="chart-body">
-          {sleepTicks.map(h=><div key={h} className={`gridline ${h===WEI_LINE?"wei":""}`} style={{left:xPct(h)}}/>)}
-          {nights.map((n,i)=><div key={n.key} className="row" data-d={n.key}>
-            {n.dur!=null&&<div className={`bar ${sleepTip===i?"show":""}`} style={{left:xPct(n.bed),width:`${((n.wake-n.bed)/(X_RIGHT-X_LEFT))*100}%`,background:sleepColor(n.zone)}} onClick={e=>{e.stopPropagation();setSleepTip(sleepTip===i?null:i);}}>
-              <div className="tip"><b>{n.dur.toFixed(1)}h</b> · {n.label}<br/>{nightClock(n.bed)} → {nightClock(n.wake)}</div>
-            </div>}
-          </div>)}
+          {sleepAvgBed!=null&&<div className="ref-line" style={{top:yPct(sleepAvgBed)}}/>}
+          {sleepAvgWake!=null&&<div className="ref-line" style={{top:yPct(sleepAvgWake)}}/>}
+          <div className="bars">{nights.map((n,i)=><div key={n.key} className={`col ${sleepTip===i?"show":""}`} data-d={n.key}>
+            {n.dur!=null&&<button className="bar" aria-label={`${n.dur.toFixed(1)} hours on ${n.label}`} style={{top:yPct(n.bed),height:`${((n.wake-n.bed)/(Y_BOTTOM-Y_TOP))*100}%`,background:sleepColor(n.zone)}} onClick={e=>{e.stopPropagation();setSleepTip(sleepTip===i?null:i);}}>
+              <span className="tip" style={(((n.bed-Y_TOP)/(Y_BOTTOM-Y_TOP))*100)<15?{top:`calc(${yPct(n.wake)} + 8px)`}:{bottom:`calc(${100-((n.bed-Y_TOP)/(Y_BOTTOM-Y_TOP))*100}% + 8px)`}}><b>{n.dur.toFixed(1)}h</b> · {n.label}<br/>{nightClock(n.bed)} → {nightClock(n.wake)}</span>
+            </button>}
+          </div>)}</div>
         </div>
+        <span className="y-label y-top">8pm</span>
+        <span className="y-label y-mid">4am</span>
+        <span className="y-label y-bot">12pm</span>
+        {sleepAvgBed!=null&&<span className="ref-label" style={{top:yPct(sleepAvgBed)}}><b>{nightClock(sleepAvgBed)}</b>average</span>}
+        {sleepAvgWake!=null&&<span className="ref-label" style={{top:yPct(sleepAvgWake)}}><b>{nightClock(sleepAvgWake)}</b>average</span>}
       </div>
-      <div className="slp-leg"><span className="z"><span className="d" style={{background:"var(--z-short)"}}/>under 6h</span><span className="z"><span className="d" style={{background:"var(--z-healthy)"}}/>6–9h</span><span className="z"><span className="d" style={{background:"var(--z-long)"}}/>9–11h</span><span className="z"><span className="d" style={{background:"var(--z-verylong)"}}/>11h+</span><span className="wei-mark">Wei-day starts · 6am</span></div>
+      <div className="xax">{nights.map((n,i)=><span key={n.key}>{sleepXLabels.has(i)?n.n:""}</span>)}</div>
+      <div className="dist">
+        <div className="dist-pcts">{sleepDist.map(z=><span key={z.key} style={{flex:z.pct}}>{z.pct>=8?`${z.pct}%`:""}</span>)}</div>
+        <div className="dist-strip">{sleepDist.map(z=><span key={z.key} className="dist-seg" style={{flex:z.pct,background:z.color}}/>)}</div>
+        <div className="dist-labels">{sleepDist.map(z=><span key={z.key} style={{flex:z.pct}}>{z.pct>=8?z.label:""}</span>)}</div>
+      </div>
     </div>}
 
     {comboData.length>0&&<div className="card"><h3 className="ctit">Anxiety · Irritability</h3><div className="cw"><ResponsiveContainer width="100%" height={150}><LineChart data={comboOverlayData} margin={{top:8,right:8,left:-24,bottom:4}}>
@@ -1810,7 +1824,7 @@ if(typeof window!=="undefined"){
    ═══════════════════════════════════════════════════════════════════════════ */
 const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;1,8..60,300&display=swap');
-:root{--bg:#FAF8F5;--card:#FFF;--tx:#2C2825;--t2:#6B6560;--t3:#A09890;--bd:#EBE7E1;--warm:#F5F0E8;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 3px rgba(0,0,0,.03),0 4px 12px rgba(0,0,0,.02);--ease:cubic-bezier(.16,1,.3,1);--z-short:#D08465;--z-healthy:#8FA889;--z-long:#C9A878;--z-verylong:#6E7AA0;--wei:#8FA889}
+:root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
 .app{max-width:420px;margin:0 auto;min-height:100dvh;overflow-x:hidden}
@@ -2072,33 +2086,34 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .ov-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .cleg2{display:flex;gap:12px;margin-top:8px;font-size:10px;color:var(--t2);flex-wrap:wrap}
 .ll{display:inline-block;width:14px;height:2px;border-radius:1px;vertical-align:middle;margin-right:3px}
-.slp-head{display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
-.slp-head .v{font-family:'Source Serif 4',serif;font-size:42px;font-weight:300;line-height:1;letter-spacing:0}
-.slp-head .u{font-family:'Source Serif 4',serif;font-size:18px;font-weight:300;color:var(--t2)}
-.slp-head .meta{margin-left:auto;font-size:10.5px;color:var(--t3);font-weight:400;text-align:right;line-height:1.5}
-.slp-sub{font-size:12px;color:var(--t2);font-weight:300;margin-bottom:18px}
-.sleep-grid{display:grid;grid-template-columns:42px 1fr;column-gap:10px}
-.axis{position:relative;height:22px;grid-column:2/3}
-.axis-tick{position:absolute;top:0;transform:translateX(-50%);font-size:10px;color:var(--t3);font-weight:400}
-.axis-tick.wei{color:var(--wei);font-weight:500}
-.date-head{grid-column:1/2}
-.chart-body{grid-column:2/3;position:relative}
-.gridline{position:absolute;top:0;bottom:0;width:1px;background:var(--bd);opacity:.6;pointer-events:none}
-.gridline.wei{background:transparent;opacity:.4;border-left:1px dashed var(--wei)}
-.row{position:relative;height:14px;display:flex;align-items:center;margin-bottom:3px}
-.row-date{grid-column:1/2;height:14px;display:flex;align-items:center;justify-content:flex-end;font-size:10px;color:var(--t3);font-weight:400;margin-bottom:3px;padding-right:2px}
-.row-date.weekend{color:var(--t2);font-weight:500}
-.bar{position:absolute;height:9px;border-radius:5px;cursor:pointer;transition:opacity .15s}
-.bar:hover{opacity:.75}
-.tip{position:absolute;top:-30px;background:var(--tx);color:#FFFDF9;font-size:11px;padding:5px 9px;border-radius:7px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:5;line-height:1.4;font-weight:400}
+.sleep-card{border-radius:22px;padding:26px 24px 22px}
+.slp-head{display:flex;align-items:baseline;gap:10px;margin-bottom:24px}
+.slp-head .v{font-family:'Source Serif 4',serif;font-size:46px;font-weight:300;line-height:1;letter-spacing:0}
+.slp-head .u{font-family:'Source Serif 4',serif;font-size:19px;font-weight:300;color:var(--t2)}
+.slp-head .meta{margin-left:auto;font-size:11px;color:var(--t3);font-weight:400;text-align:right;line-height:1.5}
+.sleep-grid{position:relative;height:240px;margin-bottom:14px}
+.y-label{position:absolute;left:0;font-size:10.5px;color:var(--t3);font-weight:400;line-height:1;letter-spacing:.02em;text-transform:lowercase}
+.y-top{top:0}.y-mid{top:calc(50% - 6px)}.y-bot{bottom:0}
+.chart-body{position:absolute;left:32px;right:50px;top:0;bottom:0;overflow:visible}
+.ref-line{position:absolute;left:0;right:0;height:0;border-top:1px dashed #C8C0B5;opacity:.7;pointer-events:none;z-index:1}
+.ref-label{position:absolute;right:0;width:46px;padding-left:6px;font-family:'Source Serif 4',serif;font-style:italic;font-size:9.5px;color:var(--t3);font-weight:300;line-height:1.2;letter-spacing:.01em;pointer-events:none;transform:translateY(-50%);text-align:left;white-space:nowrap;z-index:4}
+.ref-label b{display:block;font-style:normal;font-weight:400;color:var(--tx);font-size:11px;letter-spacing:0;margin-bottom:1px}
+.bars{position:absolute;inset:0;display:flex;align-items:stretch;gap:2px;z-index:2}
+.col{flex:1;min-width:0;position:relative;display:flex;justify-content:center}
+.bar{position:absolute;left:50%;transform:translateX(-50%);width:100%;max-width:11px;border:none;border-radius:2px;padding:0;cursor:pointer;transition:opacity .2s,transform .2s var(--ease)}
+.bar:hover{opacity:.9}
+.tip{position:absolute;left:50%;transform:translateX(-50%);background:var(--tx);color:#FFFCF6;font-size:11px;padding:6px 10px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:5;line-height:1.4;font-weight:400;text-align:left}
 .tip b{font-weight:500}
-.bar.show .tip{opacity:1;pointer-events:auto}
-.tip::after{content:'';position:absolute;bottom:-3px;left:14px;border-left:3px solid transparent;border-right:3px solid transparent;border-top:3px solid var(--tx)}
-.slp-leg{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--bd);font-size:10.5px;color:var(--t2)}
-.slp-leg .z{display:inline-flex;align-items:center;gap:5px}
-.slp-leg .d{width:8px;height:8px;border-radius:2px}
-.slp-leg .wei-mark{display:inline-flex;align-items:center;gap:6px;color:var(--wei)}
-.slp-leg .wei-mark::before{content:'';display:inline-block;width:8px;border-top:1.5px dashed var(--wei)}
+.col.show .tip{opacity:1}
+.xax{display:flex;gap:2px;padding-left:32px;padding-right:50px;margin-top:4px;font-size:10px;color:var(--t3);font-weight:400}
+.xax span{flex:1;text-align:center;letter-spacing:.02em}
+.dist{margin-top:24px}
+.dist-pcts{display:flex;height:14px;margin-bottom:5px;gap:2px;font-size:11px;color:var(--tx);font-weight:500;font-family:'Source Serif 4',serif;letter-spacing:0}
+.dist-pcts span{height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap}
+.dist-strip{display:flex;height:8px;border-radius:3px;overflow:hidden;margin-bottom:6px;gap:2px}
+.dist-seg{height:100%}
+.dist-labels{display:flex;gap:2px;font-size:10px;color:var(--t3);font-weight:400;letter-spacing:.02em}
+.dist-labels span{display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap}
 .tt{background:var(--card);border:1px solid var(--bd);border-radius:var(--rs);padding:8px 12px;box-shadow:var(--sh);font-size:11px;z-index:10}
 .ttd{font-weight:500;margin-bottom:2px}
 .notes-card{background:var(--card);border-radius:var(--r);padding:24px 22px 20px;box-shadow:var(--sh);margin-bottom:12px}
