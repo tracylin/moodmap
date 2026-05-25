@@ -1,3 +1,8 @@
 name = "mootracker-push"
 main = "src/worker.js"
 compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mootracker"
+database_id = "ef3a47f8-41bc-433f-b66e-58f30d0b6751"

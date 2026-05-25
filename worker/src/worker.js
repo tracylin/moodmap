@@ -23,6 +23,56 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/dev-notes") {
+      if (request.method === "GET") {
+        try {
+          const { results } = await env.DB.prepare(
+            "SELECT id, text, ts FROM dev_notes ORDER BY ts DESC"
+          ).all();
+          return cors(jsonResponse({ ok: true, notes: results || [] }));
+        } catch (err) {
+          return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        }
+      }
+
+      if (request.method === "POST") {
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+        }
+
+        const id = typeof body.id === "string" ? body.id.trim() : "";
+        const text = typeof body.text === "string" ? body.text.trim() : "";
+        const ts = typeof body.ts === "string" ? body.ts.trim() : "";
+        if (!id || !text || !ts) {
+          return cors(jsonResponse({ ok: false, error: "missing fields" }, 400));
+        }
+
+        try {
+          await env.DB.prepare(
+            "INSERT INTO dev_notes (id, text, ts) VALUES (?, ?, ?)"
+          ).bind(id, text, ts).run();
+          return cors(jsonResponse({ ok: true, id }));
+        } catch (err) {
+          return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        }
+      }
+
+      if (request.method === "DELETE") {
+        const id = (url.searchParams.get("id") || "").trim();
+        if (!id) return cors(jsonResponse({ ok: false, error: "missing id" }, 400));
+
+        try {
+          await env.DB.prepare("DELETE FROM dev_notes WHERE id = ?").bind(id).run();
+          return cors(jsonResponse({ ok: true }));
+        } catch (err) {
+          return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        }
+      }
+    }
+
     if (url.pathname === "/debug" && request.method === "GET") {
       const pub = (env.VAPID_PUBLIC_KEY || "").trim();
       const priv = (env.VAPID_PRIVATE_KEY || "").trim();
@@ -71,9 +121,16 @@ export default {
 
 function cors(resp) {
   resp.headers.set("Access-Control-Allow-Origin", "*");
-  resp.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  resp.headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   resp.headers.set("Access-Control-Allow-Headers", "Content-Type, X-Auth");
   return resp;
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 async function sendPush(subscription, payload, ttl, env) {

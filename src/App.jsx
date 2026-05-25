@@ -5,6 +5,9 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
    CONFIG — Set your Google Sheets Web App URL here after deploying
    ═══════════════════════════════════════════════════════════════════════════ */
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"; // paste your deployed Apps Script URL here
+const WORKER_URL = "https://mootracker-push.weavergirl.workers.dev";
+const DEV_NOTES_KEY = "mt_dev_notes";
+const DEV_NOTES_EVENT = "mt-dev-notes-updated";
 
 // VAPID public key — paired with the private key held by the Cloudflare Worker
 // that signs Web Push requests on behalf of this app. Safe to expose publicly.
@@ -234,6 +237,59 @@ async function pullFromSheets(){
       document.body.appendChild(s);
     });
   }catch{ return null; }
+}
+
+function sortDevNotes(notes){
+  return [...notes].sort((a,b)=>String(b.ts||"").localeCompare(String(a.ts||"")));
+}
+
+function loadDevNotes(){
+  try{
+    const raw=localStorage.getItem(DEV_NOTES_KEY);
+    const parsed=raw?JSON.parse(raw):[];
+    return Array.isArray(parsed)?sortDevNotes(parsed.filter(n=>n&&typeof n.id==="string"&&typeof n.text==="string"&&typeof n.ts==="string")):[];
+  }catch{return [];}
+}
+
+function saveDevNotes(notes){
+  const sorted=sortDevNotes(notes);
+  try{localStorage.setItem(DEV_NOTES_KEY,JSON.stringify(sorted));}catch{/* cache best-effort only */}
+  try{window.dispatchEvent(new CustomEvent(DEV_NOTES_EVENT,{detail:sorted}));}catch{/* event dispatch best-effort only */}
+  return sorted;
+}
+
+async function fetchDevNotesFromWorker(){
+  try{
+    const res=await fetch(`${WORKER_URL}/dev-notes`,{method:"GET",cache:"no-store"});
+    if(!res.ok) return null;
+    const data=await res.json();
+    if(Array.isArray(data.notes)) return saveDevNotes(data.notes);
+  }catch{/* offline or Worker unavailable; keep local cache */}
+  return null;
+}
+
+async function postDevNoteToWorker(note){
+  try{
+    await fetch(`${WORKER_URL}/dev-notes`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(note),
+    });
+  }catch{/* local optimistic note remains visible */}
+}
+
+async function deleteDevNoteFromWorker(id){
+  try{
+    await fetch(`${WORKER_URL}/dev-notes?id=${encodeURIComponent(id)}`,{method:"DELETE"});
+  }catch{/* deleted local view is authoritative for this device */}
+}
+
+function formatDevNoteTs(ts){
+  const d=new Date(ts);
+  if(Number.isNaN(d.getTime())) return "";
+  const date=new Intl.DateTimeFormat(undefined,{month:"short",day:"numeric"}).format(d);
+  const time=new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit"}).format(d);
+  return `${date} · ${time}`;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -478,6 +534,7 @@ export default function App(){
 
   // Pull from Google Sheets on app open (cross-device sync)
   useEffect(()=>{(async()=>{
+    fetchDevNotesFromWorker();
     const resp=await pullFromSheets();
     if(!resp||resp.status!=="ok") return;
     const hasPushedSeed=localStorage.getItem("mt_seed_pushed");
@@ -1728,6 +1785,58 @@ function ActorCard(){
   </div>);
 }
 
+function DevNotesSection(){
+  const[notes,setNotes]=useState(loadDevNotes);
+  const[composing,setComposing]=useState(false);
+  const[showPast,setShowPast]=useState(false);
+  const[text,setText]=useState("");
+
+  useEffect(()=>{
+    const onUpdated=e=>setNotes(Array.isArray(e.detail)?e.detail:loadDevNotes());
+    window.addEventListener(DEV_NOTES_EVENT,onUpdated);
+    return()=>window.removeEventListener(DEV_NOTES_EVENT,onUpdated);
+  },[]);
+
+  const hasNotes=notes.length>0;
+  const saveNote=()=>{
+    const body=text.trim();
+    if(!body) return;
+    const note={id:crypto.randomUUID(),text:body,ts:new Date().toISOString()};
+    setNotes(saveDevNotes([note,...loadDevNotes()]));
+    postDevNoteToWorker(note);
+    setText("");
+    setComposing(false);
+    setShowPast(true);
+  };
+  const deleteNote=id=>{
+    const next=loadDevNotes().filter(n=>n.id!==id);
+    setNotes(saveDevNotes(next));
+    if(next.length===0) setShowPast(false);
+    deleteDevNoteFromWorker(id);
+  };
+
+  return(<div className="dev-notes-section">
+    <button className="btn-add-note" onClick={()=>setComposing(true)}>Add a Dev Note</button>
+    {composing&&<div className="compose">
+      <textarea value={text} onChange={e=>setText(e.target.value)} placeholder="Bug, idea, troubleshoot step…"/>
+      <div className="compose-actions">
+        <button className="btn-ghost" onClick={()=>{setText("");setComposing(false);}}>Cancel</button>
+        <button className="btn-sm-p" onClick={saveNote} disabled={!text.trim()}>Save</button>
+      </div>
+    </div>}
+    {hasNotes&&<button className="btn-view-notes" onClick={()=>setShowPast(!showPast)}>{showPast?"Hide":"Dev Notes"}</button>}
+    {hasNotes&&showPast&&<div className="past-notes">
+      {notes.map(note=><div className="past-item" key={note.id}>
+        <div className="past-content">
+          <div className="past-ts">{formatDevNoteTs(note.ts)}</div>
+          <div className="past-text">{note.text}</div>
+        </div>
+        <button className="btn-del" onClick={()=>deleteNote(note.id)} aria-label="Delete dev note">&times;</button>
+      </div>)}
+    </div>}
+  </div>);
+}
+
 function Settings({settings,setS,meds,setMeds,onBack}){
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
@@ -1804,6 +1913,8 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
     {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
+
+    <DevNotesSection/>
 
     <p className="ver-label">MooTracker v{VER}</p>
     <div style={{height:40}}/>
@@ -2210,6 +2321,29 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .actor-pill{flex:1;min-width:80px;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:transparent;font-size:13px;color:var(--t2);cursor:pointer;transition:all 150ms ease;font-family:inherit}
 .actor-pill:hover{background:var(--gbg)}
 .actor-pill-on{border-color:var(--gn);color:var(--gn);background:var(--gbg)}
+.dev-notes-section{margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.btn-add-note{padding:10px 20px;border:none;border-radius:9px;background:var(--tx);color:#fff;font:500 13px/1 'DM Sans',sans-serif;cursor:pointer;transition:opacity .15s}
+.btn-add-note:hover{opacity:.85}
+.btn-add-note:active{transform:scale(.98);opacity:.8}
+.btn-view-notes{padding:0;border:none;background:transparent;color:var(--t3);font:300 11.5px/1 'DM Sans',sans-serif;cursor:pointer;text-decoration:underline;text-underline-offset:2px;transition:color .15s}
+.btn-view-notes:hover{color:var(--t2)}
+.compose{margin-top:12px;width:100%;animation:fadeIn .15s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.compose textarea{width:100%;min-height:64px;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:300 13.5px/1.45 'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .15s}
+.compose textarea:focus{border-color:var(--t2)}
+.compose textarea::placeholder{color:var(--t3)}
+.compose-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+.dev-notes-section .btn-ghost{padding:6px 12px;border:none;border-radius:7px;background:transparent;color:var(--t2);font:400 12px/1 'DM Sans',sans-serif;cursor:pointer}
+.dev-notes-section .btn-sm-p{padding:6px 14px;border:none;border-radius:7px;background:var(--tx);color:#fff;font:500 12px/1 'DM Sans',sans-serif;cursor:pointer}
+.dev-notes-section .btn-sm-p:disabled{opacity:.3}
+.past-notes{margin-top:12px;width:100%;animation:fadeIn .15s ease}
+.past-item{padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.past-item:last-child{border-bottom:none}
+.past-content{flex:1;min-width:0}
+.past-ts{font-size:10.5px;color:var(--t3);margin-bottom:2px}
+.past-text{font-size:12.5px;line-height:1.4;color:var(--t2);white-space:pre-wrap;word-break:break-word}
+.btn-del{flex-shrink:0;border:none;background:transparent;color:var(--t3);font-size:13px;cursor:pointer;padding:2px 4px;transition:color .12s}
+.btn-del:hover{color:#D4785C}
 @media(prefers-reduced-motion:reduce){.rem-toggle-pulse,.rem-toggle-knob,.rem-row{animation:none!important;transition:none!important}}
 .ver-label{font-size:11px;color:var(--t3);text-align:center;margin-top:20px;font-weight:300}
 
