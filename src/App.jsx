@@ -2329,7 +2329,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-view-notes:hover{color:var(--t2)}
 .compose{margin-top:12px;width:100%;animation:fadeIn .15s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-.compose textarea{width:100%;min-height:64px;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:300 13.5px/1.45 'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .15s}
+.compose textarea{width:100%;min-height:64px;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:300 16px/1.45 'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .15s;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .compose textarea:focus{border-color:var(--t2)}
 .compose textarea::placeholder{color:var(--t3)}
 .compose-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
