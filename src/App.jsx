@@ -220,23 +220,12 @@ function pushDeleteSrm(date){
 }
 
 async function pullFromSheets(){
-  if(!SHEETS_URL) return null;
+  if(!WORKER_URL) return null;
   try{
-    const res=await fetch(`${SHEETS_URL}?action=sync`,{method:"GET",cache:"no-store"});
+    const res=await fetch(`${WORKER_URL}/sync`,{method:"GET",cache:"no-store"});
     if(res&&res.ok) return await res.json();
-  }catch{/* direct Sheets fetch blocked or failed; JSONP fallback handles sync */}
-  // JSONP fallback
-  try{
-    const cb=`__mt_cb_${Date.now()}`;
-    return await new Promise((resolve,reject)=>{
-      const t=setTimeout(()=>{try{delete window[cb]}catch{/* callback already cleared during JSONP timeout cleanup */};reject("timeout")},10000);
-      window[cb]=(d)=>{clearTimeout(t);resolve(d);try{delete window[cb]}catch{/* callback already cleared after JSONP success */};if(s&&s.parentNode)s.parentNode.removeChild(s);};
-      var s=document.createElement("script");
-      s.src=`${SHEETS_URL}?action=sync&callback=${cb}&_=${Date.now()}`;
-      s.onerror=()=>{clearTimeout(t);try{delete window[cb]}catch{/* callback already cleared during JSONP error cleanup */};if(s&&s.parentNode)s.parentNode.removeChild(s);reject("err");};
-      document.body.appendChild(s);
-    });
-  }catch{ return null; }
+  }catch{/* Worker sync failed; keep local cache */}
+  return null;
 }
 
 function sortDevNotes(notes){

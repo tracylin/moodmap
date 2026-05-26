@@ -76,10 +76,10 @@ export default {
         const settings = settingsRow ? parseJsonValue(settingsRow.value, null) : null;
 
         const { results: medRows = [] } = await env.DB.prepare(
-          "SELECT key, name, dose FROM medications WHERE status = 'active' ORDER BY sort_order"
+          "SELECT key, name, dose, default_ct FROM medications WHERE status = 'active' ORDER BY sort_order"
         ).all();
         const meds = medRows.length
-          ? medRows.map((row) => ({ key: row.key, name: row.name, dose: row.dose }))
+          ? medRows.map((row) => ({ key: row.key, name: row.name, dose: row.dose, defaultCt: row.default_ct ?? 0 }))
           : null;
 
         return cors(jsonResponse({ status: "ok", mood, srm, settings, meds }));
@@ -109,6 +109,9 @@ export default {
 
         for (const [date, entry] of Object.entries(body.mood || {})) {
           moodCount += 1;
+          statements.push(env.DB.prepare(
+            "DELETE FROM daily_med_doses WHERE date = ?"
+          ).bind(date));
           const moods = Array.isArray(entry.moods) && entry.moods.length
             ? entry.moods.filter(Boolean)
             : [entry.mood, entry.mood2].filter(Boolean);
@@ -137,6 +140,9 @@ export default {
         }
 
         for (const [date, day] of Object.entries(body.srm || {})) {
+          statements.push(env.DB.prepare(
+            "DELETE FROM srm_items WHERE date = ?"
+          ).bind(date));
           for (const item of day.items || []) {
             srmCount += 1;
             statements.push(env.DB.prepare(
@@ -166,12 +172,13 @@ export default {
           body.meds.forEach((med, i) => {
             medsCount += 1;
             statements.push(env.DB.prepare(
-              "INSERT OR IGNORE INTO medications (id, key, name, dose, status, sort_order, created_at) VALUES (?, ?, ?, ?, 'active', ?, ?)"
+              "INSERT INTO medications (id, key, name, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(key) DO UPDATE SET name=excluded.name, dose=excluded.dose, default_ct=excluded.default_ct"
             ).bind(
               crypto.randomUUID(),
               med.key,
               med.name,
               med.dose ?? null,
+              med.defaultCt ?? 0,
               i,
               now,
             ));
@@ -183,6 +190,33 @@ export default {
         }
 
         return cors(jsonResponse({ ok: true, counts: { mood: moodCount, srm: srmCount, meds: medsCount } }));
+      } catch (err) {
+        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/delete" && request.method === "POST") {
+      if (!checkAuth(request, env)) {
+        return cors(new Response("forbidden", { status: 403 }));
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+      }
+
+      try {
+        if (body.type === "mood" && body.date) {
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM mood_entries WHERE date = ?").bind(body.date),
+            env.DB.prepare("DELETE FROM daily_med_doses WHERE date = ?").bind(body.date),
+          ]);
+        } else if (body.type === "srm" && body.date) {
+          await env.DB.prepare("DELETE FROM srm_items WHERE date = ?").bind(body.date).run();
+        }
+        return cors(jsonResponse({ ok: true }));
       } catch (err) {
         return cors(jsonResponse({ ok: false, error: String(err) }, 500));
       }
