@@ -52,20 +52,27 @@ function doPost(e) {
       case "mood":
         upsertMoodRow_(ss, d.date, d.entry || {}, d.meds_ref || []);
         recordLogActivity_(ss, d.date, actor, "mood");
+        forwardToD1_(ss, "mood", d.date, d.entry || {}, d.meds_ref || []);
         break;
       case "srm":
         upsertSrmRows_(ss, d.date, d.items || []);
         recordLogActivity_(ss, d.date, actor, "srm");
+        forwardToD1_(ss, "srm", d.date, null, null, d.items || []);
         break;
       case "delete_mood":
         deleteMoodRows_(ss, d.date);
         recordLogActivity_(ss, d.date, actor, "delete_mood");
+        forwardToD1_(ss, "delete_mood", d.date);
         break;
       case "delete_srm":
         deleteSrmRows_(ss, d.date);
         recordLogActivity_(ss, d.date, actor, "delete_srm");
+        forwardToD1_(ss, "delete_srm", d.date);
         break;
-      case "settings":          upsertSettings_(ss, d.settings || {}, d.meds || []); break;
+      case "settings":
+        upsertSettings_(ss, d.settings || {}, d.meds || []);
+        forwardToD1_(ss, "settings", null, null, null, null, d.settings || {}, d.meds || []);
+        break;
       case "push_subscribe":    upsertPushSubscription_(ss, d.subscription || {}, sanitizeRole_(d.role), actor, d.tz || ""); break;
       case "push_unsubscribe":  deletePushSubscription_(ss, d.endpoint || ""); break;
       case "update_push_role":  updatePushSubscriptionRole_(ss, d.endpoint || "", sanitizeRole_(d.role), actor, d.tz || ""); break;
@@ -1544,6 +1551,57 @@ function sendPushViaWorker_(subscription, payload, tag) {
   } catch (err) {
     Logger.log("Push exception: %s", err);
     return { ok: false, status: 0, body: "exception: " + String(err) };
+  }
+}
+
+function forwardToD1_(ss, type, date, entry, medsRef, items, settings, meds) {
+  var props = PropertiesService.getScriptProperties();
+  var workerUrl = props.getProperty("WORKER_URL");
+  var secret = props.getProperty("SHARED_SECRET");
+  if (!workerUrl || !secret) return;
+
+  var baseUrl = workerUrl.replace(/\/send\/?$/, "");
+
+  if (type === "delete_mood" || type === "delete_srm") {
+    try {
+      UrlFetchApp.fetch(baseUrl + "/delete", {
+        method: "post",
+        contentType: "application/json",
+        headers: { "X-Auth": secret },
+        payload: JSON.stringify({ type: type === "delete_mood" ? "mood" : "srm", date: date }),
+        muteHttpExceptions: true
+      });
+    } catch (e) {
+      Logger.log("D1 delete forward failed (non-blocking): %s", String(e));
+    }
+    return;
+  }
+
+  var payload = {};
+  if (type === "mood" && date && entry) {
+    payload.mood = {};
+    payload.mood[date] = entry;
+    if (medsRef) payload.meds = medsRef;
+  } else if (type === "srm" && date && items) {
+    payload.srm = {};
+    payload.srm[date] = { items: items };
+  } else if (type === "settings" && settings != null) {
+    payload.settings = settings;
+    if (meds) payload.meds = meds;
+  } else {
+    return;
+  }
+
+  try {
+    UrlFetchApp.fetch(baseUrl + "/ingest", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "X-Auth": secret },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+  } catch (e) {
+    Logger.log("D1 forward failed (non-blocking): %s", String(e));
   }
 }
 
