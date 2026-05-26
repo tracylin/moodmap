@@ -23,6 +23,171 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/sync" && request.method === "GET") {
+      try {
+        const mood = {};
+        const { results: moodRows = [] } = await env.DB.prepare(
+          "SELECT * FROM mood_entries"
+        ).all();
+
+        for (const row of moodRows) {
+          const moods = parseJsonArray(row.moods);
+          mood[row.date] = {
+            mood: moods[0] || null,
+            mood2: moods[1] || null,
+            sleep: row.sleep,
+            irritability: row.irritability,
+            anxiety: row.anxiety,
+            notes: row.notes,
+            weight: row.weight,
+            meds: {},
+          };
+        }
+
+        const { results: doseRows = [] } = await env.DB.prepare(
+          "SELECT date, med_key, count FROM daily_med_doses"
+        ).all();
+        for (const row of doseRows) {
+          if (!mood[row.date]) continue;
+          mood[row.date].meds[row.med_key] = { ct: row.count };
+        }
+
+        const srm = {};
+        const { results: srmRows = [] } = await env.DB.prepare(
+          "SELECT * FROM srm_items ORDER BY date"
+        ).all();
+        for (const row of srmRows) {
+          if (!srm[row.date]) srm[row.date] = { items: [] };
+          srm[row.date].items.push({
+            id: row.id,
+            time: row.time,
+            am: Boolean(row.am),
+            didNot: Boolean(row.did_not),
+            withOthers: Boolean(row.with_others),
+            who: parseJsonArray(row.who),
+            whoText: row.who_text || "",
+            engagement: row.engagement,
+          });
+        }
+
+        const settingsRow = await env.DB.prepare(
+          "SELECT value FROM settings WHERE key = 'settings'"
+        ).first();
+        const settings = settingsRow ? parseJsonValue(settingsRow.value, null) : null;
+
+        const { results: medRows = [] } = await env.DB.prepare(
+          "SELECT key, name, dose FROM medications WHERE status = 'active' ORDER BY sort_order"
+        ).all();
+        const meds = medRows.length
+          ? medRows.map((row) => ({ key: row.key, name: row.name, dose: row.dose }))
+          : null;
+
+        return cors(jsonResponse({ status: "ok", mood, srm, settings, meds }));
+      } catch (err) {
+        return cors(jsonResponse({ status: "error", message: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/ingest" && request.method === "POST") {
+      if (!checkAuth(request, env)) {
+        return cors(new Response("forbidden", { status: 403 }));
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+      }
+
+      try {
+        const now = new Date().toISOString();
+        const statements = [];
+        let moodCount = 0;
+        let srmCount = 0;
+        let medsCount = 0;
+
+        for (const [date, entry] of Object.entries(body.mood || {})) {
+          moodCount += 1;
+          const moods = Array.isArray(entry.moods) && entry.moods.length
+            ? entry.moods.filter(Boolean)
+            : [entry.mood, entry.mood2].filter(Boolean);
+          statements.push(env.DB.prepare(
+            "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+          ).bind(
+            date,
+            dayName(date),
+            JSON.stringify(moods),
+            nullableNumber(entry.sleep),
+            nullableInteger(entry.irritability),
+            nullableInteger(entry.anxiety),
+            entry.notes ?? null,
+            nullableNumber(entry.weight),
+            now,
+          ));
+
+          for (const [medKey, med] of Object.entries(entry.meds || {})) {
+            const count = Number(med && med.ct);
+            if (count > 0) {
+              statements.push(env.DB.prepare(
+                "INSERT OR REPLACE INTO daily_med_doses (date, med_key, count) VALUES (?, ?, ?)"
+              ).bind(date, medKey, count));
+            }
+          }
+        }
+
+        for (const [date, day] of Object.entries(body.srm || {})) {
+          for (const item of day.items || []) {
+            srmCount += 1;
+            statements.push(env.DB.prepare(
+              "INSERT OR REPLACE INTO srm_items (id, date, time, am, did_not, with_others, who, who_text, engagement, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+            ).bind(
+              item.id,
+              date,
+              item.time ?? null,
+              item.am ? 1 : 0,
+              item.didNot ? 1 : 0,
+              item.withOthers ? 1 : 0,
+              JSON.stringify(Array.isArray(item.who) ? item.who : []),
+              item.whoText ?? "",
+              nullableInteger(item.engagement) ?? 0,
+              now,
+            ));
+          }
+        }
+
+        if (body.settings !== null && body.settings !== undefined) {
+          statements.push(env.DB.prepare(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('settings', ?)"
+          ).bind(JSON.stringify(body.settings)));
+        }
+
+        if (Array.isArray(body.meds) && body.meds.length) {
+          body.meds.forEach((med, i) => {
+            medsCount += 1;
+            statements.push(env.DB.prepare(
+              "INSERT OR IGNORE INTO medications (id, key, name, dose, status, sort_order, created_at) VALUES (?, ?, ?, ?, 'active', ?, ?)"
+            ).bind(
+              crypto.randomUUID(),
+              med.key,
+              med.name,
+              med.dose ?? null,
+              i,
+              now,
+            ));
+          });
+        }
+
+        for (let i = 0; i < statements.length; i += 100) {
+          await env.DB.batch(statements.slice(i, i + 100));
+        }
+
+        return cors(jsonResponse({ ok: true, counts: { mood: moodCount, srm: srmCount, meds: medsCount } }));
+      } catch (err) {
+        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
     if (url.pathname === "/dev-notes") {
       if (request.method === "GET") {
         try {
@@ -87,7 +252,7 @@ export default {
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
     if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
 
-    if ((request.headers.get("X-Auth") || "").trim() !== (env.SHARED_SECRET || "").trim()) {
+    if (!checkAuth(request, env)) {
       return new Response("forbidden", { status: 403 });
     }
 
@@ -131,6 +296,40 @@ function jsonResponse(body, status = 200) {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function checkAuth(request, env) {
+  return (request.headers.get("X-Auth") || "").trim() === (env.SHARED_SECRET || "").trim();
+}
+
+function parseJsonArray(value) {
+  const parsed = parseJsonValue(value, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function parseJsonValue(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function dayName(date) {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const parsed = new Date(`${date}T12:00:00`);
+  return days[parsed.getDay()];
+}
+
+function nullableNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function nullableInteger(value) {
+  const num = nullableNumber(value);
+  return num === null ? null : Math.trunc(num);
 }
 
 async function sendPush(subscription, payload, ttl, env) {
