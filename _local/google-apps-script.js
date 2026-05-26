@@ -52,26 +52,26 @@ function doPost(e) {
       case "mood":
         upsertMoodRow_(ss, d.date, d.entry || {}, d.meds_ref || []);
         recordLogActivity_(ss, d.date, actor, "mood");
-        forwardToD1_(ss, "mood", d.date, d.entry || {}, d.meds_ref || []);
+        if (!d._fromWorker) forwardToD1_(ss, "mood", d.date, d.entry || {}, d.meds_ref || []);
         break;
       case "srm":
         upsertSrmRows_(ss, d.date, d.items || []);
         recordLogActivity_(ss, d.date, actor, "srm");
-        forwardToD1_(ss, "srm", d.date, null, null, d.items || []);
+        if (!d._fromWorker) forwardToD1_(ss, "srm", d.date, null, null, d.items || []);
         break;
       case "delete_mood":
         deleteMoodRows_(ss, d.date);
         recordLogActivity_(ss, d.date, actor, "delete_mood");
-        forwardToD1_(ss, "delete_mood", d.date);
+        if (!d._fromWorker) forwardToD1_(ss, "delete_mood", d.date);
         break;
       case "delete_srm":
         deleteSrmRows_(ss, d.date);
         recordLogActivity_(ss, d.date, actor, "delete_srm");
-        forwardToD1_(ss, "delete_srm", d.date);
+        if (!d._fromWorker) forwardToD1_(ss, "delete_srm", d.date);
         break;
       case "settings":
         upsertSettings_(ss, d.settings || {}, d.meds || []);
-        forwardToD1_(ss, "settings", null, null, null, null, d.settings || {}, d.meds || []);
+        if (!d._fromWorker) forwardToD1_(ss, "settings", null, null, null, null, d.settings || {}, d.meds || []);
         break;
       case "push_subscribe":    upsertPushSubscription_(ss, d.subscription || {}, sanitizeRole_(d.role), actor, d.tz || ""); break;
       case "push_unsubscribe":  deletePushSubscription_(ss, d.endpoint || ""); break;
@@ -1157,18 +1157,30 @@ function sendDueReminders() {
   if (!subs.length) return;
 
   var buckets = { noon: [], midnight: [], "noon:1": [], "noon:2": [], "noon:3": [], "midnight:1": [], "midnight:2": [], "midnight:3": [] };
+  var anySlot = false;
   subs.forEach(function(sub){
     var t = nowHmInTz_(sub.tz, tz);
     var slot = slotForLocalTime_(t.hh, t.mm);
-    if (slot) buckets[slot].push(sub);
+    if (slot) { buckets[slot].push(sub); anySlot = true; }
   });
 
-  if (buckets.noon.length) fireSmartSlot_(ss, "noon", tz, { subs: buckets.noon });
-  if (buckets.midnight.length) fireSmartSlot_(ss, "midnight", tz, { subs: buckets.midnight });
+  // Hoist expensive spreadsheet reads once per invocation so that multiple
+  // fire*Slot_ calls (common when subscribers span timezones) reuse them
+  // instead of each reading the sheet independently.
+  // Only read when at least one slot matched or wildcards might fire.
+  var shared = {};
+  if (anySlot) {
+    shared.weiToday  = weiDateKey_(new Date(), tz);
+    shared.state     = weiDayEntryState_(ss, shared.weiToday);
+    shared.activity  = readRecentLogActivity_(ss, 200);
+  }
+
+  if (buckets.noon.length) fireSmartSlot_(ss, "noon", tz, { subs: buckets.noon, weiToday: shared.weiToday, state: shared.state, activity: shared.activity });
+  if (buckets.midnight.length) fireSmartSlot_(ss, "midnight", tz, { subs: buckets.midnight, weiToday: shared.weiToday, state: shared.state, activity: shared.activity });
   ["noon:1","noon:2","noon:3","midnight:1","midnight:2","midnight:3"].forEach(function(k){
     if (buckets[k].length) {
       var parts = k.split(":");
-      fireResurfaceSlot_(ss, parts[0], tz, parseInt(parts[1], 10), { subs: buckets[k] });
+      fireResurfaceSlot_(ss, parts[0], tz, parseInt(parts[1], 10), { subs: buckets[k], weiToday: shared.weiToday, state: shared.state, activity: shared.activity });
     }
   });
 
@@ -1186,7 +1198,9 @@ function sendDueReminders() {
       return;
     }
     if (now.getTime() < planned.getTime()) return;
-    fireWildcardSlot_(ss, subTz, { subs: [sub] });
+    // Reuse shared reads if available (weiToday is in spreadsheet tz, same
+    // for wildcard regardless of subscriber tz).
+    fireWildcardSlot_(ss, subTz, { subs: [sub], weiToday: shared.weiToday, state: shared.state, activity: shared.activity });
     props.setProperty(nextKey, computeNextWildcardFire_(sub, subTz, now).toISOString());
   });
 }
@@ -1207,14 +1221,14 @@ function slotForLocalTime_(hh, mm) {
 
 function fireSmartSlot_(ss, slot, tz, opts) {
   opts = opts || {};
-  var weiToday = weiDateKey_(new Date(), tz);
-  var state = weiDayEntryState_(ss, weiToday);
+  var weiToday = opts.weiToday || weiDateKey_(new Date(), tz);
+  var state = (opts.state !== undefined) ? opts.state : weiDayEntryState_(ss, weiToday);
   if (state === "complete" && !opts.force) {
     Logger.log("Smart reminder %s: weiToday=%s is complete, skipping all", slot, weiToday);
     return { skipped: "complete" };
   }
 
-  var activity = readRecentLogActivity_(ss, 200);
+  var activity = opts.activity || readRecentLogActivity_(ss, 200);
   var daysSince = daysSinceLastLog_(activity, tz, weiToday);
   var wasDeleted = weiDayWasDeleted_(activity, weiToday);
 
@@ -1271,8 +1285,8 @@ function fireSmartSlot_(ss, slot, tz, opts) {
 
 function fireResurfaceSlot_(ss, slot, tz, step, opts) {
   opts = opts || {};
-  var weiToday = weiDateKey_(new Date(), tz);
-  var state = weiDayEntryState_(ss, weiToday);
+  var weiToday = opts.weiToday || weiDateKey_(new Date(), tz);
+  var state = (opts.state !== undefined) ? opts.state : weiDayEntryState_(ss, weiToday);
   if (state === "complete") {
     Logger.log("Smart reminder resurface %s step %s: weiToday=%s is complete, skipping all", slot, step, weiToday);
     return { skipped: "complete" };
@@ -1281,7 +1295,7 @@ function fireResurfaceSlot_(ss, slot, tz, step, opts) {
   var subs = opts.subs || listPushSubscriptions_(ss);
   if (!subs.length) return { skipped: "no_subs" };
 
-  var activity = readRecentLogActivity_(ss, 200);
+  var activity = opts.activity || readRecentLogActivity_(ss, 200);
   var wasDeleted = weiDayWasDeleted_(activity, weiToday);
   var weeklyCount = countDistinctWeiDaysInWeek_(activity, tz, weiToday);
   var isWeiSunday = weiDateIsSunday_(weiToday);
@@ -1315,8 +1329,8 @@ function resurfaceTag_(slot, weiDateKey) {
 
 function fireWildcardSlot_(ss, tz, opts) {
   opts = opts || {};
-  var weiToday = weiDateKey_(new Date(), tz);
-  var state = weiDayEntryState_(ss, weiToday);
+  var weiToday = opts.weiToday || weiDateKey_(new Date(), tz);
+  var state = (opts.state !== undefined) ? opts.state : weiDayEntryState_(ss, weiToday);
   if (state === "complete") {
     // eslint-disable-next-line no-undef
     Logger.log("Smart reminder wildcard: weiToday=%s is complete, skipping all", weiToday);
@@ -1328,7 +1342,7 @@ function fireWildcardSlot_(ss, tz, opts) {
   });
   if (!subs.length) return { skipped: "no_subs" };
 
-  var activity = readRecentLogActivity_(ss, 200);
+  var activity = opts.activity || readRecentLogActivity_(ss, 200);
   var weeklyCount = countDistinctWeiDaysInWeek_(activity, tz, weiToday);
   var toneBranch = wildcardToneBranch_(weeklyCount);
   var body = pickWildcardPhrase_(weeklyCount);

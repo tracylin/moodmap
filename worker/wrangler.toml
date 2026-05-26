@@ -2,6 +2,9 @@ name = "mootracker-push"
 main = "src/worker.js"
 compatibility_date = "2025-01-01"
 
+[vars]
+SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "mootracker"

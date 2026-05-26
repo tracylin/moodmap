@@ -70,7 +70,7 @@ function getDeviceTz(){
 }
 
 function pushSubscribeToSheets(subscription) {
-  if (!SHEETS_URL || !subscription) return;
+  if (!WORKER_URL || !subscription) return;
   const actor=getDeviceActor();
   enqueueSync({
     type: "push_subscribe",
@@ -82,7 +82,7 @@ function pushSubscribeToSheets(subscription) {
 }
 
 function pushUnsubscribeFromSheets(subscription) {
-  if (!SHEETS_URL || !subscription) return;
+  if (!WORKER_URL || !subscription) return;
   const endpoint = (subscription.toJSON ? subscription.toJSON() : subscription).endpoint;
   enqueueSync({ type: "push_unsubscribe", endpoint, actor: getDeviceActor() });
 }
@@ -91,7 +91,7 @@ function pushUnsubscribeFromSheets(subscription) {
 // subscription's role server-side so nudge routing follows immediately —
 // without forcing a re-subscribe round trip.
 async function pushUpdateRoleForCurrentSub(){
-  if(!SHEETS_URL) return;
+  if(!WORKER_URL) return;
   const sub=await getPushSubscription();
   if(!sub) return;
   const actor=getDeviceActor();
@@ -105,7 +105,7 @@ async function pushUpdateRoleForCurrentSub(){
 }
 
 async function pushUpdateTzForCurrentSub(){
-  if(!SHEETS_URL) return;
+  if(!WORKER_URL) return;
   if(tzUpdateQueuedThisSession) return;
   const sub=await getPushSubscription();
   if(!sub) return;
@@ -139,11 +139,12 @@ async function processQueue(){
     syncStatus={state:"syncing",pending:syncQueue.length};notifySync();
     const job=syncQueue[0]; // peek; only shift on success
     try{
-      await fetch(SHEETS_URL,{
-        method:"POST",mode:"no-cors",
-        headers:{"Content-Type":"text/plain;charset=UTF-8"},
+      const res = await fetch(`${WORKER_URL}/write`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify(job),
       });
+      if(!res.ok) throw new Error(`write failed: ${res.status}`);
       syncQueue.shift();
       saveSyncQueue(syncQueue);
       failures=0;
@@ -165,7 +166,7 @@ async function processQueue(){
 }
 
 function enqueueSync(payload){
-  if(!SHEETS_URL)return;
+  if(!WORKER_URL)return;
   syncQueue.push(payload);
   saveSyncQueue(syncQueue);
   processQueue();
@@ -186,10 +187,10 @@ async function waitForSyncIdle(timeoutMs=6000){
 }
 
 // Retry any persisted jobs left over from a previous session.
-if(typeof window!=="undefined" && SHEETS_URL && syncQueue.length){
+if(typeof window!=="undefined" && WORKER_URL && syncQueue.length){
   setTimeout(()=>processQueue(),100);
 }
-if(typeof window!=="undefined" && SHEETS_URL){
+if(typeof window!=="undefined" && WORKER_URL){
   window.addEventListener("online",()=>{if(syncQueue.length)processQueue();});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&syncQueue.length)processQueue();});
 }
@@ -327,7 +328,7 @@ function useSyncStatus(){
 // Sync badge — shows in calendar header
 function SyncBadge(){
   const st=useSyncStatus();
-  if(!SHEETS_URL)return null;
+  if(!WORKER_URL)return null;
   if(st.state==="idle")return null;
   if(st.state==="done")return(<span className="sync-badge done">Synced</span>);
   return(<span className="sync-badge active">Syncing {st.pending}...</span>);
@@ -1926,6 +1927,7 @@ const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;1,8..60,300&display=swap');
 :root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889}
 *{margin:0;padding:0;box-sizing:border-box}
+input,textarea,select{font-size:16px}
 body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
 .app{max-width:420px;margin:0 auto;min-height:100dvh;overflow-x:hidden}
 .page{animation:pageIn .4s var(--ease)}
@@ -2112,7 +2114,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .mi{flex:1}.mn{font-size:14px}.md-sub{font-size:11px;color:var(--t3);margin-top:1px}
 .mc{display:flex;align-items:center;gap:10px}.mv{font-size:15px;font-weight:500;min-width:20px;text-align:center}
 
-.ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);caret-color:#8A847B;transition:border .15s;margin-bottom:12px}
+.ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);caret-color:#8A847B;transition:border .15s;margin-bottom:12px;touch-action:manipulation}
 .ni:focus{outline:none;border-color:var(--tx)}.ni::placeholder{color:var(--t3)}
 
 .rc{background:var(--card);border-radius:var(--r);padding:4px 16px;box-shadow:var(--sh);margin-bottom:16px}
@@ -2318,7 +2320,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-view-notes:hover{color:var(--t2)}
 .compose{margin-top:12px;width:100%;animation:fadeIn .15s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-.compose textarea{width:100%;min-height:64px;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:300 16px/1.45 'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .15s;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+.compose textarea{width:100%;min-height:64px;padding:10px 12px;border:1.5px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font:300 16px/1.45 'DM Sans',sans-serif;resize:vertical;outline:none;transition:border-color .15s;-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}
 .compose textarea:focus{border-color:var(--t2)}
 .compose textarea::placeholder{color:var(--t3)}
 .compose-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}

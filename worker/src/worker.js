@@ -20,7 +20,7 @@
 //   SHARED_SECRET       arbitrary long random string
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/sync" && request.method === "GET") {
@@ -88,6 +88,59 @@ export default {
       }
     }
 
+    if (url.pathname === "/write" && request.method === "POST") {
+      let body;
+      try { body = await request.json(); } catch { return cors(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+
+      const type = body.type;
+      if (!type) return cors(jsonResponse({ ok: false, error: "missing type" }, 400));
+
+      try {
+        const now = new Date().toISOString();
+
+        if (type === "mood") {
+          const date = body.date;
+          const entry = body.entry || {};
+          const medsRef = body.meds_ref || [];
+          await writeToD1(env, { mood: { [date]: entry }, meds: medsRef });
+          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, body.actor || "Wei", "mood").run();
+
+        } else if (type === "srm") {
+          const date = body.date;
+          await writeToD1(env, { srm: { [date]: { items: body.items || [] } } });
+          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, body.actor || "Wei", "srm").run();
+
+        } else if (type === "delete_mood") {
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM mood_entries WHERE date = ?").bind(body.date),
+            env.DB.prepare("DELETE FROM daily_med_doses WHERE date = ?").bind(body.date),
+          ]);
+          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, body.date, body.actor || "Wei", "delete_mood").run();
+
+        } else if (type === "delete_srm") {
+          await env.DB.prepare("DELETE FROM srm_items WHERE date = ?").bind(body.date).run();
+          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, body.date, body.actor || "Wei", "delete_srm").run();
+
+        } else if (type === "settings") {
+          await writeToD1(env, { settings: body.settings, meds: body.meds });
+
+        } else if (type === "push_subscribe" || type === "push_unsubscribe" || type === "update_push_role" || type === "update_push_tz") {
+          // Push subscription management — forward to Apps Script only.
+          // Push scheduling reads from the Sheet until Phase 4.
+
+        } else {
+          return cors(jsonResponse({ ok: false, error: "unknown type" }, 400));
+        }
+
+        // Async Sheet sync — fire-and-forget
+        ctx.waitUntil(syncToSheet(body, env));
+
+        return cors(jsonResponse({ ok: true }));
+      } catch (err) {
+        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
     if (url.pathname === "/ingest" && request.method === "POST") {
       if (!checkAuth(request, env)) {
         return cors(new Response("forbidden", { status: 403 }));
@@ -101,95 +154,8 @@ export default {
       }
 
       try {
-        const now = new Date().toISOString();
-        const statements = [];
-        let moodCount = 0;
-        let srmCount = 0;
-        let medsCount = 0;
-
-        for (const [date, entry] of Object.entries(body.mood || {})) {
-          moodCount += 1;
-          statements.push(env.DB.prepare(
-            "DELETE FROM daily_med_doses WHERE date = ?"
-          ).bind(date));
-          const moods = Array.isArray(entry.moods) && entry.moods.length
-            ? entry.moods.filter(Boolean)
-            : [entry.mood, entry.mood2].filter(Boolean);
-          statements.push(env.DB.prepare(
-            "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
-          ).bind(
-            date,
-            dayName(date),
-            JSON.stringify(moods),
-            nullableNumber(entry.sleep),
-            nullableInteger(entry.irritability),
-            nullableInteger(entry.anxiety),
-            entry.notes ?? null,
-            nullableNumber(entry.weight),
-            now,
-          ));
-
-          for (const [medKey, med] of Object.entries(entry.meds || {})) {
-            const count = Number(med && med.ct);
-            if (count > 0) {
-              statements.push(env.DB.prepare(
-                "INSERT OR REPLACE INTO daily_med_doses (date, med_key, count) VALUES (?, ?, ?)"
-              ).bind(date, medKey, count));
-            }
-          }
-        }
-
-        for (const [date, day] of Object.entries(body.srm || {})) {
-          statements.push(env.DB.prepare(
-            "DELETE FROM srm_items WHERE date = ?"
-          ).bind(date));
-          for (const item of day.items || []) {
-            srmCount += 1;
-            statements.push(env.DB.prepare(
-              "INSERT OR REPLACE INTO srm_items (id, date, time, am, did_not, with_others, who, who_text, engagement, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
-            ).bind(
-              item.id,
-              date,
-              item.time ?? null,
-              item.am ? 1 : 0,
-              item.didNot ? 1 : 0,
-              item.withOthers ? 1 : 0,
-              JSON.stringify(Array.isArray(item.who) ? item.who : []),
-              item.whoText ?? "",
-              nullableInteger(item.engagement) ?? 0,
-              now,
-            ));
-          }
-        }
-
-        if (body.settings !== null && body.settings !== undefined) {
-          statements.push(env.DB.prepare(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('settings', ?)"
-          ).bind(JSON.stringify(body.settings)));
-        }
-
-        if (Array.isArray(body.meds) && body.meds.length) {
-          body.meds.forEach((med, i) => {
-            medsCount += 1;
-            statements.push(env.DB.prepare(
-              "INSERT INTO medications (id, key, name, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(key) DO UPDATE SET name=excluded.name, dose=excluded.dose, default_ct=excluded.default_ct"
-            ).bind(
-              crypto.randomUUID(),
-              med.key,
-              med.name,
-              med.dose ?? null,
-              med.defaultCt ?? 0,
-              i,
-              now,
-            ));
-          });
-        }
-
-        for (let i = 0; i < statements.length; i += 100) {
-          await env.DB.batch(statements.slice(i, i + 100));
-        }
-
-        return cors(jsonResponse({ ok: true, counts: { mood: moodCount, srm: srmCount, meds: medsCount } }));
+        const counts = await writeToD1(env, body);
+        return cors(jsonResponse({ ok: true, counts }));
       } catch (err) {
         return cors(jsonResponse({ ok: false, error: String(err) }, 500));
       }
@@ -334,6 +300,84 @@ function jsonResponse(body, status = 200) {
 
 function checkAuth(request, env) {
   return (request.headers.get("X-Auth") || "").trim() === (env.SHARED_SECRET || "").trim();
+}
+
+async function writeToD1(env, body) {
+  const now = new Date().toISOString();
+  const statements = [];
+  let moodCount = 0;
+  let srmCount = 0;
+  let medsCount = 0;
+
+  for (const [date, entry] of Object.entries(body.mood || {})) {
+    moodCount += 1;
+    statements.push(env.DB.prepare("DELETE FROM daily_med_doses WHERE date = ?").bind(date));
+    const moods = Array.isArray(entry.moods) && entry.moods.length
+      ? entry.moods.filter(Boolean)
+      : [entry.mood, entry.mood2].filter(Boolean);
+    statements.push(env.DB.prepare(
+      "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+    ).bind(
+      date, dayName(date), JSON.stringify(moods),
+      nullableNumber(entry.sleep), nullableInteger(entry.irritability), nullableInteger(entry.anxiety),
+      entry.notes ?? null, nullableNumber(entry.weight), now,
+    ));
+
+    for (const [medKey, med] of Object.entries(entry.meds || {})) {
+      const count = Number(med && med.ct);
+      if (count > 0) {
+        statements.push(env.DB.prepare("INSERT OR REPLACE INTO daily_med_doses (date, med_key, count) VALUES (?, ?, ?)").bind(date, medKey, count));
+      }
+    }
+  }
+
+  for (const [date, day] of Object.entries(body.srm || {})) {
+    statements.push(env.DB.prepare("DELETE FROM srm_items WHERE date = ?").bind(date));
+    for (const item of day.items || []) {
+      srmCount += 1;
+      statements.push(env.DB.prepare(
+        "INSERT OR REPLACE INTO srm_items (id, date, time, am, did_not, with_others, who, who_text, engagement, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+      ).bind(
+        item.id, date, item.time ?? null,
+        item.am ? 1 : 0, item.didNot ? 1 : 0, item.withOthers ? 1 : 0,
+        JSON.stringify(Array.isArray(item.who) ? item.who : []), item.whoText ?? "",
+        nullableInteger(item.engagement) ?? 0, now,
+      ));
+    }
+  }
+
+  if (body.settings !== null && body.settings !== undefined) {
+    statements.push(env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('settings', ?)").bind(JSON.stringify(body.settings)));
+  }
+
+  if (Array.isArray(body.meds) && body.meds.length) {
+    body.meds.forEach((med, i) => {
+      medsCount += 1;
+      statements.push(env.DB.prepare(
+        "INSERT INTO medications (id, key, name, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(key) DO UPDATE SET name=excluded.name, dose=excluded.dose, default_ct=excluded.default_ct"
+      ).bind(crypto.randomUUID(), med.key, med.name, med.dose ?? null, med.defaultCt ?? 0, i, now));
+    });
+  }
+
+  for (let i = 0; i < statements.length; i += 100) {
+    await env.DB.batch(statements.slice(i, i + 100));
+  }
+
+  return { mood: moodCount, srm: srmCount, meds: medsCount };
+}
+
+async function syncToSheet(payload, env) {
+  const sheetsUrl = env.SHEETS_URL;
+  if (!sheetsUrl) return;
+  try {
+    await fetch(sheetsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, _fromWorker: true }),
+    });
+  } catch (e) {
+    console.error("Sheet sync failed (non-blocking):", e);
+  }
 }
 
 function parseJsonArray(value) {
