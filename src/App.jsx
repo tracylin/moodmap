@@ -1126,7 +1126,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     </div>);
   };
 
-  return(<div className={`scr ent${isR?"":" g-entry g-ambient-sky g-grain"}`}>
+  return(<div className={`scr ent ${isR?"g-review":"g-entry"} g-ambient-sky g-grain`}>
     <div className="et">
       <button className="bi" onClick={()=>{
         if(editIdx!==null)setEditIdx(null);
@@ -1157,11 +1157,11 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         <h2 className="qt">Looks good?</h2>
         <p className="qs">{new Date(targetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
         <div className="rc">
-          <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} style={{color:MM[k].color,fontWeight:500}}>{MM[k].label}{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
+          <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} className="rv-mood"><span className={`rv-dot ${G_MOOD_CLASS[k]}`}/>{MM[k].label}<span className="rv-muted"> · {MM[k].v>0?`+${MM[k].v}`:MM[k].v}</span>{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
-            <RvRow l="Meds" v={Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
+            <RvRow l="Meds" v={skippedSteps.has("meds")?"None":Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
@@ -1185,7 +1185,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
             }
           }
           onSave(finalEntry,targetKey);
-        }}>Confirm</button>
+        }}>Save entry</button>
         {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
           const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
           if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==editKey){onMoveMood(v);}
@@ -2100,6 +2100,28 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-entry .step-btns{margin-top:auto;padding-top:18px}
 .g-entry .btn-p{border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
 .g-entry .btn-skip{border:none;background:transparent;color:var(--g-tx3);font:400 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-review{padding:26px 22px 28px;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-review::after{z-index:0}
+.g-review .et,.g-review .pb,.g-review .qa{position:relative;z-index:1}
+.g-review .et{gap:12px;margin-bottom:16px}
+.g-review .bi{width:30px;height:30px;border:none;border-radius:50%;background:var(--g-surface);color:var(--g-tx2)}
+.g-review .btn-ghost{font-family:'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-review .es{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);letter-spacing:0;text-transform:none}
+.g-review .pb{height:3px;background:var(--g-line);margin-bottom:22px}
+.g-review .pf{background:var(--g-tx)}
+.g-review .qa{display:flex;min-height:calc(100dvh - 116px);flex-direction:column;animation:si .3s var(--ease)}
+.g-review .qt{font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;margin-bottom:5px;color:var(--g-tx)}
+.g-review .qs{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:20px}
+.g-review .rc{margin:0 0 18px;background:transparent;border-radius:0;box-shadow:none;padding:0}
+.g-review .rr{padding:14px 0;border-bottom:1px solid var(--g-line);gap:12px}
+.g-review .rl{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:5px}
+.g-review .rv{font:400 14px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-review .rr-edit{color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif;padding:2px 4px}
+.g-review .btn-p{width:100%;margin-top:auto;border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
+.rv-mood{display:inline-flex;align-items:center;color:var(--g-tx)}
+.rv-muted{color:var(--g-tx3);font-size:13px}
+.rv-dot{position:relative;display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline;overflow:hidden;flex-shrink:0}
+.rv-dot::before{content:"";position:absolute;inset:-8px;border-radius:50%}
 .es{font-size:12px;color:var(--t3);font-weight:500;letter-spacing:.04em}
 .pb{width:100%;height:3px;background:var(--bd);border-radius:2px;margin-bottom:18px;overflow:hidden}
 .datebar{display:flex;align-items:center;gap:8px;margin:0 0 14px;flex-wrap:wrap}
