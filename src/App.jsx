@@ -840,35 +840,53 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
   const e=mood[dateKey];const s=srm[dateKey];
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
   const _dow=new Date(yr,mo-1,dy).getDay();
-  const label=`${MO[mo-1]} ${dy}, ${yr} · ${'Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_dow]}`;
-  return(<div className="scr">
-    <div className="hh"><h2 className="ht">{label}</h2><button className="bi" onClick={onBack}>×</button></div>
-    {!e&&onLogMood&&<button className="btn-p" style={{marginBottom:12,fontSize:13,padding:"11px 16px"}} onClick={onLogMood}>Log full day entry</button>}
-    {e&&(<div className="card">
-      <div className="dv-head"><h3 className="ctit">Mood Log</h3><div className="dv-acts"><button className="rr-edit" onClick={onEditMood}>Edit</button><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("mood")}>Delete</button></div></div>
-      {confirmDel==="mood"&&<div className="dv-confirm"><span>Delete this mood entry?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelMood}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
-      {primaryMood(e)&&<div className="dv-mood" style={{color:MM[primaryMood(e)].color}}>{moodLabel(e)}</div>}
-      {e.sleep!=null&&<div className="dv-row">Sleep: {e.sleep} hrs</div>}
-      {e.weight!=null&&<div className="dv-row">Weight: {e.weight} kg</div>}
-      {e.anxiety!=null&&<div className="dv-row">Anxiety: {e.anxiety} / 3</div>}
-      {e.irritability!=null&&<div className="dv-row">Irritability: {e.irritability} / 3</div>}
-      {e.meds&&<div className="dv-row">Meds: {Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(m=>m.key===k);const d=v.dose||med?.dose;return`${med?.name||k}${d?` (${d})`:""} ×${v.ct}`;}).join(", ")}</div>}
-      {e.notes&&<div className="dv-note">{e.notes}</div>}
-    </div>)}
-    {s&&(<div className="card">
-      <div className="dv-head"><h3 className="ctit">SRM</h3><button className="rr-edit" style={{color:"#D4785C"}} onClick={()=>setConfirmDel("srm")}>Delete all</button></div>
-      {confirmDel==="srm"&&<div className="dv-confirm"><span>Delete SRM log?</span><button className="btn-sm-p" style={{background:"#D4785C"}} onClick={onDelSRM}>Delete</button><button className="btn-ghost" onClick={()=>setConfirmDel(null)}>Cancel</button></div>}
-      {s.items.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{icon:"·",label:it.id};
-        return(<div key={it.id} className="dv-srm-row">
-          <div className="dv-srm-info"><span className="dv-srm-icon">{ac.icon}</span><span>{ac.label}</span></div>
-          <div className="dv-srm-r">
-            <span className="dv-srm-time">{it.didNot?"Skipped":it.time?fmt12h(to24h(normTime(it.time),it.am)):"—"}{it.withOthers?" · social":""}</span>
-            <button className="rr-edit" onClick={()=>onEditSRM(it.id)}>Edit</button>
-          </div>
-        </div>);
-      })}
-    </div>)}
-    {!e&&!s&&<p style={{color:"var(--t3)",fontSize:13,textAlign:"center",marginTop:40}}>No data for this day.</p>}
+  const wkFull='Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday'.split(',')[_dow];
+  const kicker=`${wkFull} · ${MO[mo-1]} ${dy}`;
+  const pm=primaryMood(e);
+  const moodVar=pm?`var(--${G_MOOD_CLASS[pm]})`:"var(--g-mood-steady)";
+  const heroBg=`radial-gradient(120% 64% at 50% 100%, rgba(224,168,120,.45) 0%, transparent 62%), linear-gradient(180deg, ${moodVar} 0%, #C7C2DC 44%, #D6BEC2 74%, #E6B488 100%)`;
+  const medChips=e?.meds?Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(mm=>mm.key===k);return(<span key={k} className="g-day-med-chip"><b>{med?.name||k}</b><span>×{v.ct}</span></span>);}):[];
+  const srmItems=s?[...s.items].filter(it=>!it.didNot).sort((a,b)=>{const ta=a.time?to24h(normTime(a.time),a.am):"99:99";const tb=b.time?to24h(normTime(b.time),b.am):"99:99";return String(ta).localeCompare(String(tb));}):[];
+  return(<div className="scr g-day">
+    <div className="g-day-hero g-grain" style={{background:heroBg}}>
+      <button className="g-day-close" onClick={onBack}>×</button>
+      <div className="g-day-hero-cap">
+        <div className="g-day-kick">{kicker}</div>
+        <div className="g-day-word">{pm?moodLabel(e):(e?"Logged":"No entry")}</div>
+      </div>
+    </div>
+    <div className="g-day-body">
+      {!e&&onLogMood&&<button className="g-day-edit-btn" style={{marginBottom:18}} onClick={onLogMood}>Log full day entry</button>}
+      {e&&<>
+        <div className="g-day-rowhead"><span className="g-day-eyebrow">Day log</span></div>
+        <div className="g-day-hair"/>
+        <div className="g-day-vit">
+          <div className="g-day-cell"><span className="g-day-k">Mood</span><div className="g-day-v">{pm?moodLabel(e):"—"}{pm&&<small> {MM[pm].v>0?`+${MM[pm].v}`:MM[pm].v}</small>}</div></div>
+          <div className="g-day-cell"><span className="g-day-k">Sleep</span><div className="g-day-v">{e.sleep!=null?<>{e.sleep}<small> hrs</small></>:"—"}</div></div>
+          <div className="g-day-cell"><span className="g-day-k">Anxiety</span><div className="g-day-v">{e.anxiety!=null?<>{SEV[e.anxiety].l}<small> {e.anxiety}/3</small></>:"—"}</div>{e.anxiety!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.anxiety?"on":""}/>)}</div>}</div>
+          <div className="g-day-cell"><span className="g-day-k">Irritability</span><div className="g-day-v">{e.irritability!=null?<>{SEV[e.irritability].l}<small> {e.irritability}/3</small></>:"—"}</div>{e.irritability!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.irritability?"on":""}/>)}</div>}</div>
+        </div>
+        {e.weight!=null&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Weight</span><div className="g-day-v">{e.weight}<small> kg</small></div></div></>}
+        {e.notes&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Note</span><p className="g-day-note">{e.notes}</p></div></>}
+        {medChips.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{medChips}</div></div></>}
+      </>}
+      {srmItems.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Social rhythm</span>
+        <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>onEditSRM(it.id)}>
+          <div className="g-day-tl-time">{t}</div><div className="g-day-tl-dot"/><div className="g-day-tl-label">{ac.label}{it.withOthers?<span className="g-day-tl-tag"> · social</span>:""}</div>
+        </div>);})}</div></div></>}
+      {pm&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Where the day landed</span>
+        <div className="g-day-spectrum"><div className="g-day-spectrum-knob" style={{left:`${Math.max(0,Math.min(100,((moodValue(e)+3)/6)*100))}%`}}/></div>
+        <div className="g-day-spectrum-ends"><span>depressed</span><span>elevated</span></div>
+      </div></>}
+      {!e&&!s&&<p className="g-day-empty">No data for this day.</p>}
+      {(e||s)&&<div className="g-day-foot">
+        {e&&<button className="g-day-edit-btn" onClick={onEditMood}>Edit this entry</button>}
+        <div className="g-day-del-row">
+          {e&&(confirmDel==="mood"?<span className="g-day-confirm">Delete mood entry? <button className="g-day-confirm-yes" onClick={onDelMood}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("mood")}>Delete mood entry</button>)}
+          {s&&(confirmDel==="srm"?<span className="g-day-confirm">Delete rhythm log? <button className="g-day-confirm-yes" onClick={onDelSRM}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("srm")}>Delete rhythm log</button>)}
+        </div>
+      </div>}
+    </div>
   </div>);
 }
 
@@ -2459,6 +2477,54 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-home-nav button{border:none;background:none;font:500 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);cursor:pointer}
 .g-home-nav button.active{color:var(--g-tx);font-weight:600}
 .g-home .cal-pad{height:170px}
+
+/* ── R9b day detail ── */
+.g-day{padding:0;background:var(--g-bg);min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-day-hero{position:relative;height:300px;flex-shrink:0;overflow:hidden}
+.g-day-close{position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;z-index:3;width:34px;height:34px;border-radius:50%;border:none;background:rgba(255,255,255,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#1C1C1A;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.g-day-hero-cap{position:absolute;left:24px;right:24px;bottom:24px;z-index:2}
+.g-day-kick{font:600 11px/1 'Inter',system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:rgba(28,28,26,.6);margin-bottom:6px}
+.g-day-word{font:500 36px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.3px;color:#1C1C1A}
+.g-day-body{padding:22px 24px 40px}
+.g-day-rowhead{padding-bottom:14px}
+.g-day-eyebrow,.g-day-k{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3)}
+.g-day-hair{height:1px;background:var(--g-line)}
+.g-day-vit{display:grid;grid-template-columns:1fr 1fr}
+.g-day-cell{padding:16px 0}
+.g-day-cell:nth-child(odd){padding-right:18px;border-right:1px solid var(--g-line)}
+.g-day-cell:nth-child(even){padding-left:18px}
+.g-day-cell:nth-child(1),.g-day-cell:nth-child(2){border-bottom:1px solid var(--g-line)}
+.g-day-cell .g-day-k{margin-bottom:8px}
+.g-day-v{font:400 21px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx)}
+.g-day-v small{font-size:13px;color:var(--g-tx3)}
+.g-day-scale{display:flex;gap:3px;margin-top:9px}
+.g-day-scale i{flex:1;height:4px;border-radius:2px;background:var(--g-line)}
+.g-day-scale i.on{background:var(--g-tx2)}
+.g-day-block{padding:16px 0}
+.g-day-block .g-day-k{margin-bottom:10px}
+.g-day-note{font:300 15px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-day-meds{display:flex;flex-wrap:wrap;gap:7px}
+.g-day-med-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:var(--g-surface);font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-day-med-chip b{font-weight:500}
+.g-day-med-chip span{color:var(--g-tx3);font-size:12px}
+.g-day-tl-item{display:flex;gap:14px;align-items:flex-start;padding:8px 0;cursor:pointer}
+.g-day-tl-time{width:64px;flex-shrink:0;font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx);font-variant-numeric:tabular-nums}
+.g-day-tl-dot{position:relative;width:9px;flex-shrink:0;display:flex;justify-content:center;margin-top:6px}
+.g-day-tl-dot::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--g-tx3)}
+.g-day-tl-label{flex:1;font:400 14px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-day-tl-tag{color:var(--g-tx3);font-size:11px}
+.g-day-spectrum{position:relative;height:7px;border-radius:6px;background:linear-gradient(90deg,#5B5E86,#8E8FB8,#C9C3DE,#E8E4C0,#F2C879,#F2914A,#E0431C)}
+.g-day-spectrum-knob{position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--g-bg);border:2px solid var(--g-tx);transform:translate(-50%,-50%)}
+.g-day-spectrum-ends{display:flex;justify-content:space-between;margin-top:8px}
+.g-day-spectrum-ends span{font:400 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-day-empty{color:var(--g-tx3);font-size:13px;text-align:center;margin-top:40px}
+.g-day-foot{padding-top:20px}
+.g-day-edit-btn{width:100%;padding:15px;border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 14px/1 'Inter',system-ui,sans-serif;letter-spacing:.02em;cursor:pointer}
+.g-day-del-row{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:14px}
+.g-day-del{border:none;background:none;color:var(--g-tx3);font:400 12px/1 'Inter',system-ui,sans-serif;cursor:pointer;padding:6px}
+.g-day-confirm{font:400 12px/1.6 'Inter',system-ui,sans-serif;color:var(--g-tx2);display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+.g-day-confirm-yes{border:none;background:none;color:var(--g-warm-err);font-weight:600;cursor:pointer}
+.g-day-confirm-no{border:none;background:none;color:var(--g-tx3);cursor:pointer}
 .cfdraw{stroke-dasharray:50;stroke-dashoffset:50;animation:gCheckDraw .55s ease .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
