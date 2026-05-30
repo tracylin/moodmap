@@ -789,14 +789,17 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       const hasExtras=!!(en&&(en.sleep!=null||medCt||en.notes||s2));
       return(<div className="g-bubble" style={{top,left,width:bw}}>
         <div className="g-bubble-caret" style={{left:caretLeft}}/>
-        <div className="g-bubble-date">{dlabel}</div>
         {!pmk?(<>
+          <div className="g-bubble-date">{dlabel}</div>
           <div className="g-bubble-prompt">{k===tdk()?"How was today?":"How was it?"}</div>
           <div className="g-bubble-pick">{MOOD_PICKER_ORDER.map(mk=><button key={mk} className={`g-bubble-dot ${G_MOOD_CLASS[mk]}`} onClick={()=>doQuickSave(k,mk)} aria-label={MM[mk].label}/>)}</div>
           <div className="g-bubble-ends"><span>low</span><span>high</span></div>
           <div className="g-bubble-mini"><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
         </>):(<>
-          <div className="g-bubble-mood"><span className="g-bubble-cdot" style={{background:`var(--${G_MOOD_CLASS[pmk]})`}}/><span className="g-bubble-clabel">{moodLabel(en)} <small>{MM[pmk].v>0?`+${MM[pmk].v}`:MM[pmk].v}</small></span></div>
+          <button className="g-bubble-open" onClick={()=>{setBubble(null);setSelDay(k);onViewDay();}}>
+            <span className="g-bubble-date">{dlabel}</span>
+            <span className="g-bubble-mood"><span className="g-bubble-cdot" style={{background:`var(--${G_MOOD_CLASS[pmk]})`}}/><span className="g-bubble-clabel">{moodLabel(en)} <small>{MM[pmk].v>0?`+${MM[pmk].v}`:MM[pmk].v}</small></span></span>
+          </button>
           {hasExtras?<div className="g-bubble-sum">{[en.sleep!=null?`${en.sleep}h`:null,medCt?`${medCt} meds`:null,en.notes?"note":null,s2?"rhythm":null].filter(Boolean).join(" · ")}</div>:<div className="g-bubble-caps">Sleep · Meds · Note · Rhythm</div>}
           <div className="g-bubble-act"><button className="g-bubble-edit" onClick={()=>{setBubble(null);setSelDay(k);onViewDay();}}>Edit</button><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
         </>)}
@@ -1916,12 +1919,12 @@ if(typeof window!=="undefined"){
 const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;1,8..60,300&display=swap');
 :root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889;--g-bg:#F5F3EE;--g-surface:#ECE8E0;--g-card:#FBFAF6;--g-line:#E2DED4;--g-tx:#1C1C1A;--g-tx2:#6E6A60;--g-tx3:#9A968C;--g-tx4:#C0BBAF;--g-warm-err:#BE7355;--g-mood-sev-low:#5B5E86;--g-mood-mod-low:#7C7EAE;--g-mood-mild-low:#B3A8CC;--g-mood-steady:#CFC9AE;--g-mood-mild-high:#E9C77E;--g-mood-mod-high:#EE9A52;--g-mood-sev-high:#E96A33;--g-sleep-very-short:#B0573D;--g-sleep-short:#EE9A52;--g-sleep-healthy:#8FB2A4;--g-sleep-long:#7C7EAE;--g-anx:#7A7268;--g-irr:#ADA593}
-*{margin:0;padding:0;box-sizing:border-box}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 input,textarea,select{font-size:16px}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
 .app{max-width:420px;margin:0 auto;min-height:100dvh;overflow-x:hidden}
 .page{animation:pageIn .4s var(--ease)}
-@keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes pageIn{from{opacity:0}to{opacity:1}}
 .scr{padding:env(safe-area-inset-top) 20px 140px;min-height:100dvh}
 
 .btn-p{width:100%;padding:15px 24px;border-radius:var(--r);border:none;background:var(--tx);color:#fff;font:500 15px/1 'DM Sans',sans-serif;cursor:pointer;transition:all .15s var(--ease);letter-spacing:.01em}
@@ -2486,6 +2489,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-bubble{position:fixed;z-index:60;background:var(--g-bg);border-radius:18px;box-shadow:0 14px 42px rgba(0,0,0,.2);padding:12px 14px 11px;transform-origin:50% 0;animation:gBubbleIn .22s cubic-bezier(.2,.85,.25,1) both}
 @keyframes gBubbleIn{from{opacity:0;transform:scale(.92) translateY(-6px)}to{opacity:1;transform:none}}
 .g-bubble-caret{position:absolute;width:13px;height:13px;background:var(--g-bg);transform:rotate(45deg);top:-6px;box-shadow:-3px -3px 7px rgba(0,0,0,.03)}
+.g-bubble-open{display:block;width:100%;border:none;background:none;text-align:left;color:inherit;cursor:pointer}
 .g-bubble-date{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--g-tx3)}
 .g-bubble-prompt{font:500 16px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx);margin-top:4px}
 .g-bubble-pick{display:flex;justify-content:space-between;align-items:center;margin:11px 0 5px}
