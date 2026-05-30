@@ -760,7 +760,7 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
       <div><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]} {y} <SyncBadge/></h2></div>
-      <div className="cal-tr"><button className="bi" onClick={onSet}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
+      <div className="cal-tr"><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
     </div>
     <div className="g-home-week">{weekCount>0?<><b>{weekCount} logged</b> this week</>:"A fresh week"}</div>
     <div className="cg">{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
@@ -824,9 +824,11 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
     <div className="cal-pad"/>
     <div className="cact g-home-actions">
       <button className="g-home-log-btn" onClick={()=>{if(todayLogged){setSelDay(tdk());onViewDay();}else onAdd();}}>{todayLogged?"Today's log ✓":"Log today"}</button>
-      <div className="cact-row">
-        <button className="g-home-srm-btn" onClick={onSrm}>{srm[tdk()]?"Edit rhythm moments":"Add a rhythm moment"}</button>
-        <button className="g-home-insights-btn" onClick={onHist}>Insights</button>
+      <button className="g-home-srm-btn" onClick={onSrm}>{srm[tdk()]?"Edit rhythm moments":"Add a rhythm moment"}</button>
+      <div className="g-home-nav">
+        <button className="active">Month</button>
+        <button onClick={onHist}>Insights</button>
+        <button onClick={onSet}>Settings</button>
       </div>
     </div>
   </div>);
@@ -2430,7 +2432,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-home .cn{position:relative;z-index:2;font:400 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-variant-numeric:tabular-nums}
 .g-home .cc.cl .cn{color:var(--g-tx2);font-weight:500}
 .g-home .cc.ct .cn{font-weight:600;color:var(--g-tx)}
-.g-home .cc.ct::after{content:"";position:absolute;inset:16%;border:1.5px solid var(--g-tx);border-radius:50%;background:transparent;width:auto;height:auto;bottom:auto;z-index:1}
+.g-home .cc.ct::after{content:"";position:absolute;inset:14%;border:1.5px solid var(--g-tx);border-radius:50%;background:none;width:auto;height:auto;z-index:1}
 .g-home .cc.csel::after{content:"";position:absolute;inset:14%;border:1.5px solid var(--g-tx3);border-radius:50%;background:transparent;width:auto;height:auto;bottom:auto;z-index:1}
 .g-cal-glow{position:absolute;inset:10%;border-radius:50%;z-index:0;pointer-events:none}
 .g-cal-glow::before{content:"";position:absolute;inset:0;border-radius:50%}
@@ -2452,8 +2454,11 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-home .day-chip{background:var(--g-surface);color:var(--g-tx2);border-radius:8px}
 .g-home-actions{position:fixed;z-index:50;background:linear-gradient(to top,var(--g-bg) 75%,transparent)}
 .g-home-log-btn{width:100%;padding:16px;border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 15px/1 'Inter',system-ui,sans-serif;letter-spacing:.02em;cursor:pointer}
-.g-home-srm-btn{flex:1;padding:12px;border-radius:999px;border:1px solid var(--g-tx4);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
-.g-home-insights-btn{padding:12px 18px;border-radius:999px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-home-srm-btn{width:100%;padding:12px;border-radius:999px;border:1px solid var(--g-tx4);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-home-nav{display:flex;justify-content:center;gap:32px;padding:12px 0 0}
+.g-home-nav button{border:none;background:none;font:500 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);cursor:pointer}
+.g-home-nav button.active{color:var(--g-tx);font-weight:600}
+.g-home .cal-pad{height:170px}
 .cfdraw{stroke-dasharray:50;stroke-dashoffset:50;animation:gCheckDraw .55s ease .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
@@ -2689,7 +2694,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-move-date:hover{border-color:var(--t2);color:var(--t2)}
 
 /* ── SRM bottom-edge tick on calendar cells ── */
-.c-srm-tick{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:12px;height:2px;border-radius:1px;background:#7E9AB3;opacity:.7;pointer-events:none}
+.c-srm-tick{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--g-tx3);opacity:.75;pointer-events:none;z-index:2}
 
 
 .day-card-log-cta{margin-top:10px;width:100%;padding:10px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:center;transition:all .15s}
