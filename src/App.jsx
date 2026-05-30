@@ -1280,8 +1280,8 @@ function SRMPicker({srm,srmDate,setSrmDate,onPick,onX}){
     setNewLabel("");setShowAdd(false);
   };
 
-  return(<div className="scr">
-    <div className="hh"><h2 className="ht">SRM</h2><button className="bi" onClick={onX}>×</button></div>
+  return(<div className="scr g-srm-picker g-ambient-sky g-grain">
+    <div className="hh"><h2 className="ht">Social rhythm</h2><button className="bi" onClick={onX}>×</button></div>
     <div className="datebar">
       <button className={`datepill${srmDate===tdk()?" on":""}`} onClick={()=>setSrmDate(tdk())}>Today</button>
       <button className={`datepill${srmDate===ydk()?" on":""}`} onClick={()=>setSrmDate(ydk())}>Yesterday</button>
@@ -1318,7 +1318,7 @@ function SRMSingle({id,srm,dateKey,onSave,onX}){
   const upd=(f,v)=>setItem(p=>({...p,[f]:v}));
   const updWho=k=>setItem(p=>({...p,who:p.who.includes(k)?p.who.filter(w=>w!==k):[...p.who,k]}));
 
-  return(<div className="scr ent">
+  return(<div className="scr ent g-srm-single g-ambient-sky g-grain">
     <div className="et"><button className="bi" onClick={onX}>‹</button><span className="es">{act.label}</span><button className="btn-ghost" onClick={onX}>Cancel</button></div>
     <div className="qa">
       <div className="srm-em">{act.icon}</div>
@@ -1351,8 +1351,8 @@ function SRMSingle({id,srm,dateKey,onSave,onX}){
 /* ── CONFIRM ── */
 function Confirm({msg,sub,onDone}){
   useEffect(()=>{const t=setTimeout(onDone,2200);return()=>clearTimeout(t);},[onDone]);
-  return(<div className="scr cfs"><div className="cfi">
-    <div className="cfc"><svg width="48" height="48" viewBox="0 0 48 48" fill="none"><path d="M14 25L21 32L34 18" stroke="#7BA08B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><animate attributeName="stroke-dasharray" from="0 50" to="50 50" dur="0.5s" fill="freeze"/></path></svg></div>
+  return(<div className="scr cfs g-confirm g-ambient-sky g-grain"><div className="cfi">
+    <div className="cfc"><svg width="48" height="48" viewBox="0 0 48 48" fill="none"><path className="cfdraw" d="M14 25L21 32L34 18" stroke="#8FB2A4" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
     <h2 className="cft">{msg}</h2><p className="cfp">{sub}</p>
   </div></div>);
 }
@@ -2308,6 +2308,31 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .srm-pick-icon{font-size:16px;color:var(--t3);width:24px;text-align:center;flex-shrink:0}
 .srm-pick-label{font-size:14px;font-weight:400;flex:1}
 .srm-pick-check{color:var(--gn);font-size:14px;font-weight:500}
+.g-srm-picker,.g-srm-single,.g-confirm{padding:26px 22px 28px;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-srm-picker::after,.g-srm-single::after,.g-confirm::after{z-index:0}
+.g-srm-picker > *,.g-srm-single > *,.g-confirm > *{position:relative;z-index:1}
+.g-srm-picker .hh{padding:0 0 14px}
+.g-srm-picker .ht{font:500 22px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.5px;color:var(--g-tx)}
+.g-srm-picker .bi,.g-srm-single .bi{width:30px;height:30px;border:none;border-radius:50%;background:var(--g-surface);color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
+.g-srm-picker .datebar{margin:0 0 12px;gap:6px}
+.g-srm-picker .datepill,.g-srm-picker .datepick{padding:7px 12px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif}
+.g-srm-picker .datepill.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
+.g-srm-picker .datecap{font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-srm-picker .srm-pick-sub{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:14px}
+.g-srm-picker .srm-pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.g-srm-picker .srm-pick-item{position:relative;display:flex;min-height:78px;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:7px;padding:13px;border:1px solid var(--g-line);border-radius:14px;background:var(--g-card);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx);box-shadow:none}
+.g-srm-picker .srm-pick-item:hover{border-color:var(--g-line);background:var(--g-card)}
+.g-srm-picker .srm-pick-item:active{transform:scale(.985)}
+.g-srm-picker .srm-pick-done{border-color:var(--g-line);background:var(--g-card);opacity:.55}
+.g-srm-picker .srm-pick-icon{width:auto;font-size:17px;line-height:1;color:var(--g-tx2)}
+.g-srm-picker .srm-pick-label{font:500 13px/1.25 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-srm-picker .srm-pick-check{position:absolute;top:11px;right:12px;color:var(--g-sleep-healthy);font:600 12px/1 'Inter',system-ui,sans-serif}
+.g-srm-picker .btn-add{width:100%;margin-top:10px!important;padding:11px;border-radius:12px;border:1px dashed var(--g-tx4);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
+.g-srm-picker .add-form{margin-top:10px!important;padding:12px;border:1px solid var(--g-line);border-radius:12px;background:rgba(251,250,246,.58)}
+.g-srm-picker .add-input{border-bottom:1px solid var(--g-line);font:400 14px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-srm-picker .add-input::placeholder{color:var(--g-tx4)}
+.g-srm-picker .btn-sm-p{border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
+.g-srm-picker .btn-ghost,.g-srm-single .btn-ghost{font-family:'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 
 .srm-em{font-size:24px;margin-bottom:12px;color:var(--t3)}
 .srm-tr{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
@@ -2331,6 +2356,33 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .srm-eng{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .srm-eb{padding:12px 14px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:400 13px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:left;transition:all .15s}
 .srm-eb:hover{border-color:var(--t3)}.srm-eb-on{border-color:var(--tx);background:var(--warm);color:var(--tx)}
+.g-srm-single{display:flex;min-height:100dvh;flex-direction:column}
+.g-srm-single .et{gap:12px;margin-bottom:22px}
+.g-srm-single .es{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);letter-spacing:0;text-transform:none}
+.g-srm-single .qa{display:flex;flex:1;min-height:auto;flex-direction:column;padding:0;animation:si .3s var(--ease)}
+.g-srm-single .srm-em{font-size:32px;line-height:1;color:var(--g-tx2);margin-bottom:8px}
+.g-srm-single .qt{font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx);margin-bottom:18px}
+.g-srm-single .srm-tr{display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:14px}
+.g-srm-single .srm-lb{display:block;min-width:0;margin-bottom:8px;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--g-tx3)}
+.g-srm-single .srm-tr .srm-lb{grid-column:1/-1;margin-bottom:0}
+.g-srm-single .srm-ti{width:100%;min-width:0;padding:12px 14px;border:1px solid var(--g-line);border-radius:12px;background:#fff;color:var(--g-tx);font:500 18px/1 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-ti:focus{border-color:var(--g-tx);box-shadow:none}
+.g-srm-single .srm-now{padding:12px 16px;border:1px solid var(--g-tx4);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-now:active{background:var(--g-surface)}
+.g-srm-single .srm-skip{align-self:flex-start;margin:0 0 22px;padding:11px 16px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx3);font:500 13px/1 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-skip-on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
+.g-srm-single .srm-sec{margin-bottom:22px}
+.g-srm-single .srm-yn{gap:8px;margin-top:0}
+.g-srm-single .srm-yb,.g-srm-single .srm-wb,.g-srm-single .srm-eb{border:1px solid var(--g-line);border-radius:12px;background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif;font-weight:500}
+.g-srm-single .srm-yb{padding:12px;font-size:14px}
+.g-srm-single .srm-who-grid{gap:8px;margin-top:0}
+.g-srm-single .srm-wb{padding:11px;font-size:13px}
+.g-srm-single .srm-eng{gap:8px;margin-top:0}
+.g-srm-single .srm-eb{padding:12px 14px;font-size:13px}
+.g-srm-single .srm-yb-on,.g-srm-single .srm-wb-on,.g-srm-single .srm-eb-on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
+.g-srm-single .srm-who-text{border:1px solid var(--g-line);border-radius:12px;background:#fff;color:var(--g-tx);font:400 13px/1.2 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-who-text::placeholder{color:var(--g-tx4)}
+.g-srm-single .btn-p{width:100%;margin-top:auto;border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
 
 .add-form{padding:12px;border:1.5px solid var(--bd);border-radius:var(--rs)}
 .add-input{width:100%;border:none;border-bottom:1px solid var(--bd);background:transparent;font:400 14px 'DM Sans',sans-serif;padding:8px 0;outline:none;margin-bottom:8px;color:var(--tx)}
@@ -2343,6 +2395,14 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .cfc{width:88px;height:88px;border-radius:50%;background:var(--gbg);display:flex;align-items:center;justify-content:center;margin:0 auto 24px}
 .cft{font-family:'Source Serif 4',serif;font-size:26px;font-weight:400;margin-bottom:8px}
 .cfp{color:var(--t2);font-size:15px;font-weight:300}
+.g-confirm{display:flex;align-items:center;justify-content:center;min-height:100dvh}
+.g-confirm .cfi{padding:0 40px;text-align:center;animation:gConfirmIn .55s var(--ease)}
+.g-confirm .cfc{width:80px;height:80px;background:rgba(143,178,164,.16);margin:0 auto}
+.g-confirm .cft{font:500 20px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.3px;color:var(--g-tx);margin:22px 0 0}
+.g-confirm .cfp{font:300 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:8px}
+.cfdraw{stroke-dasharray:50;stroke-dashoffset:50;animation:gCheckDraw .55s ease .15s forwards}
+@keyframes gCheckDraw{to{stroke-dashoffset:0}}
+@keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
 
 .hh{display:flex;align-items:center;justify-content:space-between;padding:24px 0 16px}
 .ht{font-family:'Source Serif 4',serif;font-weight:400;font-size:22px}.ha{display:flex;gap:8px;align-items:center}
