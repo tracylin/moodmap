@@ -733,7 +733,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
   useEffect(()=>{
     if(!bubble)return;
-    const onDoc=(ev)=>{if(!ev.target.closest(".g-bubble")&&!ev.target.closest(".cc"))setBubble(null);};
+    const onDoc=(ev)=>{if(!ev.target.closest(".g-bubble"))setBubble(null);};
     const t=setTimeout(()=>document.addEventListener("click",onDoc),0);
     return()=>{clearTimeout(t);document.removeEventListener("click",onDoc);};
   },[bubble]);
@@ -747,7 +747,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
     const isT=d===td;const hasData=e||s;
     const pm=primaryMood(e);const isFuture=k>tdk();
     cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${bubble?.key===k?" cc-open":""}${isFuture?" cc-future":""}`}
-      onClick={(ev)=>{if(isFuture)return;const rect=ev.currentTarget.getBoundingClientRect();setBubble(b=>b&&b.key===k?null:{key:k,rect});}}>
+      onClick={(ev)=>{if(bubble){setBubble(null);return;}if(isFuture)return;const rect=ev.currentTarget.getBoundingClientRect();setBubble({key:k,rect});}}>
       {pm&&<div className={`g-cal-glow ${G_MOOD_CLASS[pm]}`}/>}
       {s&&<div className="c-srm-tick"/>}
       <span className="cn">{d}</span>
@@ -798,7 +798,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
         </>):(<>
           <div className="g-bubble-mood"><span className="g-bubble-cdot" style={{background:`var(--${G_MOOD_CLASS[pmk]})`}}/><span className="g-bubble-clabel">{moodLabel(en)} <small>{MM[pmk].v>0?`+${MM[pmk].v}`:MM[pmk].v}</small></span></div>
           {hasExtras?<div className="g-bubble-sum">{[en.sleep!=null?`${en.sleep}h`:null,medCt?`${medCt} meds`:null,en.notes?"note":null,s2?"rhythm":null].filter(Boolean).join(" · ")}</div>:<div className="g-bubble-caps">Sleep · Meds · Note · Rhythm</div>}
-          <div className="g-bubble-act"><button className="g-bubble-edit" onClick={()=>{setBubble(null);onLogForDay(k);}}>Edit</button><button className="g-bubble-go" onClick={()=>{setBubble(null);if(hasExtras){setSelDay(k);onViewDay();}else onLogForDay(k);}}>{hasExtras?"Open full log →":"Log more →"}</button></div>
+          <div className="g-bubble-act"><button className="g-bubble-edit" onClick={()=>{setBubble(null);setSelDay(k);onViewDay();}}>Edit</button><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
         </>)}
       </div>);
     })()}
@@ -2511,6 +2511,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 /* ── R9b day detail ── */
 .g-day{padding:0;background:var(--g-bg);min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.scr.g-day{padding:0}
 .g-day-hero{position:relative;height:300px;flex-shrink:0;overflow:hidden}
 .g-day-hero::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.18;mix-blend-mode:soft-light;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='hn'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23hn)'/%3E%3C/svg%3E")}
 .g-day-close{position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;z-index:3;width:34px;height:34px;border-radius:50%;border:none;background:rgba(255,255,255,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#1C1C1A;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
