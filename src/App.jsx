@@ -694,6 +694,7 @@ function Welcome({name,onGo}){
   const[greet]=useState(()=>GREETS[Math.floor(Math.random()*GREETS.length)](name));
   return(<div className="scr g-welcome g-grain">
     <div className="g-welcome-sky"/>
+    <div className="g-welcome-bubbles"><span className="g-wb"/><span className="g-wb"/><span className="g-wb"/></div>
     <div className="g-welcome-center">
       <div className="g-welcome-cat"><CatMark /></div>
       <h1 className="g-welcome-title">MooTracker</h1>
@@ -1958,6 +1959,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:0 32px 40px;background:var(--g-bg);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-welcome::after{z-index:3}
 .g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F6E9CC 0%, transparent 60%),linear-gradient(180deg, #C9C3DE 0%, #D8D2C0 42%, #EDC98E 74%, #E89A5A 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
+.g-welcome-bubbles{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
+.g-wb{position:absolute;border-radius:50%;opacity:0;background:radial-gradient(circle,rgba(233,199,126,.35) 0%,transparent 70%);animation:gBubbleFloat linear infinite}
+.g-wb:nth-child(1){width:120px;height:120px;left:12%;animation-duration:22s;animation-delay:0s;background:radial-gradient(circle,rgba(179,168,204,.30) 0%,transparent 70%)}
+.g-wb:nth-child(2){width:80px;height:80px;left:62%;animation-duration:27s;animation-delay:6s}
+.g-wb:nth-child(3){width:150px;height:150px;left:38%;animation-duration:32s;animation-delay:12s;background:radial-gradient(circle,rgba(233,176,120,.28) 0%,transparent 70%)}
 .g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center}
 .g-welcome-cat{width:128px;height:128px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
 .g-welcome-cat svg{width:100%;height:100%;display:block}
@@ -1968,7 +1974,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 @keyframes gSkyRise{from{opacity:0;transform:scale(1.05) translateY(3%)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes gSkyBreathe{from{transform:scale(1)}to{transform:scale(1.06) translateY(-1.2%)}}
 @keyframes gCatWake{from{opacity:0;transform:translateY(12px) scale(.9);filter:blur(3px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
-@keyframes gCatBreathe{0%{transform:scale(1) rotate(-.7deg)}100%{transform:scale(1.04) rotate(.7deg)}}
+@keyframes gCatBreathe{0%{transform:translateY(0) scale(1) rotate(-1deg)}100%{transform:translateY(-4px) scale(1.06) rotate(1deg)}}
+@keyframes gBubbleFloat{0%{transform:translateY(110%) scale(.9);opacity:0}15%{opacity:1}85%{opacity:1}100%{transform:translateY(-20%) scale(1.05);opacity:0}}
 @keyframes gWelcomeRise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .welcome{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .w-top{margin-bottom:60px;animation:wIn .8s var(--ease)}
@@ -2372,11 +2379,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .cfp{color:var(--t2);font-size:15px;font-weight:300}
 .g-confirm{display:flex;align-items:center;justify-content:center;min-height:100dvh}
 .g-confirm .cfi{padding:0 40px;text-align:center;animation:gConfirmIn .55s var(--ease)}
-.g-confirm .cfc{width:80px;height:80px;background:rgba(143,178,164,.16);margin:0 auto}
+.g-confirm .cfc{width:80px;height:80px;background:rgba(143,178,164,.16);margin:0 auto;animation:gCheckPop .4s cubic-bezier(.2,.85,.25,1) both}
 .g-confirm .cft{font:500 20px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.3px;color:var(--g-tx);margin:22px 0 0}
 .g-confirm .cfp{font:300 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:8px}
 
 /* ── R8 settings ── */
+.g-insights,.g-settings{animation:gModalIn .34s cubic-bezier(.2,.85,.25,1) both}
+@keyframes gModalIn{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:none}}
 .g-settings::after{z-index:0}
 .g-settings > *{position:relative;z-index:1}
 .g-settings .hh{padding:0 0 14px}
@@ -2474,8 +2483,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .cc-future{cursor:default}
 .g-home .cc-future .cn{opacity:.5}
 .g-home .cc.cc-open::after{content:"";position:absolute;inset:10%;border:2px solid var(--g-tx);border-radius:50%;background:none;width:auto;height:auto;z-index:1}
-.g-bubble{position:fixed;z-index:60;background:var(--g-bg);border-radius:18px;box-shadow:0 14px 42px rgba(0,0,0,.2);padding:12px 14px 11px;animation:gBubbleIn .14s var(--ease)}
-@keyframes gBubbleIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.g-bubble{position:fixed;z-index:60;background:var(--g-bg);border-radius:18px;box-shadow:0 14px 42px rgba(0,0,0,.2);padding:12px 14px 11px;transform-origin:50% 0;animation:gBubbleIn .22s cubic-bezier(.2,.85,.25,1) both}
+@keyframes gBubbleIn{from{opacity:0;transform:scale(.92) translateY(-6px)}to{opacity:1;transform:none}}
 .g-bubble-caret{position:absolute;width:13px;height:13px;background:var(--g-bg);transform:rotate(45deg);top:-6px;box-shadow:-3px -3px 7px rgba(0,0,0,.03)}
 .g-bubble-date{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--g-tx3)}
 .g-bubble-prompt{font:500 16px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx);margin-top:4px}
@@ -2495,7 +2504,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-bubble-sum{font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-bubble-act{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--g-line);margin-top:10px;padding-top:9px}
 .g-bubble-edit{border:none;background:none;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);cursor:pointer}
-.g-toast{position:fixed;left:50%;bottom:calc(186px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:61;display:flex;align-items:center;gap:14px;background:var(--g-tx);color:var(--g-bg);border-radius:999px;padding:10px 16px;box-shadow:0 8px 28px rgba(0,0,0,.22);animation:gBubbleIn .18s var(--ease);white-space:nowrap}
+.g-toast{position:fixed;left:50%;bottom:calc(186px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:61;display:flex;align-items:center;gap:14px;background:var(--g-tx);color:var(--g-bg);border-radius:999px;padding:10px 16px;box-shadow:0 8px 28px rgba(0,0,0,.22);animation:gToastIn .18s var(--ease);white-space:nowrap}
+@keyframes gToastIn{from{opacity:0;transform:translateX(-50%) translateY(4px)}to{opacity:1;transform:translateX(-50%)}}
 .g-toast-msg{font:400 13px/1 'Inter',system-ui,sans-serif}
 .g-toast-undo{border:none;background:none;color:var(--g-bg);font:600 13px/1 'Inter',system-ui,sans-serif;cursor:pointer;text-decoration:underline}
 
@@ -2547,9 +2557,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-confirm{font:400 12px/1.6 'Inter',system-ui,sans-serif;color:var(--g-tx2);display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
 .g-day-confirm-yes{border:none;background:none;color:var(--g-warm-err);font-weight:600;cursor:pointer}
 .g-day-confirm-no{border:none;background:none;color:var(--g-tx3);cursor:pointer}
-.cfdraw{stroke-dasharray:50;stroke-dashoffset:50;animation:gCheckDraw .55s ease .15s forwards}
+.cfdraw{stroke-dasharray:40;stroke-dashoffset:40;animation:gCheckDraw .55s cubic-bezier(.2,.85,.25,1) .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes gCheckPop{from{transform:scale(.8);opacity:0}to{transform:none;opacity:1}}
 
 .hh{display:flex;align-items:center;justify-content:space-between;padding:24px 0 16px}
 .ht{font-family:'Source Serif 4',serif;font-weight:400;font-size:22px}.ha{display:flex;gap:8px;align-items:center}
@@ -2784,6 +2795,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 /* ── SRM bottom-edge tick on calendar cells ── */
 .c-srm-tick{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--g-tx3);opacity:.65;filter:blur(.5px);pointer-events:none;z-index:2}
 
+@media(prefers-reduced-motion:reduce){
+  .g-welcome-cat,.g-welcome-sky,.g-wb,.cfdraw,.g-confirm .cfc,
+  .g-bubble,.g-insights,.g-settings,.page{animation:none!important}
+  .g-welcome-bubbles{display:none}
+}
 
 .day-card-log-cta{margin-top:10px;width:100%;padding:10px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:center;transition:all .15s}
 .day-card-log-cta:hover{border-color:var(--t3);color:var(--tx)}
