@@ -1360,7 +1360,7 @@ function Confirm({msg,sub,onDone}){
 /* ═══════════════════════════════════════════════════════════════════════════
    HISTORY — export includes SRM, notes newest first
    ═══════════════════════════════════════════════════════════════════════════ */
-function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
+function Hist({mood,srm,name,meds,onBack}){
   const [range,setRange]=useState("1m");
   const [overlays,setOverlays]=useState({sleep:false,weight:false,social:false});
   const [sleepTip,setSleepTip]=useState(null);
@@ -1437,7 +1437,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     return mn===0?`${h12}${ampm}`:`${h12}:${String(mn).padStart(2,"0")}${ampm}`;
   };
   const sleepZone=h=>h<5?"very-short":h<7?"short":h<10?"healthy":"long";
-  const sleepColor=z=>({"very-short":"var(--z-very-short)",short:"var(--z-short)",healthy:"var(--z-healthy)",long:"var(--z-long)"}[z]);
+  const sleepColor=z=>({"very-short":"var(--g-sleep-very-short)",short:"var(--g-sleep-short)",healthy:"var(--g-sleep-healthy)",long:"var(--g-sleep-long)"}[z]);
   const Y_TOP=20,Y_BOTTOM=36;
   const yPct=h=>`${((h-Y_TOP)/(Y_BOTTOM-Y_TOP))*100}%`;
   const nights=srmSorted.map(([k,v])=>{
@@ -1456,10 +1456,10 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
   const sleepAvgWake=avg(validNights.map(n=>n.wake));
   const sleepXLabels=new Set(nights.length?[0,Math.floor(nights.length*.25),Math.floor(nights.length*.5),Math.floor(nights.length*.75),nights.length-1]:[]);
   const sleepZones=[
-    {key:"very-short",label:"<5h",color:"var(--z-very-short)"},
-    {key:"short",label:"5–7h",color:"var(--z-short)"},
-    {key:"healthy",label:"7–10h",color:"var(--z-healthy)"},
-    {key:"long",label:">10h",color:"var(--z-long)"}
+    {key:"very-short",label:"<5h",color:"var(--g-sleep-very-short)"},
+    {key:"short",label:"5–7h",color:"var(--g-sleep-short)"},
+    {key:"healthy",label:"7–10h",color:"var(--g-sleep-healthy)"},
+    {key:"long",label:">10h",color:"var(--g-sleep-long)"}
   ];
   const sleepZoneCounts=Object.fromEntries(sleepZones.map(z=>[z.key,0]));
   validNights.forEach(n=>{sleepZoneCounts[n.zone]=(sleepZoneCounts[n.zone]||0)+1;});
@@ -1480,7 +1480,7 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`mood-rhythm-${tdk()}.csv`;a.click();
   };
 
-  return(<div className="scr">
+  return(<div className="scr g-insights g-ambient-sky g-grain">
     <div className="hh"><h2 className="ht">{name?`${name}'s `:""}{sorted.length>0?"Insights":"Insights"}</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
     {!hasMoodData&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
     {hasMoodData&&<div className="sr">
@@ -1490,11 +1490,11 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
     {hasMoodData&&<div className="range-bar">{[["1w","1W"],["1m","1M"],["3m","3M"],["all","All"]].map(([k,l])=><button key={k} className={`range-chip ${range===k?"on":""}`} onClick={()=>{setRange(k);setSleepTip(null);}}>{l}</button>)}</div>}
 
     {moodData.length>0&&<div className="card"><h3 className="ctit">Mood</h3><div className="cw"><ResponsiveContainer width="100%" height={180}><AreaChart data={moodData} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#D4785C" stopOpacity={.12}/><stop offset="50%" stopColor="#7BA08B" stopOpacity={.06}/><stop offset="100%" stopColor="#5A5F8A" stopOpacity={.15}/></linearGradient></defs>
+      <defs><linearGradient id="mg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#EE9A52" stopOpacity={.16}/><stop offset="50%" stopColor="#CFC9AE" stopOpacity={.06}/><stop offset="100%" stopColor="#5B5E86" stopOpacity={.18}/></linearGradient></defs>
       <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
       <YAxis domain={[-3,3]} ticks={[-3,-2,-1,0,1,2,3]} tick={{fontSize:8,fill:"#9E9790"}} tickFormatter={v=>({3:"Sev↑",2:"Mod↑",1:"Mild↑",0:"OK","-1":"Mild↓","-2":"Mod↓","-3":"Sev↓"}[v]||v)}/>
-      <ReferenceLine y={0} stroke="#7BA08B" strokeDasharray="4 4" strokeOpacity={.4}/><Tooltip content={<MTT/>}/>
-      <Area type="monotone" dataKey="mood" stroke="#6478A0" strokeWidth={2} fill="url(#mg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
+      <ReferenceLine y={0} stroke="#B3A8CC" strokeDasharray="4 4" strokeOpacity={.6}/><Tooltip content={<MTT/>}/>
+      <Area type="monotone" dataKey="mood" stroke="#7C7EAE" strokeWidth={2} fill="url(#mg)" dot={{r:2.5,fill:"#7C7EAE",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
     </AreaChart></ResponsiveContainer></div></div>}
 
     {nights.length>0&&<div className="card sleep-card">
@@ -1529,20 +1529,20 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
       <YAxis yAxisId="weight" orientation="right" hide domain={fitDomain(comboOverlayData.map(d=>d.weight),2)}/>
       <YAxis yAxisId="social" orientation="right" hide domain={fitDomain(comboOverlayData.map(d=>d.social),1)}/>
       <Tooltip content={<CTT/>}/>
-      <Line yAxisId="symptoms" type="monotone" dataKey="anxiety" stroke="#D4785C" strokeWidth={1.8} dot={{r:2,fill:"#D4785C",strokeWidth:0}} connectNulls name="Anxiety"/>
-      <Line yAxisId="symptoms" type="monotone" dataKey="irritability" stroke="#C9B07A" strokeWidth={1.8} dot={{r:2,fill:"#C9B07A",strokeWidth:0}} connectNulls name="Irritability"/>
-      {overlays.sleep&&<Line yAxisId="sleep" type="monotone" dataKey="sleep" stroke="#7BA08B" strokeWidth={1.5} dot={{r:2,fill:"#7BA08B",strokeWidth:0}} connectNulls strokeDasharray="5 3" name="Sleep"/>}
+      <Line yAxisId="symptoms" type="monotone" dataKey="anxiety" stroke="#7A7268" strokeWidth={1.8} dot={{r:2,fill:"#7A7268",strokeWidth:0}} connectNulls name="Anxiety"/>
+      <Line yAxisId="symptoms" type="monotone" dataKey="irritability" stroke="#ADA593" strokeWidth={1.8} dot={{r:2,fill:"#ADA593",strokeWidth:0}} connectNulls name="Irritability"/>
+      {overlays.sleep&&<Line yAxisId="sleep" type="monotone" dataKey="sleep" stroke="#8FB2A4" strokeWidth={1.5} dot={{r:2,fill:"#8FB2A4",strokeWidth:0}} connectNulls strokeDasharray="5 3" name="Sleep"/>}
       {overlays.weight&&<Line yAxisId="weight" type="monotone" dataKey="weight" stroke="#A89CC8" strokeWidth={1.5} dot={{r:2,fill:"#A89CC8",strokeWidth:0}} connectNulls strokeDasharray="4 3" name="Weight"/>}
-      {overlays.social&&<Line yAxisId="social" type="monotone" dataKey="social" stroke="#D49A6A" strokeWidth={1.5} dot={{r:2.5,fill:"#D49A6A",strokeWidth:0}} connectNulls strokeDasharray="3 3" name="Social"/>}
-    </LineChart></ResponsiveContainer></div><div className="ov-bar">{[{key:"sleep",label:"Sleep",color:"#7BA08B"},{key:"weight",label:"Weight",color:"#A89CC8"},{key:"social",label:"Social",color:"#D49A6A"}].map(o=><button key={o.key} className={`ov-chip ${overlays[o.key]?"on":""}`} onClick={()=>setOverlays({...overlays,[o.key]:!overlays[o.key]})}><span className="ov-dot" style={{background:o.color}}/>{o.label}</button>)}</div><div className="cleg2"><span><span className="ll" style={{background:"#D4785C"}}/> Anxiety</span><span><span className="ll" style={{background:"#C9B07A"}}/> Irritability</span>{overlays.sleep&&<span><span className="ll" style={{background:"#7BA08B"}}/> Sleep</span>}{overlays.weight&&<span><span className="ll" style={{background:"#A89CC8"}}/> Weight</span>}{overlays.social&&<span><span className="ll" style={{background:"#D49A6A"}}/> Social</span>}</div></div>}
+      {overlays.social&&<Line yAxisId="social" type="monotone" dataKey="social" stroke="#8896BE" strokeWidth={1.5} dot={{r:2.5,fill:"#8896BE",strokeWidth:0}} connectNulls strokeDasharray="3 3" name="Social"/>}
+    </LineChart></ResponsiveContainer></div><div className="ov-bar">{[{key:"sleep",label:"Sleep",color:"#8FB2A4"},{key:"weight",label:"Weight",color:"#A89CC8"},{key:"social",label:"Social",color:"#8896BE"}].map(o=><button key={o.key} className={`ov-chip ${overlays[o.key]?"on":""}`} onClick={()=>setOverlays({...overlays,[o.key]:!overlays[o.key]})}><span className="ov-dot" style={{background:o.color}}/>{o.label}</button>)}</div><div className="cleg2"><span><span className="ll" style={{background:"#7A7268"}}/> Anxiety</span><span><span className="ll" style={{background:"#ADA593"}}/> Irritability</span>{overlays.sleep&&<span><span className="ll" style={{background:"#8FB2A4"}}/> Sleep</span>}{overlays.weight&&<span><span className="ll" style={{background:"#A89CC8"}}/> Weight</span>}{overlays.social&&<span><span className="ll" style={{background:"#8896BE"}}/> Social</span>}</div></div>}
 
     
 
     {weightData.length>0&&<div className="card"><div className="whead"><h3 className="ctit">Weight</h3>{weightStats&&<div className="wstat"><div className="wsv">{weightStats.lastW} kg</div><div className="wsd">{weightStats.delta==null?"":(weightStats.delta>=0?`+${weightStats.delta.toFixed(1)}`:weightStats.delta.toFixed(1))}{weightStats.delta==null?"":" in ~7 entries"}</div></div>}</div><div className="cw"><ResponsiveContainer width="100%" height={140}><AreaChart data={weightData} margin={{top:8,right:8,left:-24,bottom:4}}>
-      <defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#6478A0" stopOpacity={.15}/><stop offset="100%" stopColor="#6478A0" stopOpacity={.02}/></linearGradient></defs>
+      <defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7C7EAE" stopOpacity={.16}/><stop offset="100%" stopColor="#7C7EAE" stopOpacity={.02}/></linearGradient></defs>
       <CartesianGrid strokeDasharray="3 3" stroke="#E8E4DE" vertical={false}/><XAxis dataKey="n" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/><YAxis tick={{fontSize:10,fill:"#9E9790"}} domain={["dataMin-2","dataMax+2"]}/>
       <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0].payload;return(<div className="tt"><div className="ttd">{d.f}</div><div>Weight: {d.weight} kg</div></div>);}}/>
-      <Area type="monotone" dataKey="weight" stroke="#6478A0" strokeWidth={2} fill="url(#wg)" dot={{r:2.5,fill:"#6478A0",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
+      <Area type="monotone" dataKey="weight" stroke="#7C7EAE" strokeWidth={2} fill="url(#wg)" dot={{r:2.5,fill:"#7C7EAE",strokeWidth:0}} activeDot={{r:4}} connectNulls/>
     </AreaChart></ResponsiveContainer></div></div>}
     {/* ── Social engagement score ── */}
     {srmSocial.length>0&&srmSocial.some(d=>d.score>0)&&<div className="card">
@@ -1553,16 +1553,12 @@ function Hist({mood,srm,name,meds,onBack,onSendReport,reportEmail}){
         <XAxis dataKey="name" tick={{fontSize:10,fill:"#9E9790"}} interval="preserveStartEnd"/>
         <YAxis tick={{fontSize:10,fill:"#9E9790"}} allowDecimals={false}/>
         <Tooltip content={({active,payload})=>{if(!active||!payload?.length)return null;const d=payload[0]?.payload;if(!d)return null;return(<div className="tt"><div className="ttd">{d.f}</div><div>Score: {d.score}</div><div style={{color:"var(--t3)",fontSize:11}}>{d.count} social {d.count===1?"activity":"activities"}</div></div>);}}/>
-        <Line type="monotone" dataKey="score" stroke="#7E9AB3" strokeWidth={2} dot={{r:3,fill:"#7E9AB3",strokeWidth:0}} activeDot={{r:4}} connectNulls name="Social score"/>
+        <Line type="monotone" dataKey="score" stroke="#8896BE" strokeWidth={2} dot={{r:3,fill:"#8896BE",strokeWidth:0}} activeDot={{r:4}} connectNulls name="Social score"/>
       </LineChart></ResponsiveContainer></div>
       <div className="cleg2"><span style={{fontSize:11,color:"var(--t3)"}}>1 = just present · 2 = actively involved · 3 = very stimulating</span></div>
     </div>}
 
-    {notes.length>0&&<div className="notes-card"><h3 className="notes-h">Notes</h3><p className="notes-sub">in Wei's own words · {notes.length} {notes.length===1?"note":"notes"} in range</p><div className="nl">{notes.map(n=>{const mk=primaryMood(n);const meta=MM[mk];const showMood=mk&&mk!=="normal";return(<div key={n.key} className="nr"><div className="n-meta"><span className="n-dot" style={{background:meta?.color||"var(--t3)"}}/><span className="n-date">{n.label}</span>{showMood&&<span className="n-mood">· {meta?.label.toLowerCase()}</span>}</div><div className="nt">{n.notes}</div></div>);})}</div></div>}
-    {onSendReport&&<div className="card" style={{textAlign:"center"}}>
-      <p style={{fontSize:12,color:"var(--t3)",marginBottom:10,fontWeight:300}}>{reportEmail?"Weekly report will also auto-send every Sunday.":"Set your email in Settings to enable weekly reports."}</p>
-      <button className="btn-s" style={{fontSize:13,padding:"11px 16px",width:"100%",opacity:reportEmail?1:.5}} onClick={reportEmail?onSendReport:undefined} disabled={!reportEmail}>{reportEmail?"Send this week's report":"Configure email in Settings"}</button>
-    </div>}
+    {notes.length>0&&<div className="notes-card"><h3 className="notes-h">Notes</h3><p className="notes-sub">in Wei's own words · {notes.length} {notes.length===1?"note":"notes"} in range</p><div className="nl">{notes.map(n=>{const mk=primaryMood(n);const meta=MM[mk];const showMood=mk&&mk!=="normal";return(<div key={n.key} className="nr"><div className="n-meta"><span className="n-dot" style={{background:meta?.color||"var(--g-tx3)"}}/><span className="n-date">{n.label}</span>{showMood&&<span className="n-mood">· {meta?.label.toLowerCase()}</span>}</div><div className="nt">{n.notes}</div></div>);})}</div></div>}
     <div style={{height:40}}/>
   </div>);
 }
@@ -2460,6 +2456,58 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .n-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--t2);font-weight:500;letter-spacing:.02em;grid-column:1/-1}
 .n-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;opacity:.85}.n-date{font-family:'DM Sans',sans-serif}.n-mood{color:var(--t3);font-weight:400;font-size:10.5px;text-transform:lowercase}
 .nd{font-size:11px;color:var(--t3);font-weight:500;min-width:44px;flex-shrink:0;padding-top:1px}.nt{font-family:'Source Serif 4',serif;font-size:15px;line-height:1.55;color:var(--tx);font-weight:400;grid-column:1/-1}
+.g-insights{padding:30px 24px 26px;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-insights::after{z-index:0}
+.g-insights > *{position:relative;z-index:1}
+.g-insights .hh{padding:0 0 14px}
+.g-insights .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
+.g-insights .ha{gap:8px}
+.g-insights .bx{padding:8px 13px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif}
+.g-insights .bi{width:34px;height:34px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
+.g-insights .sr{gap:10px;margin-bottom:14px;padding:0}
+.g-insights .sb{background:var(--g-card);border:1px solid var(--g-line);border-radius:14px;box-shadow:none;padding:13px 10px}
+.g-insights .sv{font:400 25px/1 'Inter',system-ui,sans-serif;letter-spacing:-.5px;color:var(--g-tx)}
+.g-insights .sbl{font:400 10px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:5px}
+.g-insights .range-bar{gap:7px;margin-bottom:14px;padding:0}
+.g-insights .range-chip{padding:7px 14px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif}
+.g-insights .range-chip.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
+.g-insights .card,.g-insights .notes-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:16px;margin-bottom:12px}
+.g-insights .ctit,.g-insights .notes-h{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:10px}
+.g-insights .cw{margin:0 -6px}
+.g-insights .recharts-cartesian-grid line{stroke:var(--g-line)}
+.g-insights .recharts-text{font-family:'Inter',system-ui,sans-serif}
+.g-insights .ov-bar{gap:7px;margin-top:11px}
+.g-insights .ov-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font:400 11px/1 'Inter',system-ui,sans-serif}
+.g-insights .ov-chip.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
+.g-insights .cleg2{gap:12px;margin-top:9px;color:var(--g-tx2);font:400 10px/1.4 'Inter',system-ui,sans-serif}
+.g-insights .card-sub,.g-insights .notes-sub{font:300 11px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-insights .sleep-card{border-radius:16px;padding:16px}
+.g-insights .slp-head{gap:6px;margin-bottom:14px}
+.g-insights .slp-head .v{font:400 24px/1 'Inter',system-ui,sans-serif;letter-spacing:-.5px;color:var(--g-tx)}
+.g-insights .slp-head .u,.g-insights .slp-head .meta{font:300 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-insights .sleep-grid{height:150px;padding-left:48px;margin-bottom:0}
+.g-insights .chart-body{left:48px;right:0}
+.g-insights .y-label{left:0;color:var(--g-tx4);font:400 8px/1 'Inter',system-ui,sans-serif}
+.g-insights .ref-label{left:-40px;right:auto;width:38px;padding-left:0;color:var(--g-tx3);font:400 8px/1.1 'Inter',system-ui,sans-serif}
+.g-insights .ref-label b{font:600 8px/1.1 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-insights .ref-line{border-top-color:#BFB9AC}
+.g-insights .bar{max-width:none;left:1px;right:1px;width:auto;transform:none;border-radius:4px}
+.g-insights .xax{padding-left:48px;padding-right:0;color:var(--g-tx4);font:400 8px/1 'Inter',system-ui,sans-serif}
+.g-insights .dist{padding-left:48px;margin-top:14px}
+.g-insights .dist-pcts,.g-insights .dist-labels{color:var(--g-tx3);font:400 9px/1 'Inter',system-ui,sans-serif}
+.g-insights .dist-strip{height:6px;gap:0}
+.g-insights .whead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.g-insights .wstat{text-align:right}
+.g-insights .wsv{font:500 15px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-insights .wsd{font:300 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-insights .tt{border:1px solid var(--g-line);background:var(--g-card);box-shadow:none;color:var(--g-tx);font-family:'Inter',system-ui,sans-serif}
+.g-insights .nl{gap:0}
+.g-insights .nr{display:flex;flex-direction:column;gap:3px;padding:9px 0;border-bottom:1px solid var(--g-line)}
+.g-insights .nr:last-child{border-bottom:none}
+.g-insights .n-meta{gap:6px;font:500 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2);letter-spacing:0}
+.g-insights .n-date{font-family:'Inter',system-ui,sans-serif}
+.g-insights .n-mood{color:var(--g-tx3);font:400 11px/1.2 'Inter',system-ui,sans-serif;text-transform:none}
+.g-insights .nt{font:300 13px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 
 .dv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .dv-acts{display:flex;gap:8px}
