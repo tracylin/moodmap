@@ -2694,7 +2694,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .btn-move-date:hover{border-color:var(--t2);color:var(--t2)}
 
 /* ── SRM bottom-edge tick on calendar cells ── */
-.c-srm-tick{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%;background:var(--g-tx3);opacity:.75;pointer-events:none;z-index:2}
+.c-srm-tick{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--g-tx3);opacity:.65;filter:blur(.5px);pointer-events:none;z-index:2}
 
 
 .day-card-log-cta{margin-top:10px;width:100%;padding:10px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;font:500 12px 'DM Sans',sans-serif;color:var(--t2);cursor:pointer;text-align:center;transition:all .15s}
