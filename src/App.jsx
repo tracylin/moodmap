@@ -1573,18 +1573,10 @@ function RemindersCard({settings, setS}){
   const [msg,setMsg]=useState("");
   const [testResult,setTestResult]=useState(null);
   const [pulse,setPulse]=useState(false);
-  const [stats,setStats]=useState(null);
 
   const supportsPush=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window;
   const isPWA=isStandalonePWA();
   const isIOS=typeof navigator!=="undefined"&&/iPhone|iPad|iPod/.test(navigator.userAgent);
-
-  const refreshStats=async()=>{
-    try{
-      const res=await fetch(`${SHEETS_URL}?action=log_stats`,{method:"GET",cache:"no-store"});
-      if(res?.ok) setStats(await res.json());
-    }catch{/* log-stats fetch failed; reminders card can render without stats */}
-  };
 
   useEffect(()=>{
     (async()=>{
@@ -1595,7 +1587,6 @@ function RemindersCard({settings, setS}){
         const sub=await getPushSubscription();
         if(sub){
           setPushState("active");
-          refreshStats();
         }else{
           setPushState("needsPermission");
         }
@@ -1609,7 +1600,6 @@ function RemindersCard({settings, setS}){
       const sub=await enableWebPush();
       pushSubscribeToSheets(sub);
       setPushState("active");
-      refreshStats();
       setPulse(true);setTimeout(()=>setPulse(false),1200);
       setMsg("Notifications on — sending a test…");
       // Wait for the push_subscribe row to land on the sheet before testing,
@@ -1680,19 +1670,6 @@ function RemindersCard({settings, setS}){
     setBusy(false);
   };
 
-  // Stats — keep it gentle. We only show "this week" (last 7 Wei-days) +
-  // last-log timestamp. Lifetime totals are useful for debug but not for
-  // the encouragement framing this card is going for.
-  const lastLog=stats?.lastLog || null;
-  const lastLogActor=stats?.lastLogActor || "";
-  const weekDays=stats?.thisWeek?.distinctDays ?? 0;
-  const weekByActor=stats?.thisWeek?.byActor || {};
-  const weekWei=weekByActor["Wei"] || 0;
-  const weekOthers=Object.entries(weekByActor).filter(([k])=>k!=="Wei");
-  const weekSplitLine=(weekOthers.length>0 && weekDays>0)
-    ? `Wei ${weekWei}${weekOthers.map(([k,v])=>` · ${k} ${v}`).join("")}`
-    : null;
-
   const isActive=pushState==="active";
   const canToggle=pushState==="active"||pushState==="needsPermission";
   const onToggle=()=>{
@@ -1727,13 +1704,6 @@ function RemindersCard({settings, setS}){
           <div className="rem-toggle-knob"/>
         </button>
       </div>
-      {isActive&&(<div className="rem-stats">
-        <div className="rem-stats-row">
-          <span className="rem-stats-week">{weekDays>0?`${weekDays} day${weekDays===1?"":"s"} logged this week`:"No logs yet this week"}</span>
-        </div>
-        {weekSplitLine&&<div className="rem-stats-row rem-stats-faint">{weekSplitLine}</div>}
-        {lastLog&&<div className="rem-stats-row rem-stats-faint">Last: {lastLog}{lastLogActor?` · ${lastLogActor}`:""}</div>}
-      </div>)}
     </div>)}
 
     {msg&&<p className="set-h rem-msg">{msg}</p>}
@@ -1750,6 +1720,11 @@ function ActorCard(){
   const [mode,setMode]=useState(isCustom?"Other":current);
   const [customVal,setCustomVal]=useState(isCustom?current:"");
   const [savedFlash,setSavedFlash]=useState(false);
+  const [stats,setStats]=useState(null);
+  useEffect(()=>{
+    if(!SHEETS_URL) return;
+    (async()=>{try{const res=await fetch(`${SHEETS_URL}?action=log_stats`,{method:"GET",cache:"no-store"});if(res?.ok) setStats(await res.json());}catch{/* log-stats optional; user card renders without it */}})();
+  },[]);
 
   const commit=async(actor)=>{
     if(!actor) return;
@@ -1770,6 +1745,14 @@ function ActorCard(){
     if(v) commit(v);
   };
 
+  const weekDays=stats?.thisWeek?.distinctDays ?? 0;
+  const weekByActor=stats?.thisWeek?.byActor || {};
+  const weekWei=weekByActor["Wei"] || 0;
+  const weekOthers=Object.entries(weekByActor).filter(([k])=>k!=="Wei");
+  const weekSplit=(weekOthers.length>0 && weekDays>0)?`Wei ${weekWei}${weekOthers.map(([k,v])=>` · ${k} ${v}`).join("")}`:null;
+  const lastLog=stats?.lastLog || null;
+  const lastLogActor=stats?.lastLogActor || "";
+
   return(<div className="card">
     <h3 className="ctit">This device's user</h3>
     <div className="actor-pills">
@@ -1782,6 +1765,11 @@ function ActorCard(){
       <button className="btn-sm-p" onClick={commitCustom} disabled={!customVal.trim()}>Save</button>
     </div>)}
     {savedFlash&&<p className="set-saved" style={{marginTop:8}}>Set to {current}.</p>}
+    {(weekDays>0||lastLog)&&<div className="actor-stats">
+      {weekDays>0&&<div className="actor-stats-week">{weekDays} day{weekDays===1?"":"s"} logged this week</div>}
+      {weekSplit&&<div className="actor-stats-faint">{weekSplit}</div>}
+      {lastLog&&<div className="actor-stats-faint">Last: {lastLog}{lastLogActor?` · ${lastLogActor}`:""}</div>}
+    </div>}
   </div>);
 }
 
@@ -1841,20 +1829,6 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
-  const[emailVal,setEmailVal]=useState(settings.reportEmail||"");const[emailSaved,setEmailSaved]=useState(false);const[reportSending,setReportSending]=useState(false);const[reportMsg,setReportMsg]=useState("");
-  const saveEmail=()=>{setS({reportEmail:emailVal.trim()});setEmailSaved(true);setTimeout(()=>setEmailSaved(false),2500);};
-  const sendReport=async()=>{
-    if(!SHEETS_URL||!settings.reportEmail){setReportMsg("Set email address first");return;}
-    setReportSending(true);setReportMsg("");
-    try{
-      const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;
-      const res=await fetch(u,{method:"GET",cache:"no-store"});
-      const data=await res.json().catch(()=>({}));
-      if(data.status==="ok") setReportMsg("Report sent! Check your inbox.");
-      else setReportMsg("Error: "+(data.message||"unknown"));
-    }catch(e){setReportMsg("Could not send. Try again.");}
-    setReportSending(false);setTimeout(()=>setReportMsg(""),5000);
-  };
 
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
@@ -1864,23 +1838,10 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const saveEditMed=()=>{if(!emName.trim())return;const nm=[...meds];nm[editMedIdx]={...nm[editMedIdx],name:emName.trim(),dose:emDose.trim(),defaultCt:Number(emDefaultCt)||0};setMeds(nm);setEditMedIdx(null);};
   const addMed=()=>{if(!newMedName.trim())return;const key=newMedName.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();setMeds([...meds,{key,name:newMedName.trim(),dose:newMedDose.trim()||"—",defaultCt:Number(newMedCt)||0}]);setNewMedName("");setNewMedDose("");setNewMedCt(1);setShowAddMed(false);};
 
-  return(<div className="scr">
+  return(<div className="scr g-settings g-ambient-sky g-grain">
     <div className="hh"><h2 className="ht">Settings</h2><button className="bi" onClick={onBack}>×</button></div>
 
     <ActorCard/>
-
-    <RemindersCard settings={settings} setS={setS}/>
-
-    <div className="card">
-      <h3 className="ctit">Passcode Lock</h3>
-      {settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Passcode is set.</p>
-        <div className="set-pcb"><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Change</button><button className="btn-ghost" style={{color:"#D4785C"}} onClick={()=>setS({passcode:""})}>Remove</button></div></div>)}
-      {!settings.passcode&&!pcStep&&(<div><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set Passcode</button></div>)}
-      {pcStep&&(<div className="set-pcf"><p className="set-h">{pcStep==="new"?"Enter 4-digit passcode":"Confirm passcode"}</p>
-        <div className="lock-dots" style={{justifyContent:"flex-start",margin:"12px 0"}}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<curPc.length?" on":""}`}/>)}</div>
-        <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}} disabled={false}>{n==="del"?"‹":""+n}</button>))}</div>
-        <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
-    </div>
 
     <div className="card">
       <h3 className="ctit">Medications</h3>
@@ -1901,14 +1862,17 @@ function Settings({settings,setS,meds,setMeds,onBack}){
       </div>):(<button className="btn-add" style={{marginTop:8}} onClick={()=>setShowAddMed(true)}>+ Add medication</button>)}
     </div>
 
+    <RemindersCard settings={settings} setS={setS}/>
+
     <div className="card">
-      <h3 className="ctit">Weekly Report</h3>
-      <div className="set-nr"><input className="set-in" inputMode="email" type="email" style={{fontSize:16}} value={emailVal} onChange={e=>setEmailVal(e.target.value)} placeholder="your@email.com"/><button className="btn-sm-p" onClick={saveEmail}>Save</button></div>
-      {emailSaved&&<p className="set-saved">Email saved!</p>}
-      {settings.reportEmail&&<>
-        <button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:10,width:"100%"}} onClick={sendReport} disabled={reportSending}>{reportSending?"Sending…":"Send this week's report now"}</button>
-        {reportMsg&&<p className="set-saved" style={{color:reportMsg.includes("sent")?undefined:"#D4785C"}}>{reportMsg}</p>}
-      </>}
+      <h3 className="ctit">Passcode Lock</h3>
+      {settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Passcode is set.</p>
+        <div className="set-pcb"><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Change</button><button className="btn-ghost" style={{color:"#D4785C"}} onClick={()=>setS({passcode:""})}>Remove</button></div></div>)}
+      {!settings.passcode&&!pcStep&&(<div><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set Passcode</button></div>)}
+      {pcStep&&(<div className="set-pcf"><p className="set-h">{pcStep==="new"?"Enter 4-digit passcode":"Confirm passcode"}</p>
+        <div className="lock-dots" style={{justifyContent:"flex-start",margin:"12px 0"}}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<curPc.length?" on":""}`}/>)}</div>
+        <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}} disabled={false}>{n==="del"?"‹":""+n}</button>))}</div>
+        <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
     {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
@@ -2396,6 +2360,54 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-confirm .cfc{width:80px;height:80px;background:rgba(143,178,164,.16);margin:0 auto}
 .g-confirm .cft{font:500 20px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.3px;color:var(--g-tx);margin:22px 0 0}
 .g-confirm .cfp{font:300 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:8px}
+
+/* ── R8 settings ── */
+.g-settings::after{z-index:0}
+.g-settings > *{position:relative;z-index:1}
+.g-settings .hh{padding:0 0 14px}
+.g-settings .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
+.g-settings .bi{width:34px;height:34px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
+.g-settings .card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:16px;margin-bottom:12px}
+.g-settings .ctit{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:12px}
+.g-settings .set-h,.g-settings .hint{font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .set-saved{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:8px}
+.g-settings .actor-pills{display:flex;gap:8px}
+.g-settings .actor-pill{flex:1;padding:10px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-settings .actor-pill-on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
+.g-settings .actor-stats{margin-top:14px;padding-top:12px;border-top:1px solid var(--g-line)}
+.g-settings .actor-stats-week{font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-settings .actor-stats-faint{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
+.g-settings .add-input{width:100%;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx);font:400 14px/1.2 'Inter',system-ui,sans-serif;padding:10px 12px;margin-bottom:8px}
+.g-settings .add-input::placeholder{color:var(--g-tx4)}
+.g-settings .btn-sm-p{border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 13px/1 'Inter',system-ui,sans-serif;padding:10px 16px}
+.g-settings .btn-add{width:100%;border:1px dashed var(--g-tx4);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;padding:11px}
+.g-settings .btn-s{border:1px solid var(--g-tx4);border-radius:999px;background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
+.g-settings .btn-ghost{border:none;background:none;color:var(--g-tx3);font-family:'Inter',system-ui,sans-serif}
+.g-settings .bs{width:30px;height:30px;border-radius:50%;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2)}
+.g-settings .mv{font:500 15px/1 'Inter',system-ui,sans-serif;color:var(--g-tx);min-width:16px;text-align:center}
+.g-settings .set-mr{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--g-line)}
+.g-settings .set-mr .mi{flex:1;min-width:0}
+.g-settings .set-mr .mn{font:500 14px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .set-mr .md-sub{font:400 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:1px}
+.g-settings .set-mr-acts{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.g-settings .rr-edit{border:none;background:none;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif;padding:4px 6px;cursor:pointer}
+.g-settings .rem-smart-row{display:flex;align-items:center;gap:12px}
+.g-settings .rem-smart-title{font:400 14px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .rem-toggle{background:var(--g-surface)}
+.g-settings .rem-toggle-on{background:var(--g-tx)}
+.g-settings .rem-toggle-knob{background:#fff}
+.g-settings .rem-status-btn{padding:6px 12px;border:1px solid var(--g-line);border-radius:999px;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif}
+.g-settings .lk{background:var(--g-surface);border:none;color:var(--g-tx);font-family:'Inter',system-ui,sans-serif}
+.g-settings .lock-dot{border-color:var(--g-tx4)}
+.g-settings .lock-dot.on{background:var(--g-tx);border-color:var(--g-tx)}
+.g-settings .dev-notes-section{margin-top:18px}
+.g-settings .btn-add-note{width:100%;border:1px solid var(--g-line);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;padding:12px}
+.g-settings .btn-view-notes{display:block;margin:12px auto 0;border:none;background:none;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif}
+.g-settings .past-item{border-bottom:1px solid var(--g-line)}
+.g-settings .past-ts{font:500 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--g-tx4)}
+.g-settings .past-text{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:2px}
+.g-settings .btn-del{color:var(--g-tx4)}
+.g-settings .ver-label{font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
 .cfdraw{stroke-dasharray:50;stroke-dashoffset:50;animation:gCheckDraw .55s ease .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
