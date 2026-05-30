@@ -661,7 +661,7 @@ export default function App(){
     <div className="app"><div className="page" key={screen}>
       {screen==="welcome"&&<Welcome name={name} onGo={()=>{if(settings.passcode){setScreen("lock");}else if(!consumePendingNav()){setScreen("calendar");}}}/>}
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>{if(!consumePendingNav()) setScreen("calendar");}}/>}
-      {screen==="calendar"&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")}/>}
+      {screen==="calendar"&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);pushDeleteMood(k);}}}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
         onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
         onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
@@ -726,21 +726,27 @@ function Lock({passcode,onOk}){
 }
 
 /* ── CALENDAR ── */
-function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,onHist,onSet,onViewDay}){
-  const[emptyDay,setEmptyDay]=useState(null);
+function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,onSet,onViewDay,onQuickMood,onQuickUndo}){
+  const[bubble,setBubble]=useState(null);
+  const[toast,setToast]=useState(null);
+  const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
+  useEffect(()=>{
+    if(!bubble)return;
+    const onDoc=(ev)=>{if(!ev.target.closest(".g-bubble")&&!ev.target.closest(".cc"))setBubble(null);};
+    const t=setTimeout(()=>document.addEventListener("click",onDoc),0);
+    return()=>{clearTimeout(t);document.removeEventListener("click",onDoc);};
+  },[bubble]);
+  useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
   const now=new Date();const td=now.getFullYear()===y&&now.getMonth()===m?now.getDate():-1;
   const cells=[];
   for(let i=0;i<off;i++) cells.push(<div key={`b${i}`} className="cc ce"/>);
   for(let d=1;d<=days;d++){
     const k=dk(y,m,d);const e=mood[k];const s=srm[k];
-    const isT=d===td;const isSel=selDay===k;const hasData=e||s;
-    const pm=primaryMood(e);
-    cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${isSel?" csel":""}`}
-      onClick={()=>{
-        if(hasData){setEmptyDay(null);setSelDay(isSel?null:k);}
-        else{setSelDay(null);setEmptyDay(emptyDay===k?null:k);}
-      }}>
+    const isT=d===td;const hasData=e||s;
+    const pm=primaryMood(e);const isFuture=k>tdk();
+    cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${bubble?.key===k?" cc-open":""}${isFuture?" cc-future":""}`}
+      onClick={(ev)=>{if(isFuture)return;const rect=ev.currentTarget.getBoundingClientRect();setBubble(b=>b&&b.key===k?null:{key:k,rect});}}>
       {pm&&<div className={`g-cal-glow ${G_MOOD_CLASS[pm]}`}/>}
       {s&&<div className="c-srm-tick"/>}
       <span className="cn">{d}</span>
@@ -754,8 +760,6 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
   const todayLogged=logActivity.has(tdk());
   const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,2);
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
-  const selMood=selDay?mood[selDay]:null;const selSrm=selDay?srm[selDay]:null;
-  const selLabel=selDay?(()=>{const[sy,sm,sd]=selDay.split("-").map(Number);const dow=new Date(sy,sm-1,sd).getDay();return`${MO[sm-1].slice(0,3)} ${sd} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;})():"";
 
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
@@ -773,54 +777,32 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
       </div>);})}
     </div>}
 
-    {(()=>{
-      if(!selDay) return null;
-          const hasFullLog=selMood||selSrm;
-      if(!hasFullLog) return null;
-      return(
-        <div className="day-card" onClick={onViewDay} style={{cursor:"pointer"}}>
-          <div className="day-card-head">
-            <span className="day-card-date">{selLabel}</span>
-            <span className="day-card-arrow">View full log →</span>
-          </div>
-          {/* Full log mood */}
-          {primaryMood(selMood)&&<div className="day-card-mood" style={{color:MM[primaryMood(selMood)].color}}>{moodLabel(selMood)}</div>}
-          {selMood?.notes&&<div className="day-card-note">{selMood.notes}</div>}
-          {(selMood?.sleep!=null||selMood?.anxiety!=null||selSrm)&&(
-            <div className="day-chips">
-              {selMood?.sleep!=null&&<span className="day-chip">Sleep {selMood.sleep}h</span>}
-              {selMood?.anxiety!=null&&selMood.anxiety>0&&<span className="day-chip">Anxiety {selMood.anxiety}/3</span>}
-              {selSrm&&<span className="day-chip">{selSrm.items.filter(i=>!i.didNot).length} activities</span>}
-            </div>
-          )}
-
-          {/* CTA to log mood when no real mood entry yet */}
-          {(!selMood||selMood._weightOnly)&&selSrm&&(
-            <button className="day-card-log-cta" onClick={e=>{e.stopPropagation();onLogForDay(selDay);}}>
-              Log mood for this day →
-            </button>
-          )}
-        </div>
-      );
+    {bubble&&(()=>{
+      const k=bubble.key;const en=mood[k];const s2=srm[k];const pmk=primaryMood(en);
+      const[bky,bkm,bkd]=k.split("-").map(Number);const bdow=new Date(bky,bkm-1,bkd).getDay();
+      const dlabel=`${k===tdk()?"Today":k===ydk()?"Yesterday":DW[bdow]} · ${MO[bkm-1].slice(0,3)} ${bkd}`;
+      const bw=232;const vw=typeof window!=="undefined"?window.innerWidth:390;
+      const left=Math.max(10,Math.min(vw-bw-10,bubble.rect.left+bubble.rect.width/2-bw/2));
+      const top=bubble.rect.bottom+9;
+      const caretLeft=bubble.rect.left+bubble.rect.width/2-left-6;
+      const medCt=en?.meds?Object.values(en.meds).filter(v=>v.ct>0).length:0;
+      const hasExtras=!!(en&&(en.sleep!=null||medCt||en.notes||s2));
+      return(<div className="g-bubble" style={{top,left,width:bw}}>
+        <div className="g-bubble-caret" style={{left:caretLeft}}/>
+        <div className="g-bubble-date">{dlabel}</div>
+        {!pmk?(<>
+          <div className="g-bubble-prompt">{k===tdk()?"How was today?":"How was it?"}</div>
+          <div className="g-bubble-pick">{MOOD_PICKER_ORDER.map(mk=><button key={mk} className={`g-bubble-dot ${G_MOOD_CLASS[mk]}`} onClick={()=>doQuickSave(k,mk)} aria-label={MM[mk].label}/>)}</div>
+          <div className="g-bubble-ends"><span>low</span><span>high</span></div>
+          <div className="g-bubble-mini"><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
+        </>):(<>
+          <div className="g-bubble-mood"><span className="g-bubble-cdot" style={{background:`var(--${G_MOOD_CLASS[pmk]})`}}/><span className="g-bubble-clabel">{moodLabel(en)} <small>{MM[pmk].v>0?`+${MM[pmk].v}`:MM[pmk].v}</small></span></div>
+          {hasExtras?<div className="g-bubble-sum">{[en.sleep!=null?`${en.sleep}h`:null,medCt?`${medCt} meds`:null,en.notes?"note":null,s2?"rhythm":null].filter(Boolean).join(" · ")}</div>:<div className="g-bubble-caps">Sleep · Meds · Note · Rhythm</div>}
+          <div className="g-bubble-act"><button className="g-bubble-edit" onClick={()=>{setBubble(null);onLogForDay(k);}}>Edit</button><button className="g-bubble-go" onClick={()=>{setBubble(null);if(hasExtras){setSelDay(k);onViewDay();}else onLogForDay(k);}}>{hasExtras?"Open full log →":"Log more →"}</button></div>
+        </>)}
+      </div>);
     })()}
-
-    {emptyDay&&(()=>{
-      const[yr,mo,dy]=emptyDay.split("-").map(Number);
-      const dow=new Date(yr,mo-1,dy).getDay();
-      const lbl=`${MO[mo-1].slice(0,3)} ${dy} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;
-      return(
-        <div className="day-card" style={{animation:"si .2s var(--ease)"}}>
-          <div className="day-card-head">
-            <span className="day-card-date">{lbl}</span>
-            <span className="day-card-arrow" style={{color:"var(--t3)"}}>No entries</span>
-          </div>
-          <button className="day-card-log-cta" style={{marginTop:4,width:"100%"}}
-            onClick={()=>onLogForDay(emptyDay)}>
-            Log mood for {lbl}
-          </button>
-        </div>
-      );
-    })()}
+    {toast&&<div className="g-toast"><span className="g-toast-msg">Logged ✓</span><button className="g-toast-undo" onClick={()=>{onQuickUndo(toast.key,toast.prev);setToast(null);}}>Undo</button></div>}
     <div className="cal-pad"/>
     <div className="cact g-home-actions">
       <button className="g-home-log-btn" onClick={()=>{if(todayLogged){setSelDay(tdk());onViewDay();}else onAdd();}}>{todayLogged?"Today's log ✓":"Log today"}</button>
@@ -2477,6 +2459,34 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-home-nav button{border:none;background:none;font:500 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);cursor:pointer}
 .g-home-nav button.active{color:var(--g-tx);font-weight:600}
 .g-home .cal-pad{height:170px}
+/* ── R10 quick-add bubble ── */
+.g-home .cc-future{cursor:default}
+.g-home .cc-future .cn{opacity:.5}
+.g-home .cc.cc-open::after{content:"";position:absolute;inset:10%;border:2px solid var(--g-tx);border-radius:50%;background:none;width:auto;height:auto;z-index:1}
+.g-bubble{position:fixed;z-index:60;background:var(--g-bg);border-radius:18px;box-shadow:0 14px 42px rgba(0,0,0,.2);padding:12px 14px 11px;animation:gBubbleIn .14s var(--ease)}
+@keyframes gBubbleIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.g-bubble-caret{position:absolute;width:13px;height:13px;background:var(--g-bg);transform:rotate(45deg);top:-6px;box-shadow:-3px -3px 7px rgba(0,0,0,.03)}
+.g-bubble-date{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--g-tx3)}
+.g-bubble-prompt{font:500 16px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx);margin-top:4px}
+.g-bubble-pick{display:flex;justify-content:space-between;align-items:center;margin:11px 0 5px}
+.g-bubble-dot{width:24px;height:24px;border-radius:50%;border:none;background:transparent;position:relative;cursor:pointer;flex-shrink:0}
+.g-bubble-dot::before{content:"";position:absolute;inset:0;border-radius:50%}
+.g-bubble-dot:active{transform:scale(.9)}
+.g-bubble-ends{display:flex;justify-content:space-between}
+.g-bubble-ends span{font:400 9px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-bubble-mini{display:flex;justify-content:flex-end;margin-top:10px}
+.g-bubble-go{border:none;background:none;font:500 12.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx);cursor:pointer}
+.g-bubble-mood{display:flex;align-items:center;gap:9px;margin:9px 0 6px}
+.g-bubble-cdot{width:20px;height:20px;border-radius:50%;flex-shrink:0}
+.g-bubble-clabel{font:500 17px/1.1 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx)}
+.g-bubble-clabel small{font-size:12px;color:var(--g-tx3)}
+.g-bubble-caps{font:600 9px/1.3 'Inter',system-ui,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:var(--g-tx3)}
+.g-bubble-sum{font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-bubble-act{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--g-line);margin-top:10px;padding-top:9px}
+.g-bubble-edit{border:none;background:none;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);cursor:pointer}
+.g-toast{position:fixed;left:50%;bottom:calc(186px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:61;display:flex;align-items:center;gap:14px;background:var(--g-tx);color:var(--g-bg);border-radius:999px;padding:10px 16px;box-shadow:0 8px 28px rgba(0,0,0,.22);animation:gBubbleIn .18s var(--ease);white-space:nowrap}
+.g-toast-msg{font:400 13px/1 'Inter',system-ui,sans-serif}
+.g-toast-undo{border:none;background:none;color:var(--g-bg);font:600 13px/1 'Inter',system-ui,sans-serif;cursor:pointer;text-decoration:underline}
 
 /* ── R9b day detail ── */
 .g-day{padding:0;background:var(--g-bg);min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
