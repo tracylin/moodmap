@@ -735,37 +735,43 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
   for(let d=1;d<=days;d++){
     const k=dk(y,m,d);const e=mood[k];const s=srm[k];
     const isT=d===td;const isSel=selDay===k;const hasData=e||s;
-    const pm=primaryMood(e);const mc=pm?MM[pm]:null;
+    const pm=primaryMood(e);
     cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${isSel?" csel":""}`}
       onClick={()=>{
         if(hasData){setEmptyDay(null);setSelDay(isSel?null:k);}
         else{setSelDay(null);setEmptyDay(emptyDay===k?null:k);}
       }}>
-      {mc&&<div className="cd" style={{background:mc.color,opacity:.18}}/>}
+      {pm&&<div className={`g-cal-glow ${G_MOOD_CLASS[pm]}`}/>}
       {s&&<div className="c-srm-tick"/>}
       <span className="cn">{d}</span>
     </div>);
   }
-  // Streak = consecutive days the user actually saved an entry (any kind),
-  // walking back from today. Today is allowed to be empty (so the streak
-  // through yesterday still shows before today's save). Back-dated entries
-  // (e.g. logging last night's sleep today) don't inflate it — those record
-  // today's date in the activity set, not the entry's date.
+  // Positive-only weekly count (gentle-by-default — never streaks/obligation):
+  // distinct days with any saved entry over the last 7 calendar days.
   const logActivity=loadLogActivity();
-  let streak=0;const sd=new Date();
-  for(let i=0;i<90;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))streak++;else if(i>0)break;sd.setDate(sd.getDate()-1);}
+  let weekCount=0;const sd=new Date();
+  for(let i=0;i<7;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))weekCount++;sd.setDate(sd.getDate()-1);}
+  const todayLogged=logActivity.has(tdk());
+  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,2);
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
   const selMood=selDay?mood[selDay]:null;const selSrm=selDay?srm[selDay]:null;
   const selLabel=selDay?(()=>{const[sy,sm,sd]=selDay.split("-").map(Number);const dow=new Date(sy,sm-1,sd).getDay();return`${MO[sm-1].slice(0,3)} ${sd} · ${'Sun,Mon,Tue,Wed,Thu,Fri,Sat'.split(',')[dow]}`;})():"";
 
-  return(<div className="scr">
+  return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
       <div><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]} {y} <SyncBadge/></h2></div>
       <div className="cal-tr"><button className="bi" onClick={onSet}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button><div className="cnav"><button className="bi" onClick={()=>setVm(m===0?[y-1,11]:[y,m-1])}>‹</button><button className="bi" onClick={()=>setVm(m===11?[y+1,0]:[y,m+1])}>›</button></div></div>
     </div>
-    {streak>1&&<div className="streak">• {streak} day streak</div>}
+    <div className="g-home-week">{weekCount>0?<><b>{weekCount} logged</b> this week</>:"A fresh week"}</div>
     <div className="cg">{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
-    <div className="cleg">{Object.entries(MM).map(([k,v])=>(<div key={k} className="cli"><div className="cld" style={{background:v.color}}/><span>{v.short}</span></div>))}</div>
+    <div className="g-home-legend"><span>low</span><div className="g-home-legend-bar"/><span>high</span></div>
+    {recentEntries.length>0&&<div className="g-home-recent">
+      <span className="g-home-recent-eyebrow">Recent</span>
+      {recentEntries.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
+        <span className="g-home-r-dot" style={{background:pmk?`var(--${G_MOOD_CLASS[pmk]})`:"var(--g-tx4)"}}/>
+        <div className="g-home-r-body"><div className="g-home-r-day">{rel} <em>· {MO[rm-1].slice(0,3)} {rd}</em></div>{en.notes&&<div className="g-home-r-note">{en.notes}</div>}</div>
+      </div>);})}
+    </div>}
 
     {(()=>{
       if(!selDay) return null;
@@ -816,11 +822,11 @@ function Cal({mood,srm,vm,setVm,name,selDay,setSelDay,onAdd,onLogForDay,onSrm,on
       );
     })()}
     <div className="cal-pad"/>
-    <div className="cact">
-      <button className="btn-p" onClick={onAdd}>Log Mood</button>
+    <div className="cact g-home-actions">
+      <button className="g-home-log-btn" onClick={()=>{if(todayLogged){setSelDay(tdk());onViewDay();}else onAdd();}}>{todayLogged?"Today's log ✓":"Log today"}</button>
       <div className="cact-row">
-        <button className="btn-rhythm" onClick={onSrm}>{srm[tdk()]?"Edit SRM":"SRM"}</button>
-        <button className="btn-s" onClick={onHist}>Insights</button>
+        <button className="g-home-srm-btn" onClick={onSrm}>{srm[tdk()]?"Edit rhythm moments":"Add a rhythm moment"}</button>
+        <button className="g-home-insights-btn" onClick={onHist}>Insights</button>
       </div>
     </div>
   </div>);
@@ -2408,6 +2414,46 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-settings .past-text{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:2px}
 .g-settings .btn-del{color:var(--g-tx4)}
 .g-settings .ver-label{font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
+
+/* ── R9 home calendar ── */
+.g-home::after{z-index:0}
+.g-home > *{position:relative;z-index:1}
+.g-home .cal-top{padding:32px 0 0}
+.g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-home .cht{font:500 28px/1 'Inter',system-ui,sans-serif;letter-spacing:-1px;color:var(--g-tx)}
+.g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
+.g-home-week{font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:12px 0 0}
+.g-home-week b{color:var(--g-tx2);font-weight:600}
+.g-home .cg{gap:4px;margin:16px 0 0}
+.g-home .clb{font:500 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);text-align:center}
+.g-home .cc{aspect-ratio:1;border-radius:0;background:transparent;cursor:pointer}
+.g-home .cn{position:relative;z-index:2;font:400 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-variant-numeric:tabular-nums}
+.g-home .cc.cl .cn{color:var(--g-tx2);font-weight:500}
+.g-home .cc.ct .cn{font-weight:600;color:var(--g-tx)}
+.g-home .cc.ct::after{content:"";position:absolute;inset:16%;border:1.5px solid var(--g-tx);border-radius:50%;background:transparent;width:auto;height:auto;bottom:auto;z-index:1}
+.g-home .cc.csel::after{content:"";position:absolute;inset:14%;border:1.5px solid var(--g-tx3);border-radius:50%;background:transparent;width:auto;height:auto;bottom:auto;z-index:1}
+.g-cal-glow{position:absolute;inset:10%;border-radius:50%;z-index:0;pointer-events:none}
+.g-cal-glow::before{content:"";position:absolute;inset:0;border-radius:50%}
+.g-home-legend{display:flex;align-items:center;gap:9px;margin:16px 0 0}
+.g-home-legend span{font:500 9px/1 'Inter',system-ui,sans-serif;letter-spacing:.06em;color:var(--g-tx4)}
+.g-home-legend-bar{flex:1;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--g-mood-sev-low),var(--g-mood-mild-low),var(--g-mood-steady),var(--g-mood-mild-high),var(--g-mood-sev-high))}
+.g-home-recent{margin:22px 0 0}
+.g-home-recent-eyebrow{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:13px}
+.g-home-r-item{display:flex;gap:12px;align-items:flex-start;margin-bottom:13px;cursor:pointer}
+.g-home-r-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.g-home-r-body{flex:1;min-width:0}
+.g-home-r-day{font:500 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-home-r-day em{font-style:normal;color:var(--g-tx3);font-weight:400}
+.g-home-r-note{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:1px}
+.g-home .day-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none}
+.g-home .day-card-date{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-home .day-card-arrow{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-home .day-card-note{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-home .day-chip{background:var(--g-surface);color:var(--g-tx2);border-radius:8px}
+.g-home-actions{position:fixed;z-index:50;background:linear-gradient(to top,var(--g-bg) 75%,transparent)}
+.g-home-log-btn{width:100%;padding:16px;border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 15px/1 'Inter',system-ui,sans-serif;letter-spacing:.02em;cursor:pointer}
+.g-home-srm-btn{flex:1;padding:12px;border-radius:999px;border:1px solid var(--g-tx4);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-home-insights-btn{padding:12px 18px;border-radius:999px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .cfdraw{stroke-dasharray:50;stroke-dashoffset:50;animation:gCheckDraw .55s ease .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
