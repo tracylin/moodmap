@@ -692,13 +692,14 @@ function CatMark({className="",draw=false}){
 /* ── WELCOME ── */
 function Welcome({name,onGo}){
   const[greet]=useState(()=>GREETS[Math.floor(Math.random()*GREETS.length)](name));
-  return(<div className="scr welcome">
-    <div className="w-top">
-      <div className="w-icon"><CatMark draw /></div>
-      <h1 className="w-t">MooTracker</h1>
-      <p className="w-s">{greet}</p>
+  return(<div className="scr g-welcome g-grain">
+    <div className="g-welcome-sky"/>
+    <div className="g-welcome-center">
+      <div className="g-welcome-cat"><CatMark /></div>
+      <h1 className="g-welcome-title">MooTracker</h1>
+      <p className="g-welcome-greet">{greet}</p>
     </div>
-    <div className="w-b"><button className="btn-p" onClick={onGo}>Continue</button></div>
+    <div className="g-welcome-actions"><button className="g-btn-p g-welcome-continue" onClick={onGo}>Continue</button></div>
   </div>);
 }
 
@@ -1973,6 +1974,21 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-btn-danger.g-btn-s{border-color:var(--g-warm-err);color:var(--g-warm-err)}
 .g-btn-p:active,.g-btn-s:active,.g-btn-ghost:active{transform:scale(.98)}
 
+.g-welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:0 32px 40px;background:var(--g-bg);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-welcome::after{z-index:3}
+.g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F6E9CC 0%, transparent 60%),linear-gradient(180deg, #C9C3DE 0%, #D8D2C0 42%, #EDC98E 74%, #E89A5A 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
+.g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center}
+.g-welcome-cat{width:128px;height:128px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
+.g-welcome-cat svg{width:100%;height:100%;display:block}
+.g-welcome-title{margin-top:20px;font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.3px;color:var(--g-tx);animation:gWelcomeRise 1s ease .7s both}
+.g-welcome-greet{margin-top:9px;max-width:220px;color:rgba(28,28,26,.66);font:300 13.5px/1.55 'Inter',system-ui,sans-serif;letter-spacing:0;animation:gWelcomeRise 1.2s ease 1s both}
+.g-welcome-actions{position:relative;z-index:4;width:100%;max-width:280px;margin-top:52px;animation:gWelcomeRise 1.2s ease 1s both}
+.g-welcome-continue{width:100%}
+@keyframes gSkyRise{from{opacity:0;transform:scale(1.05) translateY(3%)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes gSkyBreathe{from{transform:scale(1)}to{transform:scale(1.06) translateY(-1.2%)}}
+@keyframes gCatWake{from{opacity:0;transform:translateY(12px) scale(.9);filter:blur(3px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+@keyframes gCatBreathe{0%{transform:scale(1) rotate(-.7deg)}100%{transform:scale(1.04) rotate(.7deg)}}
+@keyframes gWelcomeRise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .welcome{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .w-top{margin-bottom:60px;animation:wIn .8s var(--ease)}
 @keyframes wIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
