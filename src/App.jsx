@@ -1977,11 +1977,11 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 .g-welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:0 32px 40px;background:var(--g-bg);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-welcome::after{z-index:3}
 .g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F6E9CC 0%, transparent 60%),linear-gradient(180deg, #C9C3DE 0%, #D8D2C0 42%, #EDC98E 74%, #E89A5A 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
-.g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center;animation:gWelcomeRise 1s ease .7s both}
+.g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center}
 .g-welcome-cat{width:128px;height:128px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
 .g-welcome-cat svg{width:100%;height:100%;display:block}
-.g-welcome-title{margin-top:20px;font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:0;color:var(--g-tx)}
-.g-welcome-greet{margin-top:9px;max-width:220px;color:rgba(28,28,26,.66);font:300 13.5px/1.55 'Inter',system-ui,sans-serif;letter-spacing:0}
+.g-welcome-title{margin-top:20px;font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.3px;color:var(--g-tx);animation:gWelcomeRise 1s ease .7s both}
+.g-welcome-greet{margin-top:9px;max-width:220px;color:rgba(28,28,26,.66);font:300 13.5px/1.55 'Inter',system-ui,sans-serif;letter-spacing:0;animation:gWelcomeRise 1.2s ease 1s both}
 .g-welcome-actions{position:relative;z-index:4;width:100%;max-width:280px;margin-top:52px;animation:gWelcomeRise 1.2s ease 1s both}
 .g-welcome-continue{width:100%}
 @keyframes gSkyRise{from{opacity:0;transform:scale(1.05) translateY(3%)}to{opacity:1;transform:scale(1) translateY(0)}}
