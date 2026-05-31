@@ -1963,7 +1963,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-btn-p:active,.g-btn-s:active,.g-btn-ghost:active{transform:scale(.98)}
 
 .g-welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:0 32px 40px;background:var(--g-bg);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.scr.g-welcome{padding:0 32px calc(40px + env(safe-area-inset-bottom))}
+.scr.g-welcome{min-height:calc(100dvh + env(safe-area-inset-bottom));padding:0 32px calc(40px + env(safe-area-inset-bottom))}
 .g-welcome::after{z-index:3}
 .g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F6E9CC 0%, transparent 60%),linear-gradient(180deg, #C9C3DE 0%, #D8D2C0 42%, #EDC98E 74%, #E89A5A 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
 .g-welcome-bubbles{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
