@@ -1380,7 +1380,7 @@ function Confirm({msg,sub,onDone}){
 /* ═══════════════════════════════════════════════════════════════════════════
    HISTORY — export includes SRM, notes newest first
    ═══════════════════════════════════════════════════════════════════════════ */
-function Hist({mood,srm,name,meds,onBack}){
+function Hist({mood,srm,meds,onBack}){
   const [range,setRange]=useState("1m");
   const [overlays,setOverlays]=useState({sleep:false,weight:false,social:false});
   const [sleepTip,setSleepTip]=useState(null);
@@ -1501,7 +1501,7 @@ function Hist({mood,srm,name,meds,onBack}){
   };
 
   return(<div className="scr g-insights g-ambient-sky g-grain">
-    <div className="hh"><h2 className="ht">{name?`${name}'s `:""}{sorted.length>0?"Insights":"Insights"}</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
+    <div className="hh"><h2 className="ht">Insights</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
     {!hasMoodData&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
     {hasMoodData&&<div className="sr">
       <div className="sb"><div className="sv">{sorted.length}</div><div className="sbl">Days</div></div>
@@ -1896,7 +1896,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
-    <button className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={()=>setShowAdvanced(!showAdvanced)}><span>Advanced</span><span aria-hidden="true">{showAdvanced?"−":"+"}</span></button>
+    <button className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={()=>setShowAdvanced(!showAdvanced)}><span>Advanced</span><span className="adv-chev" aria-hidden="true">⌄</span></button>
     {showAdvanced&&<div className="settings-advanced">
       {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
       {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
@@ -2442,9 +2442,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .past-ts{font:500 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--g-tx4)}
 .g-settings .past-text{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:2px}
 .g-settings .btn-del{color:var(--g-tx4)}
-.g-settings .ver-label{font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
-.g-settings .settings-advanced-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:2px;padding:12px 2px;border:0;border-top:1px solid var(--g-line);border-bottom:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
-.g-settings .settings-advanced{padding-top:12px}
+.g-settings .ver-label{margin-top:10px;text-align:center;font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
+.g-settings .settings-advanced-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:2px;padding:14px;border:1px solid var(--g-line);border-radius:14px;background:var(--g-card);color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-settings .settings-advanced-toggle .adv-chev{color:var(--g-tx3);transition:transform .2s}
+.g-settings .settings-advanced-toggle[aria-expanded="true"] .adv-chev{transform:rotate(180deg)}
+.g-settings .settings-advanced{margin-top:10px}
 
 /* ── R9 home calendar ── */
 .g-home{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
