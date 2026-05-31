@@ -2011,10 +2011,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-lock-dot.on{background:var(--g-tx);border-color:var(--g-tx)}
 .g-lock-shake{animation:gLockShake .45s ease}
 @keyframes gLockShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
-.g-lock-pad{margin-top:auto;display:grid;grid-template-columns:repeat(3,72px);gap:18px 22px;justify-content:center}
-.g-lk{width:72px;height:72px;border-radius:50%;border:none;background:var(--g-surface);font:400 26px/1 'Inter',system-ui,sans-serif;color:var(--g-tx);cursor:pointer;transition:background .1s,transform .1s;display:flex;align-items:center;justify-content:center}
+.g-lock-pad{margin-top:auto;display:grid;grid-template-columns:repeat(3,76px);gap:14px;justify-content:center}
+.g-lk{width:76px;height:76px;border-radius:50%;border:none;background:var(--g-surface);font:400 30px/1 'Inter',system-ui,sans-serif;color:var(--g-tx);cursor:pointer;transition:background .1s,transform .1s;display:flex;align-items:center;justify-content:center}
 .g-lk:active{background:#E2DDD2;transform:scale(.98)}
-.g-lk-fn{background:transparent;color:var(--g-tx3);font-size:18px}
+.g-lk-fn{background:transparent;color:var(--g-tx3);font-size:16px}
 .g-lk-fn:active{background:var(--g-surface)}
 .lock-scr{display:flex;align-items:center;justify-content:center;flex-direction:column}
 .lock-in{text-align:center}
