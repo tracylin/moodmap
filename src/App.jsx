@@ -632,15 +632,26 @@ export default function App(){
     const n={...mood}; delete n[date]; setMood(n); saveMood(n);
     pushDeleteMood(date);
   };
-  const doMoveMood=(fromDate,toDate)=>{
-    if(!fromDate||!toDate||fromDate===toDate) return;
-    const entry=mood[fromDate]; if(!entry) return;
-    const n={...mood};
-    delete n[fromDate];
-    n[toDate]={...entry};
-    setMood(n); saveMood(n);
-    pushDeleteMood(fromDate);
-    pushMood(toDate, n[toDate], meds);
+  const doMoveDay=(fromDate,toDate,force=false)=>{
+    if(!fromDate||!toDate||fromDate===toDate) return false;
+    const moodEntry=mood[fromDate];const srmEntry=srm[fromDate];
+    if(!moodEntry&&!srmEntry?.items?.length) return false;
+    if(!force&&(mood[toDate]||srm[toDate]?.items?.length)) return "occupied";
+    if(force&&mood[toDate]&&!moodEntry){
+      const n={...mood};delete n[toDate];setMood(n);saveMood(n);pushDeleteMood(toDate);
+    }
+    if(force&&srm[toDate]?.items?.length&&!srmEntry?.items?.length){
+      const n={...srm};delete n[toDate];setSrm(n);saveSRM(n);pushDeleteSrm(toDate);
+    }
+    if(moodEntry){
+      const n={...mood};delete n[fromDate];n[toDate]={...moodEntry};
+      setMood(n);saveMood(n);pushDeleteMood(fromDate);pushMood(toDate,n[toDate],meds);
+    }
+    if(srmEntry?.items?.length){
+      const n={...srm};delete n[fromDate];n[toDate]={...srmEntry,items:[...srmEntry.items]};
+      setSrm(n);saveSRM(n);pushDeleteSrm(fromDate);pushSrm(toDate,n[toDate].items);
+    }
+    return true;
   };
   // Save SRM: update local state + push ONLY this date's items to sheets
   const doSaveSRM=(newSrm, changedDate)=>{
@@ -655,6 +666,24 @@ export default function App(){
     const n={...srm}; delete n[date]; setSrm(n); saveSRM(n);
     pushDeleteSrm(date);
   };
+  const hasMoodFields=entry=>!!(entry&&(
+    moodsArr(entry).length||entry.sleep!=null||entry.anxiety!=null||entry.irritability!=null||
+    entry.weight!=null||entry.notes||Object.values(entry.meds||{}).some(v=>v.ct>0)
+  ));
+  const doReplaceMood=(date,entry)=>{
+    if(!hasMoodFields(entry)){doDeleteMood(date);return;}
+    doSaveMood({...mood,[date]:entry},date);
+  };
+  const doReplaceSrm=(date,items)=>{
+    if(!items.length){doDeleteSrm(date);return;}
+    doSaveSRM({...srm,[date]:{...(srm[date]||{}),items}},date);
+  };
+  const moveSelectedDay=toDate=>{
+    let moved=doMoveDay(selDay,toDate);
+    if(moved==="occupied"&&confirm("That date already has a record — replace it?")) moved=doMoveDay(selDay,toDate,true);
+    if(moved===true) setSelDay(toDate);
+    return moved;
+  };
 
   return(<>
     <style>{CSS}</style>
@@ -665,11 +694,14 @@ export default function App(){
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
         onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
         onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
+        onMoveDay={moveSelectedDay}
+        onSaveMoodEntry={entry=>doReplaceMood(selDay,entry)}
+        onSaveSrmItems={items=>doReplaceSrm(selDay,items)}
         onEditMood={()=>setScreen("editDayMood")}
         onEditSRM={id=>{setSrmEditId(id);setScreen("editDaySrm");}}
         onLogMood={()=>setScreen("editDayMood")}/>}
 
-      {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onMoveMood={(to)=>{doMoveMood(selDay,to);setSelDay(to);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
+      {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onMoveMood={to=>{if(moveSelectedDay(to)===true)setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[selDay]:{items}};doSaveSRM(ns,selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="entry"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srm"&&<SRMPicker srm={srm} srmDate={srmDate} setSrmDate={setSrmDate} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
@@ -764,7 +796,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
 
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
-      <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]}</h2><p className="cal-year">{y}</p></div>
+      <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className={`cht${navDir?` cht-${navDir}`:""}`} key={`${y}-${m}`}>{MO[m]} {y}</h2></div>
       <div className="cal-tr"><SyncBadge/><div className="cnav"><button className="bi" onClick={prevMonth}>‹</button><button className="bi" onClick={nextMonth}>›</button></div></div>
     </div>
     <div className="g-home-week">{weekCount>0?<><b>{weekCount} logged</b> this week</>:"A fresh week"}</div>
@@ -788,9 +820,20 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       const caretLeft=bubble.rect.left+bubble.rect.width/2-left-6;
       const medCt=en?.meds?Object.values(en.meds).filter(v=>v.ct>0).length:0;
       const hasExtras=!!(en&&(en.sleep!=null||medCt||en.notes||s2));
+      const srmMoments=(s2?.items||[]).filter(it=>!it.didNot);
+      const firstSrm=[...srmMoments].sort((a,b)=>String(a.time||"99:99").localeCompare(String(b.time||"99:99")))[0];
+      const firstSrmTime=firstSrm?.time?fmt12h(to24h(normTime(firstSrm.time),firstSrm.am)):"time not set";
       return(<div className="g-bubble" style={{top,left,width:bw}}>
         <div className="g-bubble-caret" style={{left:caretLeft}}/>
-        {!pmk?(<>
+        {!pmk&&srmMoments.length?(<>
+          <button className="g-bubble-open" onClick={()=>{setBubble(null);setSelDay(k);onViewDay();}}>
+            <span className="g-bubble-date">{dlabel}</span>
+            <span className="g-bubble-rhythm">SRM logged · {srmMoments.length} {srmMoments.length===1?"moment":"moments"} · first {firstSrmTime}</span>
+          </button>
+          <div className="g-bubble-prompt g-bubble-prompt-small">Add a mood</div>
+          <div className="g-bubble-pick">{MOOD_PICKER_ORDER.map(mk=><button key={mk} className={`g-bubble-dot ${G_MOOD_CLASS[mk]}`} onClick={()=>doQuickSave(k,mk)} aria-label={MM[mk].label}/>)}</div>
+          <div className="g-bubble-ends"><span>low</span><span>high</span></div>
+        </>):!pmk?(<>
           <div className="g-bubble-date">{dlabel}</div>
           <div className="g-bubble-prompt">{k===tdk()?"How was today?":"How was it?"}</div>
           <div className="g-bubble-pick">{MOOD_PICKER_ORDER.map(mk=><button key={mk} className={`g-bubble-dot ${G_MOOD_CLASS[mk]}`} onClick={()=>doQuickSave(k,mk)} aria-label={MM[mk].label}/>)}</div>
@@ -802,7 +845,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
             <span className="g-bubble-mood"><span className="g-bubble-cdot" style={{background:`var(--${G_MOOD_CLASS[pmk]})`}}/><span className="g-bubble-clabel">{moodLabel(en)} <small>{MM[pmk].v>0?`+${MM[pmk].v}`:MM[pmk].v}</small></span></span>
           </button>
           {hasExtras?<div className="g-bubble-sum">{[en.sleep!=null?`${en.sleep}h`:null,medCt?`${medCt} meds`:null,en.notes?"note":null,s2?"rhythm":null].filter(Boolean).join(" · ")}</div>:<div className="g-bubble-caps">Sleep · Meds · Note · Rhythm</div>}
-          <div className="g-bubble-act"><button className="g-bubble-edit" onClick={()=>{setBubble(null);setSelDay(k);onViewDay();}}>Edit</button><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
+          <div className="g-bubble-act g-bubble-act-end"><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
         </>)}
       </div>);
     })()}
@@ -821,8 +864,10 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
 }
 
 /* ── DAY VIEW — with edit and delete ── */
-function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onLogMood}){
+function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onMoveDay,onSaveMoodEntry,onSaveSrmItems,onEditMood,onEditSRM,onLogMood}){
   const[confirmDel,setConfirmDel]=useState(null);
+  const[editMode,setEditMode]=useState(false);
+  const[undo,setUndo]=useState(null);
   const e=mood[dateKey];const s=srm[dateKey];
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
   const _dow=new Date(yr,mo-1,dy).getDay();
@@ -839,46 +884,66 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
   };
   const heroBand=!pm?"neutral":(MM[pm].v<0?"dep":MM[pm].v>0?"elev":"neutral");
   const heroBg=HERO_GRAD[heroBand];
-  const medChips=e?.meds?Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(mm=>mm.key===k);return(<span key={k} className="g-day-med-chip"><b>{med?.name||k}</b><span>×{v.ct}</span></span>);}):[];
   const srmItems=s?[...s.items].filter(it=>!it.didNot).sort((a,b)=>{const ta=a.time?to24h(normTime(a.time),a.am):"99:99";const tb=b.time?to24h(normTime(b.time),b.am):"99:99";return String(ta).localeCompare(String(tb));}):[];
+  const setUndoAction=(label,run)=>setUndo({label,run});
+  const clearMoodField=(field,medKey)=>{
+    if(!e)return;
+    const prev={...e,meds:{...(e.meds||{})},moods:moodsArr(e)};
+    const next={...prev};
+    if(field==="meds") next.meds={...next.meds,[medKey]:{...next.meds[medKey],ct:0}};
+    else if(field==="moods") next.moods=[];
+    else next[field]=field==="notes"?"":null;
+    onSaveMoodEntry(next);
+    const labels={moods:"Mood",sleep:"Sleep",anxiety:"Anxiety",irritability:"Irritability",weight:"Weight",notes:"Note"};
+    setUndoAction(field==="meds"?(meds.find(m=>m.key===medKey)?.name||"Medication"):labels[field],()=>onSaveMoodEntry(prev));
+  };
+  const clearSrmItem=id=>{
+    const prev=[...(s?.items||[])];
+    const item=prev.find(it=>it.id===id);const ac=SRM_ACT.find(a=>a.id===id);
+    onSaveSrmItems(prev.filter(it=>it.id!==id));
+    setUndoAction(ac?.label||item?.id||"Rhythm moment",()=>onSaveSrmItems(prev));
+  };
+  const renderClear=(onClick,label)=>editMode?<button className="g-day-clear" aria-label={`Clear ${label}`} onClick={ev=>{ev.stopPropagation();onClick();}}>×</button>:null;
   return(<div className="scr g-day">
     <div className="g-day-hero" style={{background:heroBg}}>
       <button className="g-day-close" onClick={onBack}>×</button>
       <div className="g-day-hero-cap">
         <div className="g-day-kick">{kicker}</div>
-        <div className="g-day-word">{pm?moodLabel(e):(e?"Logged":"No entry")}</div>
+        <div className="g-day-word">{pm?moodLabel(e):(e?"Logged":s?"SRM logged":"No entry")}</div>
       </div>
     </div>
     <div className="g-day-body">
       {!e&&onLogMood&&<button className="g-day-edit-btn" style={{marginBottom:18}} onClick={onLogMood}>Log full day entry</button>}
+      {(e||s)&&<><div className="g-day-rowhead"><span className="g-day-eyebrow">Day log</span><button className="g-day-inline-edit" onClick={()=>setEditMode(v=>!v)}>{editMode?"Done":"Edit"}</button></div><div className="g-day-hair"/></>}
       {e&&<>
-        <div className="g-day-rowhead"><span className="g-day-eyebrow">Day log</span></div>
-        <div className="g-day-hair"/>
         <div className="g-day-vit">
-          <div className="g-day-cell"><span className="g-day-k">Mood</span><div className="g-day-v">{pm?moodLabel(e):"—"}{pm&&<small> {MM[pm].v>0?`+${MM[pm].v}`:MM[pm].v}</small>}</div></div>
-          <div className="g-day-cell"><span className="g-day-k">Sleep</span><div className="g-day-v">{e.sleep!=null?<>{e.sleep}<small> hrs</small></>:"—"}</div></div>
-          <div className="g-day-cell"><span className="g-day-k">Anxiety</span><div className="g-day-v">{e.anxiety!=null?<>{SEV[e.anxiety].l}<small> {e.anxiety}/3</small></>:"—"}</div>{e.anxiety!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.anxiety?"on":""}/>)}</div>}</div>
-          <div className="g-day-cell"><span className="g-day-k">Irritability</span><div className="g-day-v">{e.irritability!=null?<>{SEV[e.irritability].l}<small> {e.irritability}/3</small></>:"—"}</div>{e.irritability!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.irritability?"on":""}/>)}</div>}</div>
+          <div className="g-day-cell">{pm&&renderClear(()=>clearMoodField("moods"),"mood")}<span className="g-day-k">Mood</span><div className="g-day-v">{pm?moodLabel(e):"—"}{pm&&<small> {MM[pm].v>0?`+${MM[pm].v}`:MM[pm].v}</small>}</div></div>
+          <div className="g-day-cell">{e.sleep!=null&&renderClear(()=>clearMoodField("sleep"),"sleep")}<span className="g-day-k">Sleep</span><div className="g-day-v">{e.sleep!=null?<>{e.sleep}<small> hrs</small></>:"—"}</div></div>
+          <div className="g-day-cell">{e.anxiety!=null&&renderClear(()=>clearMoodField("anxiety"),"anxiety")}<span className="g-day-k">Anxiety</span><div className="g-day-v">{e.anxiety!=null?<>{SEV[e.anxiety].l}<small> {e.anxiety}/3</small></>:"—"}</div>{e.anxiety!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.anxiety?"on":""}/>)}</div>}</div>
+          <div className="g-day-cell">{e.irritability!=null&&renderClear(()=>clearMoodField("irritability"),"irritability")}<span className="g-day-k">Irritability</span><div className="g-day-v">{e.irritability!=null?<>{SEV[e.irritability].l}<small> {e.irritability}/3</small></>:"—"}</div>{e.irritability!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.irritability?"on":""}/>)}</div>}</div>
         </div>
-        {e.weight!=null&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Weight</span><div className="g-day-v">{e.weight}<small> kg</small></div></div></>}
-        {e.notes&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Note</span><p className="g-day-note">{e.notes}</p></div></>}
-        {medChips.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{medChips}</div></div></>}
+        {e.weight!=null&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("weight"),"weight")}<span className="g-day-k">Weight</span><div className="g-day-v">{e.weight}<small> kg</small></div></div></>}
+        {e.notes&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("notes"),"note")}<span className="g-day-k">Note</span><p className="g-day-note">{e.notes}</p></div></>}
+        {Object.entries(e.meds||{}).some(([,v])=>v.ct>0)&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k,v])=>{const med=meds.find(mm=>mm.key===k);return(<span key={k} className="g-day-med-chip"><b>{med?.name||k}</b><span>×{v.ct}</span>{renderClear(()=>clearMoodField("meds",k),med?.name||k)}</span>);})}</div></div></>}
       </>}
       {srmItems.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Social rhythm</span>
-        <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>onEditSRM(it.id)}>
+        <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>{if(!editMode)onEditSRM(it.id);}}>
           <div className="g-day-tl-time">{t||"—"}</div><div className="g-day-tl-dot"/><div className="g-day-tl-label">{ac.label}{it.withOthers?<span className="g-day-tl-tag"> · social</span>:""}</div>
+          {renderClear(()=>clearSrmItem(it.id),ac.label)}
         </div>);})}</div></div></>}
       {pm&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Where the day landed</span>
         <div className="g-day-spectrum"><div className="g-day-spectrum-knob" style={{left:`${Math.max(0,Math.min(100,((moodValue(e)+3)/6)*100))}%`}}/></div>
         <div className="g-day-spectrum-ends"><span>depressed</span><span>elevated</span></div>
       </div></>}
       {!e&&!s&&<p className="g-day-empty">No data for this day.</p>}
+      {undo&&<div className="g-day-undo"><span>{undo.label} cleared</span><button onClick={()=>{undo.run();setUndo(null);}}>Undo</button></div>}
       {(e||s)&&<div className="g-day-foot">
-        {e&&<button className="g-day-edit-btn" onClick={onEditMood}>Edit this entry</button>}
+        {e&&<button className="g-day-edit-btn" onClick={onEditMood}>Re-enter values</button>}
         <div className="g-day-del-row">
           {e&&(confirmDel==="mood"?<span className="g-day-confirm">Delete mood entry? <button className="g-day-confirm-yes" onClick={onDelMood}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("mood")}>Delete mood entry</button>)}
           {s&&(confirmDel==="srm"?<span className="g-day-confirm">Delete rhythm log? <button className="g-day-confirm-yes" onClick={onDelSRM}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("srm")}>Delete rhythm log</button>)}
         </div>
+        <button className="g-day-move" onClick={()=>{const v=prompt("Move day to date (YYYY-MM-DD):",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==dateKey)onMoveDay(v);}}>Move to another date…</button>
       </div>}
     </div>
   </div>);
@@ -891,7 +956,7 @@ const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mi
 
 /* ── MODE STEPS ── */
 const MSTEPS_FULL=[
-  {id:"mood",      q:{full:"How was your mood?",         now:"How are you feeling right now?"},  s:"Choose up to 2 (if it felt mixed)"},
+  {id:"mood",      q:{full:"How was your mood?",         now:"How are you feeling right now?"},  s:""},
   {id:"sleep",     q:{full:"Sleep",  now:null},                               s:"Log bedtime, wake time, or just hours"},
   {id:"anx_irr",   q:{full:"Anxiety & Irritability",    now:"Anxiety & irritability"},            s:"0 none · 1 mild · 2 moderate · 3 severe"},
   {id:"meds",      q:{full:"Medications last night",     now:null},                               s:"Pills taken yesterday evening / this morning"},
@@ -1084,7 +1149,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const q=notesCopy?.q||(typeof st.q==="object"?st.q.full:st.q);
     const sub=notesCopy?.s||st.s;
     return(<div className="qa" key={si+"-"+isEdit}>
-      <h2 className={`qt${st.id==="notes"?" qt-notes":""}`}>{q}</h2><p className="qs">{sub}</p>
+      <h2 className={`qt${st.id==="notes"?" qt-notes":""}`}>{q}</h2>{sub&&<p className="qs">{sub}</p>}
 
       {st.id==="mood"&&(<div className="g-mood-picker">
         <div className="g-mood-dots">{MOOD_PICKER_ORDER.map(key=>{
@@ -1093,7 +1158,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         })}</div>
         <div className="g-mood-ends"><span>low</span><span>high</span></div>
         <div className="g-mood-read">
-          {(entry.moods||[]).length?entry.moods.map(key=><div key={key} className="g-mood-read-line"><span>{G_MOOD_LABEL[key]||MM[key]?.label}</span><small>{MM[key]?.v>0?`+${MM[key].v}`:MM[key]?.v}</small><em>{MOOD_OPTS.find(o=>o.key===key)?.sub}</em></div>):<div className="g-mood-empty">Choose up to two</div>}
+          {(entry.moods||[]).length?entry.moods.map(key=><div key={key} className="g-mood-read-line"><div className="g-mood-read-main"><span>{G_MOOD_LABEL[key]||MM[key]?.label}</span><small>{MM[key]?.v>0?`+${MM[key].v}`:MM[key]?.v}</small></div><em>{MOOD_OPTS.find(o=>o.key===key)?.sub}</em></div>):<div className="g-mood-empty">If it felt mixed, pick the two closest.</div>}
         </div>
       </div>)}
 
@@ -2188,7 +2253,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .ocn{font-size:14px;font-weight:400}.ocd{font-size:11px;color:var(--t3);font-weight:300;margin-top:1px}
 .or{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;flex-shrink:0;transition:all .15s}
 
-.g-mood-picker{padding-top:8px}
+.g-mood-picker{padding-top:20px}
 .g-mood-dots{display:flex;align-items:center;justify-content:space-between;margin:8px 0 6px}
 .g-mood-dot{width:30px;height:30px;border:none;border-radius:50%;position:relative;background:transparent;cursor:pointer;transition:box-shadow .15s,transform .15s}
 .g-mood-dot:active{transform:scale(.94)}
@@ -2202,11 +2267,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-mood-mod-high::before{background:radial-gradient(circle,rgba(238,154,82,.93) 0%,rgba(238,154,82,.58) 45%,transparent 74%)}
 .g-mood-sev-high::before{background:radial-gradient(circle,rgba(233,106,51,.95) 0%,rgba(233,106,51,.62) 45%,transparent 74%)}
 .g-mood-ends{display:flex;justify-content:space-between;color:var(--g-tx3);font:400 10px/1 'Inter',system-ui,sans-serif}
-.g-mood-read{margin-top:26px;text-align:center}
-.g-mood-read-line{display:flex;flex-direction:column;align-items:center;margin-bottom:16px}
+.g-mood-read{min-height:126px;margin-top:20px;text-align:center}
+.g-mood-read-line{display:flex;flex-direction:column;align-items:center;margin-bottom:14px}
+.g-mood-read-main{display:flex;align-items:center;justify-content:center;gap:8px}
 .g-mood-read-line span{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx)}
-.g-mood-read-line small{margin-top:2px;font:400 14px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-mood-read-line em{max-width:240px;margin-top:6px;font:300 13px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-style:normal}
+.g-mood-read-line small{font:400 14px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-mood-read-line em{max-width:240px;margin-top:4px;font:300 12px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-style:normal}
 .g-mood-empty{color:var(--g-tx3);font:300 13px/1.4 'Inter',system-ui,sans-serif}
 
 .np{display:flex;align-items:center;justify-content:center;gap:28px;margin:20px 0 32px}
@@ -2511,7 +2577,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .cnav{pointer-events:auto}
 .g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-home .cht{font:500 38px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
-.g-home .cal-year{margin-top:4px;font:400 15px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-home .cht.cht-next{animation:cgInNext .28s cubic-bezier(.2,.85,.25,1) both}
+.g-home .cht.cht-prev{animation:cgInPrev .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cal-tr{flex-direction:column;align-items:flex-end;gap:8px}
 .g-home .sync-badge{margin-left:0}
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
@@ -2570,6 +2637,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-bubble-open{display:block;width:100%;border:none;background:none;text-align:left;color:inherit;cursor:pointer}
 .g-bubble-date{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.09em;text-transform:uppercase;color:var(--g-tx3)}
 .g-bubble-prompt{font:500 16px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx);margin-top:4px}
+.g-bubble-prompt-small{font-size:12px;color:var(--g-tx3);margin-top:12px}
+.g-bubble-rhythm{display:block;margin-top:9px;font:500 14px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-bubble-pick{display:flex;justify-content:space-between;align-items:center;margin:11px 0 5px}
 .g-bubble-dot{width:24px;height:24px;border-radius:50%;border:none;background:transparent;position:relative;cursor:pointer;flex-shrink:0}
 .g-bubble-dot::before{content:"";position:absolute;inset:0;border-radius:50%}
@@ -2585,6 +2654,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-bubble-caps{font:600 9px/1.3 'Inter',system-ui,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:var(--g-tx3)}
 .g-bubble-sum{font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-bubble-act{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--g-line);margin-top:10px;padding-top:9px}
+.g-bubble-act-end{justify-content:flex-end}
 .g-bubble-edit{border:none;background:none;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);cursor:pointer}
 .g-toast{position:fixed;left:50%;bottom:calc(186px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:61;display:flex;align-items:center;gap:14px;background:var(--g-tx);color:var(--g-bg);border-radius:999px;padding:10px 16px;box-shadow:0 8px 28px rgba(0,0,0,.22);animation:gToastIn .18s var(--ease);white-space:nowrap}
 @keyframes gToastIn{from{opacity:0;transform:translateX(-50%) translateY(4px)}to{opacity:1;transform:translateX(-50%)}}
@@ -2601,10 +2671,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-kick{font:600 11px/1 'Inter',system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:rgba(28,28,26,.6);margin-bottom:6px}
 .g-day-word{font:500 36px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.3px;color:#1C1C1A}
 .g-day-body{padding:22px 24px 40px}
-.g-day-rowhead{padding-bottom:14px}
+.g-day-rowhead{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px}
+.g-day-inline-edit{border:none;background:none;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-day-eyebrow,.g-day-k{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3)}
 .g-day-hair{height:1px;background:var(--g-line)}
 .g-day-vit{display:grid;grid-template-columns:1fr 1fr}
+.g-day-cell,.g-day-block{position:relative}
 .g-day-cell{padding:16px 0}
 .g-day-cell:nth-child(odd){padding-right:18px;border-right:1px solid var(--g-line)}
 .g-day-cell:nth-child(even){padding-left:18px}
@@ -2622,6 +2694,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-med-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;background:var(--g-surface);font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-day-med-chip b{font-weight:500}
 .g-day-med-chip span{color:var(--g-tx3);font-size:12px}
+.g-day-clear{flex-shrink:0;width:20px;height:20px;border:1px solid rgba(212,120,92,.42);border-radius:50%;background:rgba(212,120,92,.09);color:var(--g-warm-err);font:500 15px/17px 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-day-cell>.g-day-clear,.g-day-block>.g-day-clear{position:absolute;top:12px;right:0}
 .g-day-tl-item{display:flex;gap:14px;align-items:flex-start;padding:8px 0;cursor:pointer}
 .g-day-tl-time{width:64px;flex-shrink:0;font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx);font-variant-numeric:tabular-nums}
 .g-day-tl-dot{position:relative;width:9px;flex-shrink:0;display:flex;justify-content:center;margin-top:6px}
@@ -2640,6 +2714,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-confirm{font:400 12px/1.6 'Inter',system-ui,sans-serif;color:var(--g-tx2);display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
 .g-day-confirm-yes{border:none;background:none;color:var(--g-warm-err);font-weight:600;cursor:pointer}
 .g-day-confirm-no{border:none;background:none;color:var(--g-tx3);cursor:pointer}
+.g-day-move{display:block;margin:10px auto 0;border:none;background:none;color:var(--g-tx3);font:400 12px/1 'Inter',system-ui,sans-serif;cursor:pointer;padding:6px}
+.g-day-undo{position:sticky;bottom:12px;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 0;padding:10px 13px;border:1px solid var(--g-line);border-radius:12px;background:var(--g-card);box-shadow:0 6px 22px rgba(28,28,26,.08);color:var(--g-tx2);font:400 12px/1.2 'Inter',system-ui,sans-serif}
+.g-day-undo button{border:none;background:none;color:var(--g-tx);font:600 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .cfdraw{stroke-dasharray:40;stroke-dashoffset:40;animation:gCheckDraw .55s cubic-bezier(.2,.85,.25,1) .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
@@ -2754,6 +2831,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .n-mood{color:var(--g-tx3);font:400 11px/1.2 'Inter',system-ui,sans-serif;text-transform:none}
 .g-insights .nt{font:300 13px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-welcome-title,.g-insights .ht,.g-settings .ht,.g-entry .qt,.g-srm-picker .ht,.g-srm-single .qt{font-weight:500;font-size:42px;line-height:1.08;letter-spacing:-1.2px;color:var(--g-tx)}
+.g-sheet .ht{font:500 38px/1.05 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
 @media(max-width:380px){
   .g-entry .qt,.g-srm-picker .ht{font-size:38px}
   .g-entry .qt-notes{font-size:36px}
@@ -2876,6 +2954,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 /* ── step navigation ── */
 .step-btns{display:flex;flex-direction:column;align-items:center;gap:8px}
 .btn-skip{background:none;border:none;font:300 13px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;padding:4px 12px;letter-spacing:.01em}
+.g-entry .btn-skip{margin-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
 .btn-skip:hover{color:var(--t2)}
 /* ── move to date ── */
 .btn-move-date{width:100%;margin-top:8px;padding:11px;border-radius:var(--rs);border:1px solid var(--bd);background:transparent;font:400 13px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;text-align:center;transition:all .15s}
@@ -2886,7 +2965,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 @media(prefers-reduced-motion:reduce){
   .g-welcome-cat,.g-welcome-sky,.g-wb,.cfdraw,.g-confirm .cfc,
-  .g-bubble,.g-insights,.g-settings,.g-day,.g-home .cg,.page{animation:none!important}
+  .g-bubble,.g-insights,.g-settings,.g-day,.g-home .cg,.g-home .cht,.page{animation:none!important}
   .g-welcome-bubbles{display:none}
 }
 
