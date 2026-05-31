@@ -733,16 +733,10 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const swipeStart=useRef(null);
   const[navDir,setNavDir]=useState("");
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
-  useEffect(()=>{
-    if(!bubble)return;
-    const onDoc=(ev)=>{if(!ev.target.closest(".g-bubble"))setBubble(null);};
-    const t=setTimeout(()=>document.addEventListener("click",onDoc),0);
-    return()=>{clearTimeout(t);document.removeEventListener("click",onDoc);};
-  },[bubble]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
-  const prevMonth=()=>{setNavDir("prev");setVm(m===0?[y-1,11]:[y,m-1]);};
-  const nextMonth=()=>{setNavDir("next");setVm(m===11?[y+1,0]:[y,m+1]);};
+  const prevMonth=()=>{setBubble(null);setNavDir("prev");setVm(m===0?[y-1,11]:[y,m-1]);};
+  const nextMonth=()=>{setBubble(null);setNavDir("next");setVm(m===11?[y+1,0]:[y,m+1]);};
   const onCalTouchStart=ev=>{const t=ev.touches[0];if(t)swipeStart.current={x:t.clientX,y:t.clientY};};
   const onCalTouchEnd=ev=>{const start=swipeStart.current;swipeStart.current=null;const t=ev.changedTouches[0];if(!start||!t)return;const dx=t.clientX-start.x;const dy=t.clientY-start.y;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5){if(dx<0)nextMonth();else prevMonth();}};
   const now=new Date();const td=now.getFullYear()===y&&now.getMonth()===m?now.getDate():-1;
@@ -783,6 +777,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       </div>);})}
     </div>}
 
+    {bubble&&<div className="g-bubble-scrim" onClick={()=>setBubble(null)}/>}
     {bubble&&(()=>{
       const k=bubble.key;const en=mood[k];const s2=srm[k];const pmk=primaryMood(en);
       const[bky,bkm,bkd]=k.split("-").map(Number);const bdow=new Date(bky,bkm-1,bkd).getDay();
@@ -2446,7 +2441,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .g-home::after{z-index:0}
 .g-home > *{position:relative;z-index:1}
-.g-home .cal-top{padding:32px 0 0;flex-shrink:0}
+.g-home .cal-top{padding:32px 0 0;flex-shrink:0;z-index:56;pointer-events:none}
+.g-home .cnav{pointer-events:auto}
 .g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-home .cht{font:500 38px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
@@ -2487,7 +2483,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .day-card-arrow{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-home .day-card-note{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-home .day-chip{background:var(--g-surface);color:var(--g-tx2);border-radius:8px}
-.g-home-actions{position:fixed;z-index:50;background:linear-gradient(to top,var(--g-bg) 75%,transparent)}
+.g-home-actions{position:fixed;z-index:56;background:linear-gradient(to top,var(--g-bg) 75%,transparent)}
 .g-home-log-btn{width:100%;padding:16px;border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 15px/1 'Inter',system-ui,sans-serif;letter-spacing:.02em;cursor:pointer}
 .g-home-srm-btn{width:100%;padding:12px;border-radius:999px;border:1px solid var(--g-tx4);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-home-nav{display:flex;justify-content:center;gap:32px;padding:6px 0 0}
@@ -2499,6 +2495,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .cc-future .cn{opacity:.5}
 .g-home .cc.cc-open::after{content:"";position:absolute;inset:10%;border:2px solid var(--g-tx);border-radius:50%;background:none;width:auto;height:auto;z-index:1}
 .g-bubble{position:fixed;z-index:60;background:var(--g-bg);border-radius:18px;box-shadow:0 14px 42px rgba(0,0,0,.2);padding:12px 14px 11px;transform-origin:50% 0;animation:gBubbleIn .22s cubic-bezier(.2,.85,.25,1) both}
+.g-bubble-scrim{position:fixed;inset:0;z-index:55;background:transparent}
 @keyframes gBubbleIn{from{opacity:0;transform:scale(.92) translateY(-6px)}to{opacity:1;transform:none}}
 .g-bubble-caret{position:absolute;width:13px;height:13px;background:var(--g-bg);transform:rotate(45deg);top:-6px;box-shadow:-3px -3px 7px rgba(0,0,0,.03)}
 .g-bubble-open{display:block;width:100%;border:none;background:none;text-align:left;color:inherit;cursor:pointer}
