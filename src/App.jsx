@@ -764,8 +764,8 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
 
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
-      <div><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]} {y} <SyncBadge/></h2></div>
-      <div className="cal-tr"><div className="cnav"><button className="bi" onClick={prevMonth}>‹</button><button className="bi" onClick={nextMonth}>›</button></div></div>
+      <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className="cht">{MO[m]}</h2><p className="cal-year">{y}</p></div>
+      <div className="cal-tr"><SyncBadge/><div className="cnav"><button className="bi" onClick={prevMonth}>‹</button><button className="bi" onClick={nextMonth}>›</button></div></div>
     </div>
     <div className="g-home-week">{weekCount>0?<><b>{weekCount} logged</b> this week</>:"A fresh week"}</div>
     <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
@@ -2456,6 +2456,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .cnav{pointer-events:auto}
 .g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-home .cht{font:500 38px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
+.g-home .cal-year{margin-top:4px;font:400 15px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-home .cal-tr{flex-direction:column;align-items:flex-end;gap:8px}
+.g-home .sync-badge{margin-left:0}
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
 .g-home-week{flex-shrink:0;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 0}
 .g-home-week b{color:var(--g-tx2);font-weight:600}
@@ -2483,12 +2486,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;margin:22px 0 0;padding-bottom:166px}
 .g-home-recent::-webkit-scrollbar{display:none}
 .g-home-recent-eyebrow{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:11px}
-.g-home-r-item{display:flex;gap:12px;align-items:flex-start;margin-bottom:13px;cursor:pointer}
-.g-home-r-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:4px;filter:blur(.4px)}
+.g-home-r-item{display:flex;gap:12px;align-items:center;margin-bottom:12px;cursor:pointer}
+.g-home-r-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;filter:blur(.4px)}
 .g-home-r-body{flex:1;min-width:0}
 .g-home-r-day{font:500 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home-r-day em{font-style:normal;color:var(--g-tx3);font-weight:400}
-.g-home-r-note{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:1px}
+.g-home-r-note{overflow:hidden;margin-top:1px;color:var(--g-tx2);font:300 13px/1.45 'Inter',system-ui,sans-serif;text-overflow:ellipsis;white-space:nowrap}
 .g-home .day-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none}
 .g-home .day-card-date{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home .day-card-arrow{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
