@@ -731,6 +731,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const[bubble,setBubble]=useState(null);
   const[toast,setToast]=useState(null);
   const swipeStart=useRef(null);
+  const[navDir,setNavDir]=useState("");
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
   useEffect(()=>{
     if(!bubble)return;
@@ -740,8 +741,8 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   },[bubble]);
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
-  const prevMonth=()=>setVm(m===0?[y-1,11]:[y,m-1]);
-  const nextMonth=()=>setVm(m===11?[y+1,0]:[y,m+1]);
+  const prevMonth=()=>{setNavDir("prev");setVm(m===0?[y-1,11]:[y,m-1]);};
+  const nextMonth=()=>{setNavDir("next");setVm(m===11?[y+1,0]:[y,m+1]);};
   const onCalTouchStart=ev=>{const t=ev.touches[0];if(t)swipeStart.current={x:t.clientX,y:t.clientY};};
   const onCalTouchEnd=ev=>{const start=swipeStart.current;swipeStart.current=null;const t=ev.changedTouches[0];if(!start||!t)return;const dx=t.clientX-start.x;const dy=t.clientY-start.y;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5){if(dx<0)nextMonth();else prevMonth();}};
   const now=new Date();const td=now.getFullYear()===y&&now.getMonth()===m?now.getDate():-1;
@@ -773,7 +774,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       <div className="cal-tr"><div className="cnav"><button className="bi" onClick={prevMonth}>‹</button><button className="bi" onClick={nextMonth}>›</button></div></div>
     </div>
     <div className="g-home-week">{weekCount>0?<><b>{weekCount} logged</b> this week</>:"A fresh week"}</div>
-    <div className="cg" onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
+    <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
     {recentEntries.length>0&&<div className="g-home-recent">
       <span className="g-home-recent-eyebrow">Recent</span>
       {recentEntries.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
@@ -2451,7 +2452,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
 .g-home-week{flex-shrink:0;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 0}
 .g-home-week b{color:var(--g-tx2);font-weight:600}
-.g-home .cg{flex-shrink:0;gap:3px;margin:16px 0 0}
+.g-home .cg{flex-shrink:0;gap:3px;margin:16px 0 0;touch-action:none}
+@keyframes cgInNext{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
+@keyframes cgInPrev{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+.g-home .cg.cg-next{animation:cgInNext .28s cubic-bezier(.2,.85,.25,1) both}
+.g-home .cg.cg-prev{animation:cgInPrev .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .clb{font:500 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);text-align:center;padding:0 0 6px;text-transform:none;letter-spacing:0}
 .g-home .cc{aspect-ratio:1/0.84;border-radius:0;background:transparent;cursor:pointer}
 .g-home .cn{position:relative;z-index:2;font:400 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-variant-numeric:tabular-nums}
@@ -2468,7 +2473,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-cal-glow.g-mood-mild-high::before{background:radial-gradient(circle,rgba(233,199,126,1) 0%,rgba(233,199,126,.62) 52%,transparent 80%)}
 .g-cal-glow.g-mood-mod-high::before{background:radial-gradient(circle,rgba(238,154,82,1) 0%,rgba(238,154,82,.66) 52%,transparent 80%)}
 .g-cal-glow.g-mood-sev-high::before{background:radial-gradient(circle,rgba(233,106,51,1) 0%,rgba(233,106,51,.7) 52%,transparent 80%)}
-.g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:22px 0 0;padding-bottom:166px}
+.g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;margin:22px 0 0;padding-bottom:166px}
 .g-home-recent::-webkit-scrollbar{display:none}
 .g-home-recent-eyebrow{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:11px}
 .g-home-r-item{display:flex;gap:12px;align-items:flex-start;margin-bottom:13px;cursor:pointer}
@@ -2810,7 +2815,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 @media(prefers-reduced-motion:reduce){
   .g-welcome-cat,.g-welcome-sky,.g-wb,.cfdraw,.g-confirm .cfc,
-  .g-bubble,.g-insights,.g-settings,.g-day,.page{animation:none!important}
+  .g-bubble,.g-insights,.g-settings,.g-day,.g-home .cg,.page{animation:none!important}
   .g-welcome-bubbles{display:none}
 }
 
