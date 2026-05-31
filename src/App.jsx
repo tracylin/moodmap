@@ -1963,6 +1963,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-btn-p:active,.g-btn-s:active,.g-btn-ghost:active{transform:scale(.98)}
 
 .g-welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:0 32px 40px;background:var(--g-bg);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.scr.g-welcome{padding:0 32px calc(40px + env(safe-area-inset-bottom))}
 .g-welcome::after{z-index:3}
 .g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F6E9CC 0%, transparent 60%),linear-gradient(180deg, #C9C3DE 0%, #D8D2C0 42%, #EDC98E 74%, #E89A5A 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
 .g-welcome-bubbles{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
@@ -1998,8 +1999,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 @keyframes wBIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
 .g-lock-scr{position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column;background:var(--g-bg);overflow:hidden;font-family:'Inter',system-ui,sans-serif;padding:0}
+.scr.g-lock-scr{padding:0}
 .g-lock-scr::before{content:"";position:absolute;left:-20%;right:-20%;bottom:-10%;height:50%;background:radial-gradient(110% 80% at 50% 100%, rgba(233,176,120,.20) 0%, transparent 65%);pointer-events:none}
-.g-lock-in{position:relative;z-index:1;width:100%;min-height:100dvh;text-align:center;display:flex;flex-direction:column;align-items:center;padding:84px 30px 40px}
+.g-lock-in{position:relative;z-index:1;width:100%;min-height:100dvh;text-align:center;display:flex;flex-direction:column;align-items:center;padding:calc(84px + env(safe-area-inset-top)) 30px calc(40px + env(safe-area-inset-bottom))}
 .g-lock-mark{width:74px;height:74px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--g-tx);background:radial-gradient(circle at 50% 55%, rgba(233,199,126,.45) 0%, rgba(179,168,204,.22) 60%, transparent 78%)}
 .g-lock-mark svg{width:52px;height:52px}
 .g-lock-lbl{margin-top:22px;font:400 14px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx2);min-height:20px}
