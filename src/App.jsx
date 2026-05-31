@@ -655,6 +655,24 @@ export default function App(){
     const n={...srm}; delete n[date]; setSrm(n); saveSRM(n);
     pushDeleteSrm(date);
   };
+  // Move a whole day's record (mood + rhythm) to another date. Returns a status
+  // string so the UI can confirm before clobbering an occupied target.
+  const doMoveDay=(fromDate,toDate,force)=>{
+    if(!fromDate||!toDate||fromDate===toDate) return "noop";
+    const me=mood[fromDate]; const se=srm[fromDate];
+    if(!me&&!se) return "empty";
+    const occupied=!!mood[toDate]||!!(srm[toDate]?.items?.length);
+    if(occupied&&!force) return "occupied";
+    if(me){
+      const nm={...mood}; delete nm[fromDate]; nm[toDate]={...me};
+      setMood(nm); saveMood(nm); pushDeleteMood(fromDate); pushMood(toDate, nm[toDate], meds);
+    }
+    if(se){
+      const ns={...srm}; delete ns[fromDate]; ns[toDate]={...se};
+      setSrm(ns); saveSRM(ns); pushDeleteSrm(fromDate); pushSrm(toDate, se.items||[]);
+    }
+    return "ok";
+  };
 
   return(<>
     <style>{CSS}</style>
@@ -667,6 +685,7 @@ export default function App(){
         onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
         onEditMood={()=>setScreen("editDayMood")}
         onEditSRM={id=>{setSrmEditId(id);setScreen("editDaySrm");}}
+        onMoveDay={(toDate,force)=>{const r=doMoveDay(selDay,toDate,force);if(r==="ok")setSelDay(toDate);return r;}}
         onLogMood={()=>setScreen("editDayMood")}/>}
 
       {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onMoveMood={(to)=>{doMoveMood(selDay,to);setSelDay(to);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
@@ -821,8 +840,15 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
 }
 
 /* ── DAY VIEW — with edit and delete ── */
-function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onLogMood}){
+function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,onEditSRM,onMoveDay,onLogMood}){
   const[confirmDel,setConfirmDel]=useState(null);
+  const tryMoveDay=()=>{
+    if(!onMoveDay)return;
+    const v=prompt("Move this day's record to which date? (YYYY-MM-DD)",dateKey);
+    if(!v||!/^\d{4}-\d{2}-\d{2}$/.test(v)||v===dateKey)return;
+    let r=onMoveDay(v,false);
+    if(r==="occupied"){if(window.confirm("That date already has a record — move here anyway?"))r=onMoveDay(v,true);}
+  };
   const e=mood[dateKey];const s=srm[dateKey];
   const[yr,mo,dy]=(dateKey||"2026-01-01").split("-").map(Number);
   const _dow=new Date(yr,mo-1,dy).getDay();
@@ -875,6 +901,7 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
       {!e&&!s&&<p className="g-day-empty">No data for this day.</p>}
       {(e||s)&&<div className="g-day-foot">
         {e&&<button className="g-day-edit-btn" onClick={onEditMood}>Edit this entry</button>}
+        {onMoveDay&&<button className="g-day-move" onClick={tryMoveDay}>Move to another date…</button>}
         <div className="g-day-del-row">
           {e&&(confirmDel==="mood"?<span className="g-day-confirm">Delete mood entry? <button className="g-day-confirm-yes" onClick={onDelMood}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("mood")}>Delete mood entry</button>)}
           {s&&(confirmDel==="srm"?<span className="g-day-confirm">Delete rhythm log? <button className="g-day-confirm-yes" onClick={onDelSRM}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("srm")}>Delete rhythm log</button>)}
@@ -2635,6 +2662,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-empty{color:var(--g-tx3);font-size:13px;text-align:center;margin-top:40px}
 .g-day-foot{padding-top:20px}
 .g-day-edit-btn{width:100%;padding:15px;border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 14px/1 'Inter',system-ui,sans-serif;letter-spacing:.02em;cursor:pointer}
+.g-day-move{display:block;width:100%;margin-top:10px;padding:13px;border-radius:999px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer;text-align:center}
 .g-day-del-row{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;margin-top:14px}
 .g-day-del{border:none;background:none;color:var(--g-tx3);font:400 12px/1 'Inter',system-ui,sans-serif;cursor:pointer;padding:6px}
 .g-day-confirm{font:400 12px/1.6 'Inter',system-ui,sans-serif;color:var(--g-tx2);display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
