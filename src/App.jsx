@@ -370,7 +370,7 @@ const normTime=(v)=>{
   return s;
 };
 // Display 24h "HH:MM" as 12h "h:MMam/pm"
-const fmt12h=(v)=>{if(!v)return"";const[h,m]=v.split(":").map(Number);const ampm=h<12?"am":"pm";const h12=h%12||12;return`${h12}:${String(m).padStart(2,"0")}${ampm}`;};
+const fmt12h=(v)=>{if(!v)return"";const[h,m]=String(v).split(":").map(Number);if(!Number.isInteger(h)||!Number.isInteger(m)||h<0||h>23||m<0||m>59)return"";const ampm=h<12?"am":"pm";const h12=h%12||12;return`${h12}:${String(m).padStart(2,"0")}${ampm}`;};
 // Convert legacy 12h+am-flag time to 24h. New entries have h>=13 for PM so am is irrelevant.
 const to24h=(v,am)=>{if(!v)return v;const[h,m]=v.split(":").map(Number);if(h>12)return v;// already 24h PM
 if(am===undefined||am===null)return v;// no flag, trust as-is
@@ -866,7 +866,7 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onEditMood,
       </>}
       {srmItems.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Social rhythm</span>
         <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>onEditSRM(it.id)}>
-          <div className="g-day-tl-time">{t}</div><div className="g-day-tl-dot"/><div className="g-day-tl-label">{ac.label}{it.withOthers?<span className="g-day-tl-tag"> · social</span>:""}</div>
+          <div className="g-day-tl-time">{t||"—"}</div><div className="g-day-tl-dot"/><div className="g-day-tl-label">{ac.label}{it.withOthers?<span className="g-day-tl-tag"> · social</span>:""}</div>
         </div>);})}</div></div></>}
       {pm&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Where the day landed</span>
         <div className="g-day-spectrum"><div className="g-day-spectrum-knob" style={{left:`${Math.max(0,Math.min(100,((moodValue(e)+3)/6)*100))}%`}}/></div>
@@ -1084,7 +1084,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const q=notesCopy?.q||(typeof st.q==="object"?st.q.full:st.q);
     const sub=notesCopy?.s||st.s;
     return(<div className="qa" key={si+"-"+isEdit}>
-      <h2 className="qt">{q}</h2><p className="qs">{sub}</p>
+      <h2 className={`qt${st.id==="notes"?" qt-notes":""}`}>{q}</h2><p className="qs">{sub}</p>
 
       {st.id==="mood"&&(<div className="g-mood-picker">
         <div className="g-mood-dots">{MOOD_PICKER_ORDER.map(key=>{
@@ -1181,7 +1181,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
-            <RvRow l="Meds" v={skippedSteps.has("meds")?"None":Object.entries(entry.meds).filter(([,v])=>v.ct>0).map(([k,v])=>`${meds.find(m=>m.key===k)?.name||k} (${meds.find(m=>m.key===k)?.dose||""}) ×${v.ct}`).join(", ")||"None"} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
+            <RvRow l="Meds" v={skippedSteps.has("meds")?"None":(()=>{const taken=Object.entries(entry.meds).filter(([,v])=>v.ct>0);return taken.length?taken.map(([k,v])=>{const med=meds.find(m=>m.key===k);return <span className="rv-med" key={k}><b>{med?.name||k}</b><span>{med?.dose||"—"} · ×{v.ct}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
@@ -1849,6 +1849,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
+  const[showAdvanced,setShowAdvanced]=useState(false);
 
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
@@ -1895,12 +1896,13 @@ function Settings({settings,setS,meds,setMeds,onBack}){
         <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
     </div>
 
-    {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
-    {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
-
-    <DevNotesSection/>
-
-    <p className="ver-label">MooTracker v{VER}</p>
+    <button className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={()=>setShowAdvanced(!showAdvanced)}><span>Advanced</span><span aria-hidden="true">{showAdvanced?"−":"+"}</span></button>
+    {showAdvanced&&<div className="settings-advanced">
+      {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
+      {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
+      <DevNotesSection/>
+      <p className="ver-label">MooTracker v{VER}</p>
+    </div>}
     <div style={{height:40}}/>
   </div>);
 }
@@ -2102,6 +2104,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-review .rr{padding:14px 0;border-bottom:1px solid var(--g-line);gap:12px}
 .g-review .rl{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:5px}
 .g-review .rv{font:400 14px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-review .rv-med{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:2px 0}
+.g-review .rv-med b{font-weight:500}
+.g-review .rv-med span{color:var(--g-tx3);font-size:12px;white-space:nowrap}
 .g-review .rr-edit{color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif;padding:2px 4px}
 .g-review .btn-p{width:100%;margin-top:auto;border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
 .rv-mood{display:inline-flex;align-items:center;color:var(--g-tx)}
@@ -2153,7 +2158,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-mood-mild-high::before{background:radial-gradient(circle,rgba(233,199,126,.9) 0%,rgba(233,199,126,.55) 45%,transparent 74%)}
 .g-mood-mod-high::before{background:radial-gradient(circle,rgba(238,154,82,.93) 0%,rgba(238,154,82,.58) 45%,transparent 74%)}
 .g-mood-sev-high::before{background:radial-gradient(circle,rgba(233,106,51,.95) 0%,rgba(233,106,51,.62) 45%,transparent 74%)}
-.g-mood-ends{display:flex;justify-content:space-between;color:var(--g-tx4);font:400 10px/1 'Inter',system-ui,sans-serif}
+.g-mood-ends{display:flex;justify-content:space-between;color:var(--g-tx3);font:400 10px/1 'Inter',system-ui,sans-serif}
 .g-mood-read{margin-top:26px;text-align:center}
 .g-mood-read-line{display:flex;flex-direction:column;align-items:center;margin-bottom:16px}
 .g-mood-read-line span{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx)}
@@ -2201,7 +2206,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .slp-chips{display:grid;grid-template-columns:24px repeat(4,minmax(0,1fr)) 24px;grid-auto-rows:auto;gap:6px;align-items:stretch}
 .g-entry .slp-chip{min-width:0;padding:7px 0;border:1px solid var(--g-line);border-radius:8px;background:transparent;color:var(--g-tx2);font:400 11px/1 'Inter',system-ui,sans-serif}
 .g-entry .slp-chip-on{border-color:var(--g-tx);background:var(--g-tx);color:var(--g-bg)}
-.g-entry .slp-chip-arr{grid-row:1/3;padding:0;color:var(--g-tx3);font-size:11px}
+.g-entry .slp-chip-arr{grid-row:1/3;padding:0;color:var(--g-tx2);font-size:11px}
 .g-entry .slp-chip-arr:last-child{grid-column:6}
 .g-entry .slp-chip-offsel{display:none}
 .g-entry .slp-div{border-top:1px solid var(--g-line);margin:16px 0}
@@ -2242,7 +2247,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .ai-dot-btn.ai-active .ai-ring{width:14px;height:14px;border-color:var(--g-tx);background:var(--g-tx2);box-shadow:none}
 .g-entry .ai-dot-btn.ai-past .ai-ring{width:14px;height:14px;border-color:transparent;background:var(--g-tx2)}
 .g-entry .ai-labels{padding:0;margin-top:9px}
-.g-entry .ai-lbl{width:auto;font:400 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-entry .ai-lbl{width:auto;font:400 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-entry .ai-lbl-on{color:var(--g-tx2);font-weight:500}
 .sg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:0}
 .sc{padding:20px 8px;border-radius:var(--rs);border:1.5px solid var(--bd);background:transparent;cursor:pointer;text-align:center;transition:all .15s;font-family:'DM Sans',sans-serif}
@@ -2303,7 +2308,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-srm-picker .datebar{margin:0 0 12px;gap:6px}
 .g-srm-picker .datepill,.g-srm-picker .datepick{padding:7px 12px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif}
 .g-srm-picker .datepill.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
-.g-srm-picker .datecap{font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-srm-picker .datecap{font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-srm-picker .srm-pick-sub{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:14px}
 .g-srm-picker .srm-pick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .g-srm-picker .srm-pick-item{position:relative;display:flex;min-height:78px;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:7px;padding:13px;border:1px solid var(--g-line);border-radius:14px;background:var(--g-card);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx);box-shadow:none}
@@ -2353,9 +2358,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-srm-single .srm-tr .srm-lb{grid-column:1/-1;margin-bottom:0}
 .g-srm-single .srm-ti{width:100%;min-width:0;padding:12px 14px;border:1px solid var(--g-line);border-radius:12px;background:#fff;color:var(--g-tx);font:500 18px/1 'Inter',system-ui,sans-serif}
 .g-srm-single .srm-ti:focus{border-color:var(--g-tx);box-shadow:none}
-.g-srm-single .srm-now{padding:12px 16px;border:1px solid var(--g-tx4);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-now{padding:12px 16px;border:1px solid var(--g-tx3);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
 .g-srm-single .srm-now:active{background:var(--g-surface)}
-.g-srm-single .srm-skip{align-self:flex-start;margin:0 0 22px;padding:11px 16px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx3);font:500 13px/1 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-skip{align-self:flex-start;margin:0 0 22px;padding:11px 16px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
 .g-srm-single .srm-skip-on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
 .g-srm-single .srm-sec{margin-bottom:22px}
 .g-srm-single .srm-yn{gap:8px;margin-top:0}
@@ -2395,7 +2400,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .hh{padding:0 0 14px;align-items:flex-start}
 .g-settings .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
 .g-settings .bi{width:40px;height:40px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
-.g-settings .card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:16px;margin-bottom:12px}
+.g-settings .card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:14px;margin-bottom:12px}
 .g-settings .ctit{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:12px}
 .g-settings .set-h,.g-settings .hint{font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-settings .set-saved{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:8px}
@@ -2436,6 +2441,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .past-text{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:2px}
 .g-settings .btn-del{color:var(--g-tx4)}
 .g-settings .ver-label{font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
+.g-settings .settings-advanced-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:2px;padding:12px 2px;border:0;border-top:1px solid var(--g-line);border-bottom:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-settings .settings-advanced{padding-top:12px}
 
 /* ── R9 home calendar ── */
 .g-home{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
@@ -2661,15 +2668,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .slp-head{gap:6px;margin-bottom:14px}
 .g-insights .slp-head .v{font:400 24px/1 'Inter',system-ui,sans-serif;letter-spacing:-.5px;color:var(--g-tx)}
 .g-insights .slp-head .u,.g-insights .slp-head .meta{font:300 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-insights .sleep-grid{height:150px;padding-left:48px;margin-bottom:0}
-.g-insights .chart-body{left:48px;right:0}
-.g-insights .y-label{left:0;color:var(--g-tx4);font:400 8px/1 'Inter',system-ui,sans-serif}
-.g-insights .ref-label{left:-40px;right:auto;width:38px;padding-left:0;color:var(--g-tx3);font:400 8px/1.1 'Inter',system-ui,sans-serif}
-.g-insights .ref-label b{font:600 8px/1.1 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-insights .sleep-grid{height:150px;padding-left:58px;margin-bottom:0}
+.g-insights .chart-body{left:58px;right:0}
+.g-insights .y-label{left:0;color:var(--g-tx3);font:400 10px/1 'Inter',system-ui,sans-serif}
+.g-insights .ref-label{left:0;right:auto;width:54px;padding-left:0;color:var(--g-tx3);font:400 10px/1.1 'Inter',system-ui,sans-serif}
+.g-insights .ref-label b{font:600 10px/1.1 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-insights .ref-line{border-top-color:#BFB9AC}
 .g-insights .bar{max-width:none;left:1px;right:1px;width:auto;transform:none;border-radius:4px}
-.g-insights .xax{padding-left:48px;padding-right:0;color:var(--g-tx4);font:400 8px/1 'Inter',system-ui,sans-serif}
-.g-insights .dist{padding-left:48px;margin-top:14px}
+.g-insights .xax{padding-left:58px;padding-right:0;color:var(--g-tx3);font:400 9px/1 'Inter',system-ui,sans-serif}
+.g-insights .dist{padding-left:58px;margin-top:14px}
 .g-insights .dist-pcts,.g-insights .dist-labels{color:var(--g-tx3);font:400 9px/1 'Inter',system-ui,sans-serif}
 .g-insights .dist-strip{height:6px;gap:0}
 .g-insights .whead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
@@ -2685,6 +2692,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .n-mood{color:var(--g-tx3);font:400 11px/1.2 'Inter',system-ui,sans-serif;text-transform:none}
 .g-insights .nt{font:300 13px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-welcome-title,.g-insights .ht,.g-settings .ht,.g-entry .qt,.g-srm-picker .ht,.g-srm-single .qt{font-weight:500;font-size:42px;line-height:1.08;letter-spacing:-1.2px;color:var(--g-tx)}
+@media(max-width:380px){
+  .g-entry .qt,.g-srm-picker .ht{font-size:38px}
+  .g-entry .qt-notes{font-size:36px}
+  .g-srm-picker{padding-top:calc(32px + env(safe-area-inset-top))}
+}
 
 .dv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .dv-acts{display:flex;gap:8px}
