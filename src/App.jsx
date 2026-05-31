@@ -2393,7 +2393,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings > *{position:relative;z-index:1}
 .g-settings .hh{padding:0 0 14px;align-items:flex-start}
 .g-settings .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
-.g-settings .bi{width:34px;height:34px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
+.g-settings .bi{width:40px;height:40px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
 .g-settings .card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:16px;margin-bottom:12px}
 .g-settings .ctit{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:12px}
 .g-settings .set-h,.g-settings .hint{font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
@@ -2514,11 +2514,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-toast-undo{border:none;background:none;color:var(--g-bg);font:600 13px/1 'Inter',system-ui,sans-serif;cursor:pointer;text-decoration:underline}
 
 /* ── R9b day detail ── */
-.g-day{padding:0;background:var(--g-bg);min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-day{padding:0;background:var(--g-bg);min-height:100dvh;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx);animation:gModalIn .34s cubic-bezier(.2,.85,.25,1) both}
 .scr.g-day{padding:0}
 .g-day-hero{position:relative;height:300px;flex-shrink:0;overflow:hidden}
 .g-day-hero::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.18;mix-blend-mode:soft-light;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='hn'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23hn)'/%3E%3C/svg%3E")}
-.g-day-close{position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;z-index:3;width:34px;height:34px;border-radius:50%;border:none;background:rgba(255,255,255,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#1C1C1A;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.g-day-close{position:absolute;top:calc(18px + env(safe-area-inset-top));right:18px;z-index:3;width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.42);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#1C1C1A;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .g-day-hero-cap{position:absolute;left:24px;right:24px;bottom:24px;z-index:2}
 .g-day-kick{font:600 11px/1 'Inter',system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;color:rgba(28,28,26,.6);margin-bottom:6px}
 .g-day-word{font:500 36px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.3px;color:#1C1C1A}
@@ -2630,7 +2630,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
 .g-insights .ha{gap:8px}
 .g-insights .bx{padding:8px 13px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif}
-.g-insights .bi{width:34px;height:34px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
+.g-insights .bi{width:40px;height:40px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
 .g-insights .sr{gap:10px;margin-bottom:14px;padding:0}
 .g-insights .sb{background:var(--g-card);border:1px solid var(--g-line);border-radius:14px;box-shadow:none;padding:13px 10px}
 .g-insights .sv{font:400 25px/1 'Inter',system-ui,sans-serif;letter-spacing:-.5px;color:var(--g-tx)}
@@ -2803,7 +2803,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 @media(prefers-reduced-motion:reduce){
   .g-welcome-cat,.g-welcome-sky,.g-wb,.cfdraw,.g-confirm .cfc,
-  .g-bubble,.g-insights,.g-settings,.page{animation:none!important}
+  .g-bubble,.g-insights,.g-settings,.g-day,.page{animation:none!important}
   .g-welcome-bubbles{display:none}
 }
 
