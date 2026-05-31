@@ -759,7 +759,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   let weekCount=0;const sd=new Date();
   for(let i=0;i<7;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))weekCount++;sd.setDate(sd.getDate()-1);}
   const todayLogged=logActivity.has(tdk());
-  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,2);
+  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,10);
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
   return(<div className="scr g-home g-ambient-sky g-grain">
@@ -2437,15 +2437,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .ver-label{font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
 
 /* ── R9 home calendar ── */
+.g-home{height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .g-home::after{z-index:0}
 .g-home > *{position:relative;z-index:1}
-.g-home .cal-top{padding:32px 0 0}
+.g-home .cal-top{padding:32px 0 0;flex-shrink:0}
 .g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-home .cht{font:500 38px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
-.g-home-week{font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 0}
+.g-home-week{flex-shrink:0;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 0}
 .g-home-week b{color:var(--g-tx2);font-weight:600}
-.g-home .cg{gap:3px;margin:16px 0 0}
+.g-home .cg{flex-shrink:0;gap:3px;margin:16px 0 0}
 .g-home .clb{font:500 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);text-align:center;padding:0 0 6px;text-transform:none;letter-spacing:0}
 .g-home .cc{aspect-ratio:1/0.84;border-radius:0;background:transparent;cursor:pointer}
 .g-home .cn{position:relative;z-index:2;font:400 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-variant-numeric:tabular-nums}
@@ -2462,7 +2463,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-cal-glow.g-mood-mild-high::before{background:radial-gradient(circle,rgba(233,199,126,1) 0%,rgba(233,199,126,.62) 52%,transparent 80%)}
 .g-cal-glow.g-mood-mod-high::before{background:radial-gradient(circle,rgba(238,154,82,1) 0%,rgba(238,154,82,.66) 52%,transparent 80%)}
 .g-cal-glow.g-mood-sev-high::before{background:radial-gradient(circle,rgba(233,106,51,1) 0%,rgba(233,106,51,.7) 52%,transparent 80%)}
-.g-home-recent{margin:22px 0 0}
+.g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:22px 0 0;padding-bottom:166px}
+.g-home-recent::-webkit-scrollbar{display:none}
 .g-home-recent-eyebrow{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:11px}
 .g-home-r-item{display:flex;gap:12px;align-items:flex-start;margin-bottom:13px;cursor:pointer}
 .g-home-r-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:4px;filter:blur(.4px)}
@@ -2481,7 +2483,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home-nav{display:flex;justify-content:center;gap:32px;padding:6px 0 0}
 .g-home-nav button{border:none;background:none;font:500 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);cursor:pointer}
 .g-home-nav button.active{color:var(--g-tx);font-weight:600}
-.g-home .cal-pad{height:150px}
+.g-home .cal-pad{display:none}
 /* ── R10 quick-add bubble ── */
 .g-home .cc-future{cursor:default}
 .g-home .cc-future .cn{opacity:.5}
