@@ -658,10 +658,10 @@ export default function App(){
 
   return(<>
     <style>{CSS}</style>
-    <div className="app"><div className="page" key={screen}>
+    <div className="app"><div className="page" key={["calendar","history","settings"].includes(screen)?"home":screen}>
       {screen==="welcome"&&<Welcome name={name} onGo={()=>{if(settings.passcode){setScreen("lock");}else if(!consumePendingNav()){setScreen("calendar");}}}/>}
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>{if(!consumePendingNav()) setScreen("calendar");}}/>}
-      {screen==="calendar"&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);pushDeleteMood(k);}}}/>}
+      {["calendar","history","settings"].includes(screen)&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);pushDeleteMood(k);}}}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
         onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
         onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
@@ -1380,6 +1380,51 @@ function Confirm({msg,sub,onDone}){
 /* ═══════════════════════════════════════════════════════════════════════════
    HISTORY — export includes SRM, notes newest first
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ── BOTTOM SHEET — wraps Insights & Settings. Drag-to-dismiss is armed ONLY
+   from the head (grabber + title row); the body scrolls normally. Slide-up on
+   mount, swipe-down / scrim-tap / × to close. prefers-reduced-motion → no slide.
+   Close: dy>120px OR downward flick >0.5px/ms; upward over-drag rubber-bands. ── */
+function BottomSheet({onClose,sheetClass,title,actions,children}){
+  const scrimRef=useRef(null),sheetRef=useRef(null),headRef=useRef(null);
+  const[open,setOpen]=useState(false);
+  const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  useEffect(()=>{const r=requestAnimationFrame(()=>setOpen(true));return()=>cancelAnimationFrame(r);},[]);
+
+  const doClose=useCallback(()=>{
+    const s=sheetRef.current;if(s)s.style.transform="";
+    setOpen(false);
+    setTimeout(onClose,reduce?0:340);
+  },[onClose,reduce]);
+
+  useEffect(()=>{
+    const head=headRef.current,sheet=sheetRef.current,scrim=scrimRef.current;
+    if(!head||!sheet)return;
+    let sy=null,ly=null,lt=null,dy=0;
+    const start=(e)=>{const t=e.touches?e.touches[0]:e;sy=ly=t.clientY;lt=performance.now();dy=0;sheet.classList.add("g-sheet-drag");};
+    const move=(e)=>{if(sy===null)return;const t=e.touches?e.touches[0]:e;dy=t.clientY-sy;const a=dy<0?dy*0.35:dy;sheet.style.transform=`translateY(${a}px)`;if(scrim)scrim.style.opacity=String(Math.max(0,1-a/sheet.offsetHeight));ly=t.clientY;lt=performance.now();if(e.cancelable)e.preventDefault();};
+    const end=()=>{if(sy===null)return;const v=(ly-sy)/(performance.now()-lt+1);sheet.classList.remove("g-sheet-drag");if(scrim)scrim.style.opacity="";if(dy>120||v>0.5)doClose();else sheet.style.transform="";sy=ly=lt=null;dy=0;};
+    const md=(e)=>{start(e);const mv=(ev)=>move(ev),mu=()=>{end();window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",mu);};window.addEventListener("mousemove",mv);window.addEventListener("mouseup",mu);};
+    head.addEventListener("touchstart",start,{passive:true});
+    head.addEventListener("touchmove",move,{passive:false});
+    head.addEventListener("touchend",end);
+    head.addEventListener("mousedown",md);
+    return()=>{head.removeEventListener("touchstart",start);head.removeEventListener("touchmove",move);head.removeEventListener("touchend",end);head.removeEventListener("mousedown",md);};
+  },[doClose]);
+
+  return(
+    <div ref={scrimRef} className={`g-sheet-scrim${open?" open":""}`} onClick={doClose}>
+      <div ref={sheetRef} className={`g-sheet g-ambient-sky g-grain ${sheetClass||""}${open?" open":""}`} onClick={e=>e.stopPropagation()}>
+        <div ref={headRef} className="g-sheet-head">
+          <span className="g-sheet-bar"/>
+          <div className="g-sheet-head-row"><h2 className="ht">{title}</h2><div className="ha">{actions}<button className="bi" onClick={doClose} aria-label="Close">×</button></div></div>
+        </div>
+        <div className="g-sheet-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function Hist({mood,srm,meds,onBack}){
   const [range,setRange]=useState("1m");
   const [overlays,setOverlays]=useState({sleep:false,weight:false,social:false});
@@ -1500,8 +1545,7 @@ function Hist({mood,srm,meds,onBack}){
     const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`mood-rhythm-${tdk()}.csv`;a.click();
   };
 
-  return(<div className="scr g-insights g-ambient-sky g-grain">
-    <div className="hh"><h2 className="ht">Insights</h2><div className="ha"><button className="bx" onClick={exCSV}>↓ Export</button><button className="bi" onClick={onBack}>×</button></div></div>
+  return(<BottomSheet onClose={onBack} sheetClass="g-insights" title="Insights" actions={<button className="bx" onClick={exCSV}>↓ Export</button>}>
     {!hasMoodData&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
     {hasMoodData&&<div className="sr">
       <div className="sb"><div className="sv">{sorted.length}</div><div className="sbl">Days</div></div>
@@ -1579,8 +1623,7 @@ function Hist({mood,srm,meds,onBack}){
     </div>}
 
     {notes.length>0&&<div className="notes-card"><h3 className="notes-h">Notes</h3><p className="notes-sub">in Wei's own words · {notes.length} {notes.length===1?"note":"notes"} in range</p><div className="nl">{notes.map(n=>{const mk=primaryMood(n);const meta=MM[mk];const showMood=mk&&mk!=="normal";return(<div key={n.key} className="nr"><div className="n-meta"><span className="n-dot" style={{background:meta?.color||"var(--g-tx3)"}}/><span className="n-date">{n.label}</span>{showMood&&<span className="n-mood">· {meta?.label.toLowerCase()}</span>}</div><div className="nt">{n.notes}</div></div>);})}</div></div>}
-    <div style={{height:40}}/>
-  </div>);
+  </BottomSheet>);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1859,8 +1902,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const saveEditMed=()=>{if(!emName.trim())return;const nm=[...meds];nm[editMedIdx]={...nm[editMedIdx],name:emName.trim(),dose:emDose.trim(),defaultCt:Number(emDefaultCt)||0};setMeds(nm);setEditMedIdx(null);};
   const addMed=()=>{if(!newMedName.trim())return;const key=newMedName.toLowerCase().replace(/\s+/g,"_")+"_"+Date.now();setMeds([...meds,{key,name:newMedName.trim(),dose:newMedDose.trim()||"—",defaultCt:Number(newMedCt)||0}]);setNewMedName("");setNewMedDose("");setNewMedCt(1);setShowAddMed(false);};
 
-  return(<div className="scr g-settings g-ambient-sky g-grain">
-    <div className="hh"><h2 className="ht">Settings</h2><button className="bi" onClick={onBack}>×</button></div>
+  return(<BottomSheet onClose={onBack} sheetClass="g-settings" title="Settings">
 
     <ActorCard/>
 
@@ -1903,8 +1945,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
       <DevNotesSection/>
       <p className="ver-label">MooTracker v{VER}</p>
     </div>}
-    <div style={{height:40}}/>
-  </div>);
+  </BottomSheet>);
 }
 
 /* ── REMINDER ENGINE ── */
@@ -2395,8 +2436,22 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-confirm .cfp{font:300 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:8px}
 
 /* ── R8 settings ── */
-.g-insights,.g-settings{animation:gModalIn .34s cubic-bezier(.2,.85,.25,1) both}
+/* Insights/Settings now open as bottom sheets (slide-up) — gModalIn stays for .g-day only */
 @keyframes gModalIn{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:none}}
+/* ── Bottom sheet (Insights & Settings) ── */
+.g-sheet-scrim{position:fixed;inset:0;z-index:80;background:rgba(28,28,26,.32);opacity:0;transition:opacity .34s ease}
+.g-sheet-scrim.open{opacity:1}
+.g-sheet{position:fixed;left:0;right:0;bottom:0;z-index:81;max-width:420px;margin:0 auto;height:92dvh;display:flex;flex-direction:column;padding:0;border-radius:22px 22px 0 0;box-shadow:0 -8px 44px rgba(28,28,26,.20);transform:translateY(100%);transition:transform .34s cubic-bezier(.2,.85,.25,1);overflow:hidden;will-change:transform}
+.g-sheet.open{transform:translateY(0)}
+.g-sheet.g-sheet-drag{transition:none}
+.g-sheet.g-insights,.g-sheet.g-settings{padding:0;min-height:0}
+.g-sheet-head{flex-shrink:0;padding:8px 20px 12px;cursor:grab;touch-action:none;user-select:none}
+.g-sheet-head:active{cursor:grabbing}
+.g-sheet-bar{display:block;width:38px;height:5px;border-radius:3px;background:var(--g-tx4);margin:0 auto 12px}
+.g-sheet-head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.g-sheet-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;padding:0 20px calc(28px + env(safe-area-inset-bottom))}
+.g-sheet-body::-webkit-scrollbar{display:none}
+@media(prefers-reduced-motion:reduce){.g-sheet{transition:none;transform:none}.g-sheet-scrim{transition:none}}
 .g-settings::after{z-index:0}
 .g-settings > *{position:relative;z-index:1}
 .g-settings .hh{padding:0 0 14px;align-items:flex-start}
