@@ -892,7 +892,7 @@ const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mi
 const MSTEPS_FULL=[
   {id:"mood",      q:{full:"How was your mood?",         now:"How are you feeling right now?"},  s:"Choose up to 2 (if it felt mixed)"},
   {id:"sleep",     q:{full:"Sleep",  now:null},                               s:"Log bedtime, wake time, or just hours"},
-  {id:"anx_irr",   q:{full:"Anxiety & Irritability",    now:"Anxiety & Irritability right now?"},s:"0 none · 1 mild · 2 moderate · 3 severe"},
+  {id:"anx_irr",   q:{full:"Anxiety & Irritability",    now:"Anxiety & irritability"},            s:"0 none · 1 mild · 2 moderate · 3 severe"},
   {id:"meds",      q:{full:"Medications last night",     now:null},                               s:"Pills taken yesterday evening / this morning"},
   {id:"weight",    q:{full:"Weight",                     now:"Weight check-in"},                  s:"Optional — syncs to your mood log"},
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
@@ -2080,7 +2080,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .datepill.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
 .g-entry .datecap{font:300 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-entry .qa{position:relative;z-index:1;display:flex;min-height:calc(100dvh - 126px);flex-direction:column;animation:si .3s var(--ease)}
-.g-entry .qt{font:500 21px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;margin-bottom:6px;color:var(--g-tx)}
+.g-entry .qt{font:500 21px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;margin-bottom:10px;color:var(--g-tx)}
 .g-entry .qs{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:22px}
 .g-entry .step-btns{margin-top:auto;padding-top:18px}
 .g-entry .btn-p{border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
@@ -2346,7 +2346,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-srm-single .es{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);letter-spacing:0;text-transform:none}
 .g-srm-single .qa{display:flex;flex:1;min-height:auto;flex-direction:column;padding:0;animation:si .3s var(--ease)}
 .g-srm-single .srm-em{font-size:32px;line-height:1;color:var(--g-tx2);margin-bottom:8px}
-.g-srm-single .qt{font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx);margin-bottom:18px}
+.g-srm-single .qt{font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx);margin-bottom:14px}
 .g-srm-single .srm-tr{display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:14px}
 .g-srm-single .srm-lb{display:block;min-width:0;margin-bottom:8px;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--g-tx3)}
 .g-srm-single .srm-tr .srm-lb{grid-column:1/-1;margin-bottom:0}
@@ -2391,7 +2391,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 @keyframes gModalIn{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:none}}
 .g-settings::after{z-index:0}
 .g-settings > *{position:relative;z-index:1}
-.g-settings .hh{padding:0 0 14px}
+.g-settings .hh{padding:0 0 14px;align-items:flex-start}
 .g-settings .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
 .g-settings .bi{width:34px;height:34px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
 .g-settings .card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:16px;margin-bottom:12px}
@@ -2626,7 +2626,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights{padding:30px 24px 26px;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-insights::after{z-index:0}
 .g-insights > *{position:relative;z-index:1}
-.g-insights .hh{padding:0 0 14px}
+.g-insights .hh{padding:0 0 14px;align-items:flex-start}
 .g-insights .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
 .g-insights .ha{gap:8px}
 .g-insights .bx{padding:8px 13px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif}
@@ -2675,6 +2675,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .n-date{font-family:'Inter',system-ui,sans-serif}
 .g-insights .n-mood{color:var(--g-tx3);font:400 11px/1.2 'Inter',system-ui,sans-serif;text-transform:none}
 .g-insights .nt{font:300 13px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-welcome-title,.g-insights .ht,.g-settings .ht,.g-entry .qt,.g-srm-picker .ht,.g-srm-single .qt{font-weight:500;font-size:42px;line-height:1.08;letter-spacing:-1.2px;color:var(--g-tx)}
 
 .dv-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .dv-acts{display:flex;gap:8px}
