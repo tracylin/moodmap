@@ -2787,7 +2787,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .cnav{pointer-events:auto}
 .g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:0 0 9px}
 .g-home .cht{font:500 41px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.5px;color:var(--g-tx)}
-.g-home-yearbtn{font:inherit;letter-spacing:inherit;color:inherit;background:none;border:none;padding:0;cursor:pointer;border-bottom:1.5px solid var(--g-line)}
+.g-home-yearbtn{font:inherit;letter-spacing:inherit;line-height:inherit;vertical-align:baseline;color:inherit;background:none;border:none;padding:0;margin:0;cursor:pointer;pointer-events:auto}
 /* KK: year view — zoom-out of the month calendar, same dot vocabulary */
 .g-year{height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}
 .g-year-back{display:inline-flex;align-items:center;gap:5px;border:none;background:none;color:var(--g-tx3);font:400 14px/1 'Inter',system-ui,sans-serif;cursor:pointer;margin-bottom:14px;padding:8px 0;min-height:40px}
