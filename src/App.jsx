@@ -913,6 +913,8 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const swipeStart=useRef(null);
   const[navDir,setNavDir]=useState("");
   const[recentLimit,setRecentLimit]=useState(5);
+  const[recentLoading,setRecentLoading]=useState(false);
+  const recentLoadingRef=useRef(false);
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
@@ -938,7 +940,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   // Recent = days Wei actually wrote a note (words-only, gentle-by-default — no mood-only rows, no nudge).
   const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&typeof en.notes==="string"&&en.notes.trim()).sort(([a],[b])=>b.localeCompare(a));
   const recentShown=recentEntries.slice(0,recentLimit);
-  const onRecentScroll=e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-56)setRecentLimit(n=>n<recentEntries.length?n+5:n);};
+  const onRecentScroll=e=>{const el=e.currentTarget;if(recentLoadingRef.current||recentLimit>=recentEntries.length)return;if(el.scrollTop+el.clientHeight>=el.scrollHeight-56){recentLoadingRef.current=true;setRecentLoading(true);const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;setTimeout(()=>{setRecentLimit(n=>Math.min(n+5,recentEntries.length));setRecentLoading(false);recentLoadingRef.current=false;},reduce?120:520);}};
   const gr=()=>{const h=Number(weiHM().slice(0,2));return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
   return(<div className="scr g-home g-ambient-sky g-grain">
@@ -953,7 +955,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
         <span className="g-home-r-dot" style={{background:pmk?`var(--${G_MOOD_CLASS[pmk]})`:"var(--g-tx4)"}}/>
         <div className="g-home-r-body"><div className="g-home-r-day">{rel} <em>· {MO[rm-1].slice(0,3)} {rd}</em></div>{en.notes&&<div className="g-home-r-note">{en.notes}</div>}</div>
       </div>);})}
-      {recentLimit<recentEntries.length&&<div className="g-home-r-more">Scroll for more</div>}
+      {recentLimit<recentEntries.length&&<div className="g-home-r-more">{recentLoading?<span className="g-home-r-load" aria-label="Loading more"><i/><i/><i/></span>:"Scroll for more"}</div>}
     </div>}
 
     {bubble&&<div className="g-bubble-scrim" onClick={()=>setBubble(null)}/>}
@@ -2770,7 +2772,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home-r-day{font:500 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home-r-day em{font-style:normal;color:var(--g-tx3);font-weight:400}
 .g-home-r-note{margin-top:2px;color:var(--g-tx);font:400 13px/1.5 'Inter',system-ui,sans-serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.g-home-r-more{text-align:center;padding:4px 0 8px;font:400 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-home-r-more{text-align:center;padding:6px 0 10px;min-height:22px;font:400 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-home-r-load{display:inline-flex;gap:5px;align-items:center;justify-content:center}
+.g-home-r-load i{width:5px;height:5px;border-radius:50%;background:var(--g-tx4);animation:rLoad 1.1s ease-in-out infinite}
+.g-home-r-load i:nth-child(2){animation-delay:.16s}
+.g-home-r-load i:nth-child(3){animation-delay:.32s}
+@keyframes rLoad{0%,100%{opacity:.28;transform:translateY(0)}50%{opacity:.85;transform:translateY(-2px)}}
+@media(prefers-reduced-motion:reduce){.g-home-r-load i{animation:none;opacity:.6}}
 .g-home .day-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none}
 .g-home .day-card-date{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home .day-card-arrow{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
