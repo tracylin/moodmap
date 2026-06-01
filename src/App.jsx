@@ -792,7 +792,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const logActivity=loadLogActivity();
   let weekCount=0;const sd=new Date();
   for(let i=0;i<7;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))weekCount++;sd.setDate(sd.getDate()-1);}
-  const todayLogged=logActivity.has(tdk());
+  const todayLogged=!!(mood[tdk()]||srm[tdk()]?.items?.length);
   const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,10);
   const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
