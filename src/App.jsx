@@ -451,6 +451,8 @@ const moodLabel=(e)=>moodsArr(e).map(k=>MM[k]?.label||k).join(" / ");
 const moodKeyString=(e)=>moodsArr(e).join("|");
 const DEF_MEDS=[{key:"lamotrigine",name:"Lamotrigine",dose:"200mg",defaultCt:1},{key:"quetiapine",name:"Quetiapine",dose:"100mg",defaultCt:1},{key:"lithium",name:"Lithium Carbonate",dose:"300mg",defaultCt:4},{key:"levothyroxine",name:"Levothyroxine",dose:"50mcg",defaultCt:1},{key:"naltrexone",name:"Naltrexone",dose:"50mg",defaultCt:0}];
 const SRM_ACT=[{id:"bed",label:"Got out of bed",icon:"○"},{id:"beverage",label:"Morning beverage",icon:"◎"},{id:"breakfast",label:"Breakfast",icon:"◉"},{id:"outside",label:"Went outside",icon:"◇"},{id:"exercise",label:"Work out",icon:"△"},{id:"work",label:"Started work / study",icon:"□"},{id:"lunch",label:"Lunch",icon:"◈"},{id:"dinner",label:"Dinner",icon:"◆"},{id:"home",label:"Returned home",icon:"⌂"},{id:"bedtime",label:"Went to bed",icon:"◑"}];
+// Short bubble phrase per SRM moment (no entry → falls back to the SRM_ACT label).
+const SRM_PHRASE={bed:"Get up",bedtime:"Bed",breakfast:"Breakfast",lunch:"Lunch",dinner:"Dinner",outside:"Went outside",exercise:"Worked out",work:"Started work",home:"Home"};
 const WHO_OPTS=[{key:"spouse",label:"Spouse / Partner"},{key:"friend",label:"Friend"},{key:"family",label:"Family"},{key:"other",label:"Other"}];
 const ENG_OPTS=[{v:1,label:"Just present"},{v:2,label:"Actively involved"},{v:3,label:"Very stimulating"}];
 const SEV=[{v:0,l:"None"},{v:1,l:"Mild"},{v:2,l:"Moderate"},{v:3,l:"Severe"}];
@@ -968,14 +970,16 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       const medCt=en?.meds?Object.values(en.meds).filter(v=>v.ct>0).length:0;
       const hasExtras=!!(en&&(en.sleep!=null||medCt||en.notes||s2));
       const srmMoments=(s2?.items||[]).filter(it=>!it.didNot);
-      const firstSrm=[...srmMoments].sort((a,b)=>String(a.time||"99:99").localeCompare(String(b.time||"99:99")))[0];
-      const firstSrmTime=firstSrm?.time?fmt12h(to24h(normTime(firstSrm.time),firstSrm.am)):"time not set";
+      const srmSorted=[...srmMoments].sort((a,b)=>String(a.time?to24h(normTime(a.time),a.am):"99:99").localeCompare(String(b.time?to24h(normTime(b.time),b.am):"99:99")));
+      const fmtMoment=(it)=>{const ph=SRM_PHRASE[it.id]||SRM_ACT.find(a=>a.id===it.id)?.label||it.id;const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return t?`${ph} ${t}`:ph;};
       return(<div className="g-bubble" style={{top,left,width:bw}}>
         <div className="g-bubble-caret" style={{left:caretLeft}}/>
         {!pmk&&srmMoments.length?(<>
           <button className="g-bubble-open" onClick={()=>{setBubble(null);setSelDay(k);onViewDay();}}>
             <span className="g-bubble-date">{dlabel}</span>
-            <span className="g-bubble-rhythm">SRM logged · {srmMoments.length} {srmMoments.length===1?"moment":"moments"} · first {firstSrmTime}</span>
+            {srmMoments.length>=3
+              ? <span className="g-bubble-rhythm">{srmMoments.length} rhythm moments</span>
+              : <span className="g-bubble-rhythm">{fmtMoment(srmSorted[0])}{srmSorted[1]&&<span className="g-bubble-rsub">{fmtMoment(srmSorted[1])}</span>}</span>}
           </button>
           <div className="g-bubble-prompt g-bubble-prompt-small">Add a mood</div>
           <div className="g-bubble-pick">{MOOD_PICKER_ORDER.map(mk=><button key={mk} className={`g-bubble-dot ${G_MOOD_CLASS[mk]}`} onClick={()=>doQuickSave(k,mk)} aria-label={MM[mk].label}/>)}</div>
@@ -2787,6 +2791,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-bubble-prompt{font:500 16px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx);margin-top:4px}
 .g-bubble-prompt-small{font-size:12px;color:var(--g-tx3);margin-top:12px}
 .g-bubble-rhythm{display:block;margin-top:9px;font:500 14px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-bubble-rsub{display:block;margin-top:3px;font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-bubble-pick{display:flex;justify-content:space-between;align-items:center;margin:11px 0 5px}
 .g-bubble-dot{width:24px;height:24px;border-radius:50%;border:none;background:transparent;position:relative;cursor:pointer;flex-shrink:0}
 .g-bubble-dot::before{content:"";position:absolute;inset:0;border-radius:50%}
