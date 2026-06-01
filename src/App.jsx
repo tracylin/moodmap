@@ -1008,11 +1008,11 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
         {months.map(mm=>{
           const dim=new Date(yearVm,mm+1,0).getDate();
           const offset=(new Date(yearVm,mm,1).getDay()+6)%7;
-          const ucells=[];
+          const ucells=[];let hasAny=false;
           for(let i=0;i<offset;i++)ucells.push(<div key={`b${i}`} className="g-year-cell"/>);
           for(let d=1;d<=dim;d++){
             const k=dk(yearVm,mm,d);const en=mood[k];const ms=moodsArr(en);
-            const tappable=ms.length>0&&k<=tdk();
+            const tappable=ms.length>0&&k<=tdk();if(tappable)hasAny=true;
             const isTd=yearVm===curY&&mm===curM&&d===curD;
             const fill=ms.length>=2?`linear-gradient(135deg, var(--${G_MOOD_CLASS[ms[0]]}) 0 50%, var(--${G_MOOD_CLASS[ms[1]]}) 50% 100%)`:ms.length?`var(--${G_MOOD_CLASS[ms[0]]})`:null;
             ucells.push(<div key={d} className={`g-year-cell${tappable?" has":""}${isTd?" today":""}`}
@@ -1020,13 +1020,13 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
               {tappable&&<div className="g-year-dot" style={{background:fill}}/>}
             </div>);
           }
-          return(<div key={mm} className={`g-year-mini${yearVm===curY&&mm===curM?" now":""}`}>
+          const isNow=yearVm===curY&&mm===curM;
+          return(<div key={mm} className={`g-year-mini${isNow?" now":""}${!hasAny&&!isNow?" g-year-empty":""}`}>
             <div className="g-year-mname">{MO[mm].slice(0,3)}</div>
             <div className="g-year-grid">{ucells}</div>
           </div>);
         })}
       </div>
-      <p className="g-year-tail">A few warm marks on paper — not a checklist. Quiet months simply hold fewer dots; nothing is ever flagged as missing.</p>
       {renderBubbleLayer()}
     </div>);
   }
@@ -2800,13 +2800,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-year-wrap{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px 14px}
 .g-year-mname{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-bottom:7px}
 .g-year-mini.now .g-year-mname{color:var(--g-mood-mod-high)}
+.g-year-mini.g-year-empty .g-year-mname{color:var(--g-tx4)}
 .g-year-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .g-year-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;position:relative}
 .g-year-cell.has{cursor:pointer}
 .g-year-dot{width:7px;height:7px;border-radius:50%;transition:transform .12s}
 .g-year-cell.has:active .g-year-dot{transform:scale(1.5)}
 .g-year-cell.today::after{content:"";position:absolute;width:13px;height:13px;border-radius:50%;border:1.4px solid var(--g-mood-mod-high);opacity:.55}
-.g-year-tail{margin:24px 0 0;font:300 12px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-style:italic}
 .g-home .cht.cht-next{animation:cgInNext .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cht.cht-prev{animation:cgInPrev .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cal-tr{flex-direction:column;align-items:flex-end;gap:8px}
