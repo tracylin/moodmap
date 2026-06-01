@@ -206,6 +206,23 @@ function getDeviceActor(){
 function setDeviceActor(v){
   try{localStorage.setItem(ACTOR_KEY,String(v||"Wei"));}catch{/* localStorage unavailable; actor remains per-session default */}
 }
+const WEI_TZ_KEY="mt_weitz";
+const weiTzValidity=new Map();
+function isValidWeiTz(v){
+  if(!v)return false;
+  if(weiTzValidity.has(v))return weiTzValidity.get(v);
+  try{new Intl.DateTimeFormat(undefined,{timeZone:v});weiTzValidity.set(v,true);return true;}
+  catch{weiTzValidity.set(v,false);return false;}
+}
+function getDeviceWeiTz(){
+  try{const v=localStorage.getItem(WEI_TZ_KEY)?.trim()||"";return isValidWeiTz(v)?v:"";}
+  catch{return "";}
+}
+function setDeviceWeiTz(v){
+  try{const tz=String(v||"").trim();if(isValidWeiTz(tz))localStorage.setItem(WEI_TZ_KEY,tz);else localStorage.removeItem(WEI_TZ_KEY);}
+  catch{/* localStorage unavailable or invalid timezone; use device-local fallback */}
+}
+void setDeviceWeiTz; // Consumed by the Settings control in Phase C.
 
 function pushMood(date, entry, medsArr){
   enqueueSync({type:"mood",date,entry,meds_ref:medsArr,actor:getDeviceActor()});
@@ -355,8 +372,26 @@ const fDay=(y,m)=>new Date(y,m,1).getDay();
 // previous calendar date. tdk() is the canonical "what is today, for Wei"
 // reference used across the app (default selDay, streak, log activity).
 const WEI_DAY_OFFSET_HOURS=6;
-const tdk=()=>{const d=new Date(Date.now()-WEI_DAY_OFFSET_HOURS*3600*1000);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
-const ydk=()=>{const d=new Date();d.setDate(d.getDate()-1);return dk(d.getFullYear(),d.getMonth(),d.getDate());};
+let weiDateFormatterTz="",weiDateFormatter=null,weiYMDCache={minute:null,tz:null,ymd:null};
+function weiYMD(){
+  const tz=getDeviceWeiTz(),ms=Date.now()-WEI_DAY_OFFSET_HOURS*3600*1000,minute=Math.floor(ms/60000);
+  if(weiYMDCache.minute===minute&&weiYMDCache.tz===tz)return weiYMDCache.ymd;
+  let ymd;
+  if(!tz){
+    const d=new Date(ms);ymd=[d.getFullYear(),d.getMonth(),d.getDate()];
+  }else{
+    if(weiDateFormatterTz!==tz){
+      weiDateFormatter=new Intl.DateTimeFormat("en-US",{timeZone:tz,year:"numeric",month:"2-digit",day:"2-digit",hour12:false});
+      weiDateFormatterTz=tz;
+    }
+    const p=Object.fromEntries(weiDateFormatter.formatToParts(new Date(ms)).map(x=>[x.type,x.value]));
+    ymd=[Number(p.year),Number(p.month)-1,Number(p.day)];
+  }
+  weiYMDCache={minute,tz,ymd};
+  return ymd;
+}
+const tdk=()=>{const[y,m,d]=weiYMD();return dk(y,m,d);};
+const ydk=()=>prevDateKey(tdk());
 const nowTime=()=>{const d=new Date();return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;};
 const isAMnow=()=>new Date().getHours()<12;
 // Normalize time from various formats to "HH:MM"
