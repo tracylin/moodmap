@@ -465,6 +465,7 @@ const fDay=(y,m)=>new Date(y,m,1).getDay();
 // reference used across the app (default selDay, streak, log activity).
 const WEI_DAY_OFFSET_HOURS=6;
 let weiDateFormatterTz="",weiDateFormatter=null,weiYMDCache={minute:null,tz:null,ymd:null};
+let weiTimeFormatterTz="",weiTimeFormatter=null,weiHMCache={minute:null,tz:null,hm:null};
 function weiYMD(){
   const tz=getDeviceWeiTz(),ms=Date.now()-WEI_DAY_OFFSET_HOURS*3600*1000,minute=Math.floor(ms/60000);
   if(weiYMDCache.minute===minute&&weiYMDCache.tz===tz)return weiYMDCache.ymd;
@@ -482,10 +483,27 @@ function weiYMD(){
   weiYMDCache={minute,tz,ymd};
   return ymd;
 }
+function weiHM(){
+  const tz=getDeviceWeiTz(),ms=Date.now(),minute=Math.floor(ms/60000);
+  if(weiHMCache.minute===minute&&weiHMCache.tz===tz)return weiHMCache.hm;
+  let hm;
+  if(!tz){
+    const d=new Date(ms);hm=`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }else{
+    if(weiTimeFormatterTz!==tz){
+      weiTimeFormatter=new Intl.DateTimeFormat("en-US",{timeZone:tz,hour:"2-digit",minute:"2-digit",hourCycle:"h23"});
+      weiTimeFormatterTz=tz;
+    }
+    const p=Object.fromEntries(weiTimeFormatter.formatToParts(new Date(ms)).map(x=>[x.type,x.value]));
+    hm=`${p.hour}:${p.minute}`;
+  }
+  weiHMCache={minute,tz,hm};
+  return hm;
+}
 const tdk=()=>{const[y,m,d]=weiYMD();return dk(y,m,d);};
 const ydk=()=>prevDateKey(tdk());
-const nowTime=()=>{const d=new Date();return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;};
-const isAMnow=()=>new Date().getHours()<12;
+const nowTime=()=>weiHM();
+const isAMnow=()=>Number(weiHM().slice(0,2))<12;
 // Normalize time from various formats to "HH:MM"
 const normTime=(v)=>{
   if(!v)return"";const s=String(v).trim();
@@ -604,7 +622,7 @@ export default function App(){
   const[meds,setMedsS]=useState(()=>loadJ("mt_meds",DEF_MEDS));
   const medsRef=useRef(meds);
   useEffect(()=>{medsRef.current=meds;},[meds]);
-  const[vm,setVm]=useState(()=>{const d=new Date();return[d.getFullYear(),d.getMonth()];});
+  const[vm,setVm]=useState(()=>{const[y,m]=weiYMD();return[y,m];});
   const[selDay,setSelDay]=useState(null);
   const[srmEditId,setSrmEditId]=useState(null);
   const[srmDate,setSrmDate]=useState(tdk);
@@ -900,7 +918,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const nextMonth=()=>{setBubble(null);setNavDir("next");setVm(m===11?[y+1,0]:[y,m+1]);};
   const onCalTouchStart=ev=>{const t=ev.touches[0];if(t)swipeStart.current={x:t.clientX,y:t.clientY};};
   const onCalTouchEnd=ev=>{const start=swipeStart.current;swipeStart.current=null;const t=ev.changedTouches[0];if(!start||!t)return;const dx=t.clientX-start.x;const dy=t.clientY-start.y;if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.5){if(dx<0)nextMonth();else prevMonth();}};
-  const now=new Date();const td=now.getFullYear()===y&&now.getMonth()===m?now.getDate():-1;
+  const[ty,tm,td0]=weiYMD();const td=ty===y&&tm===m?td0:-1;
   const cells=[];
   for(let i=0;i<off;i++) cells.push(<div key={`b${i}`} className="cc ce"/>);
   for(let d=1;d<=days;d++){
@@ -917,11 +935,11 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   // Positive-only weekly count (gentle-by-default — never streaks/obligation):
   // distinct days with any saved entry over the last 7 calendar days.
   const logActivity=loadLogActivity();
-  let weekCount=0;const sd=new Date();
+  let weekCount=0;const sd=new Date(tdk()+"T12:00:00");
   for(let i=0;i<7;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))weekCount++;sd.setDate(sd.getDate()-1);}
   const todayLogged=!!(mood[tdk()]||srm[tdk()]?.items?.length);
   const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,10);
-  const gr=()=>{const h=now.getHours();return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
+  const gr=()=>{const h=Number(weiHM().slice(0,2));return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
@@ -2146,8 +2164,8 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 /* ── REMINDER ENGINE ── */
 if(typeof window!=="undefined"){
   setInterval(()=>{try{const set=JSON.parse(localStorage.getItem("mt_set")||"{}");if(!set.reminders)return;
-    const now=new Date();const t=`${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
-    set.reminders.forEach(r=>{if(r.on&&r.time===t&&Notification.permission==="granted"){const lk="mt_n_"+r.time;const last=localStorage.getItem(lk);const td=now.toDateString();
+    const t=weiHM();
+    set.reminders.forEach(r=>{if(r.on&&r.time===t&&Notification.permission==="granted"){const lk="mt_n_"+r.time;const last=localStorage.getItem(lk);const td=tdk();
       if(last!==td){new Notification("MooTracker",{body:r.label||"Time to log"});localStorage.setItem(lk,td);}}});
   }catch{/* legacy reminder state invalid or notification blocked; interval can try again later */}},30000);
 }
