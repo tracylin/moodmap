@@ -2144,7 +2144,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     <RemindersCard settings={settings} setS={setS}/>
 
-    <div className="card">
+    <div className="card set-quiet">
       <h3 className="ctit">Passcode Lock</h3>
       {settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Passcode is set.</p>
         <div className="set-pcb"><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Change</button><button className="btn-ghost" style={{color:"#D4785C"}} onClick={()=>setS({passcode:""})}>Remove</button></div></div>)}
@@ -2685,6 +2685,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .bi{width:40px;height:40px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
 .g-settings .card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:14px;margin-bottom:12px}
 .g-settings .ctit{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:12px}
+/* HH: secondary controls (Passcode + Advanced) read as one quieter group, not loud cards */
+.g-settings .set-quiet,.g-settings .settings-advanced .card{background:transparent;border:none;border-radius:0;padding:13px 2px;margin-bottom:0;border-top:1px solid var(--g-line)}
+.g-settings .set-quiet .ctit,.g-settings .settings-advanced .ctit{font:500 13px/1.2 'Inter',system-ui,sans-serif;letter-spacing:0;text-transform:none;color:var(--g-tx2);margin-bottom:9px}
 .g-settings .set-h,.g-settings .hint{font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-settings .set-saved{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:8px}
 .g-settings .actor-pills{display:flex;gap:8px}
@@ -2724,7 +2727,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .past-text{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:2px}
 .g-settings .btn-del{color:var(--g-tx4)}
 .g-settings .ver-label{margin-top:10px;text-align:center;font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
-.g-settings .settings-advanced-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:2px;padding:14px;border:1px solid var(--g-line);border-radius:14px;background:var(--g-card);color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-settings .settings-advanced-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:0;padding:14px 2px;border:none;border-top:1px solid var(--g-line);border-radius:0;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-settings .settings-advanced-toggle .adv-chev{color:var(--g-tx3);transition:transform .2s}
 .g-settings .settings-advanced-toggle[aria-expanded="true"] .adv-chev{transform:rotate(180deg)}
 .g-settings .settings-advanced{margin-top:10px}
