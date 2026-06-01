@@ -946,9 +946,8 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
       <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className={`cht${navDir?` cht-${navDir}`:""}`} key={`${y}-${m}`}>{MO[m]} {y}</h2></div>
-      <div className="cal-tr"><SyncBadge/><div className="cnav"><button className="bi" onClick={prevMonth}>‹</button><button className="bi" onClick={nextMonth}>›</button></div></div>
+      <div className="cal-tr"><SyncBadge/><div className="g-home-week">{weekCount>0?<><b>{weekCount}</b> this week</>:"A fresh week"}</div></div>
     </div>
-    <div className="g-home-week">{weekCount>0?<><b>{weekCount} logged</b> this week</>:"A fresh week"}</div>
     <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
     {recentEntries.length>0&&<div className="g-home-recent">
       <span className="g-home-recent-eyebrow">Recent</span>
@@ -2736,6 +2735,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
 .g-home-week{flex-shrink:0;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 0}
 .g-home-week b{color:var(--g-tx2);font-weight:600}
+/* CC: week-count moved into the top-right cluster (arrows removed) */
+.g-home .cal-tr .g-home-week{margin:0;text-align:right;white-space:nowrap}
 .g-home .cg{flex-shrink:0;gap:3px;margin:16px 0 0;touch-action:none}
 @keyframes cgInNext{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 @keyframes cgInPrev{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
