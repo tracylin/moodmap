@@ -222,7 +222,7 @@ function setDeviceWeiTz(v){
   try{const tz=String(v||"").trim();if(isValidWeiTz(tz))localStorage.setItem(WEI_TZ_KEY,tz);else localStorage.removeItem(WEI_TZ_KEY);}
   catch{/* localStorage unavailable or invalid timezone; use device-local fallback */}
 }
-void setDeviceWeiTz; // Consumed by the Settings control in Phase C.
+const TZ_LIST=(typeof Intl!=="undefined"&&typeof Intl.supportedValuesOf==="function")?Intl.supportedValuesOf("timeZone"):["America/Los_Angeles","America/New_York","America/Chicago","America/Denver","Asia/Shanghai","Asia/Tokyo","Asia/Hong_Kong","Europe/London","Europe/Paris","Australia/Sydney"];
 
 function pushMood(date, entry, medsArr){
   enqueueSync({type:"mood",date,entry,meds_ref:medsArr,actor:getDeviceActor()});
@@ -2107,6 +2107,7 @@ function Settings({settings,setS,meds,setMeds,onBack}){
   const[editMedIdx,setEditMedIdx]=useState(null);const[emName,setEmName]=useState("");const[emDose,setEmDose]=useState("");const[emDefaultCt,setEmDefaultCt]=useState(0);
   const[showAddMed,setShowAddMed]=useState(false);const[newMedName,setNewMedName]=useState("");const[newMedDose,setNewMedDose]=useState("");const[newMedCt,setNewMedCt]=useState(1);
   const[showAdvanced,setShowAdvanced]=useState(false);
+  const[weiTz,setWeiTz]=useState(getDeviceWeiTz());
 
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
@@ -2154,6 +2155,14 @@ function Settings({settings,setS,meds,setMeds,onBack}){
 
     <button className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={()=>setShowAdvanced(!showAdvanced)}><span>Advanced</span><span className="adv-chev" aria-hidden="true">⌄</span></button>
     {showAdvanced&&<div className="settings-advanced">
+      <div className="card"><h3 className="ctit">Wei's time zone</h3>
+        <p className="set-h" style={{marginTop:0}}>Set this to Wei's time zone if you log from a different one — dates land on Wei's day, not yours. Leave on the default if you and Wei share a time zone.</p>
+        <select className="add-input" style={{marginTop:10,marginBottom:0}} value={weiTz} onChange={e=>{setDeviceWeiTz(e.target.value);setWeiTz(getDeviceWeiTz());}}>
+          <option value="">This device's time zone (default)</option>
+          {TZ_LIST.map(z=><option key={z} value={z}>{z}</option>)}
+        </select>
+        <p className="set-saved" style={{marginTop:8}}>Wei's today: {tdk()} · {weiHM()}</p>
+      </div>
       {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
       {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
       <DevNotesSection/>
