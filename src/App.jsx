@@ -2231,7 +2231,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-welcome{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;padding:0 32px 40px;background:var(--g-bg);font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .scr.g-welcome{min-height:calc(100dvh + env(safe-area-inset-bottom));padding:0 32px calc(40px + env(safe-area-inset-bottom))}
 .g-welcome::after{z-index:3}
-.g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F6E9CC 0%, transparent 60%),linear-gradient(180deg, #C9C3DE 0%, #D8D2C0 42%, #EDC98E 74%, #E89A5A 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
+.g-welcome-sky{position:absolute;inset:-22%;z-index:0;background:radial-gradient(120% 72% at 50% 100%, #F8EFDB 0%, transparent 60%),linear-gradient(180deg, #DBD7E6 0%, #E4DFD1 42%, #F1E1C2 74%, #ECC79E 100%);transform-origin:50% 100%;animation:gSkyRise .9s ease both,gSkyBreathe 9s ease-in-out .9s infinite alternate}
 .g-welcome-bubbles{position:absolute;inset:0;z-index:1;pointer-events:none;overflow:hidden}
 .g-wb{position:absolute;border-radius:50%;opacity:0;background:radial-gradient(circle,rgba(233,199,126,.35) 0%,transparent 70%);animation:gBubbleFloat linear infinite}
 .g-wb:nth-child(1){width:120px;height:120px;left:12%;animation-duration:22s;animation-delay:0s;background:radial-gradient(circle,rgba(179,168,204,.30) 0%,transparent 70%)}
@@ -2337,7 +2337,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .day-card-note{font-size:13px;color:var(--t2);font-weight:300;line-height:1.4;margin-bottom:6px}
 .day-chips{display:flex;flex-wrap:wrap;gap:4px}.day-chip{display:inline-block;padding:3px 8px;border-radius:6px;font-size:11px;color:var(--t2);background:var(--warm)}
 
-.ent{padding-top:12px}.et{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.ent{padding-top:22px}.et{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
 .g-entry{padding:calc(26px + env(safe-area-inset-top)) 22px 26px;font-family:'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-entry::after{z-index:0}
 .g-entry .et{position:relative;z-index:1;gap:12px;margin-bottom:14px}
@@ -2622,10 +2622,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-srm-single .qa{display:flex;flex:1;min-height:auto;flex-direction:column;padding:0;animation:si .3s var(--ease)}
 .g-srm-single .srm-em{font-size:32px;line-height:1;color:var(--g-tx2);margin-bottom:8px}
 .g-srm-single .qt{font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;color:var(--g-tx);margin-bottom:14px}
-.g-srm-single .srm-tr{display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:14px}
+.g-srm-single .srm-tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;margin-bottom:14px;align-items:center}
 .g-srm-single .srm-lb{display:block;min-width:0;margin-bottom:8px;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--g-tx3)}
 .g-srm-single .srm-tr .srm-lb{grid-column:1/-1;margin-bottom:0}
-.g-srm-single .srm-ti{width:100%;min-width:0;max-width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid var(--g-line);border-radius:12px;background:#fff;color:var(--g-tx);font:500 18px/1 'Inter',system-ui,sans-serif}
+.g-srm-single .srm-ti{width:100%;min-width:0;max-width:100%;box-sizing:border-box;-webkit-appearance:none;appearance:none;padding:12px 14px;border:1px solid var(--g-line);border-radius:12px;background:#fff;color:var(--g-tx);font:500 18px/1 'Inter',system-ui,sans-serif}
 .g-srm-single .srm-ti:focus{border-color:var(--g-tx);box-shadow:none}
 .g-srm-single .srm-now{padding:12px 16px;border:1px solid var(--g-tx3);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
 .g-srm-single .srm-now:active{background:var(--g-surface)}
