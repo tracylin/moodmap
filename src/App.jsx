@@ -2763,7 +2763,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-cal-glow.g-mood-mild-high::before{background:radial-gradient(circle,rgba(233,199,126,1) 0%,rgba(233,199,126,.62) 52%,transparent 80%)}
 .g-cal-glow.g-mood-mod-high::before{background:radial-gradient(circle,rgba(238,154,82,1) 0%,rgba(238,154,82,.66) 52%,transparent 80%)}
 .g-cal-glow.g-mood-sev-high::before{background:radial-gradient(circle,rgba(233,106,51,1) 0%,rgba(233,106,51,.7) 52%,transparent 80%)}
-.g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;margin:22px 0 0;padding-bottom:166px}
+.g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;margin:34px 0 0;padding-bottom:166px}
 .g-home-recent::-webkit-scrollbar{display:none}
 .g-home-recent-eyebrow{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:11px}
 .g-home-r-item{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;cursor:pointer}
