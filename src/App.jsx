@@ -841,8 +841,7 @@ export default function App(){
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>{if(!consumePendingNav()) setScreen("calendar");}}/>}
       {["calendar","history","settings"].includes(screen)&&<Cal mood={mood} srm={srm} vm={vm} setVm={setVm} name={name} selDay={selDay} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);pushDeleteMood(k);}}}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} onBack={()=>setScreen("calendar")}
-        onDelMood={()=>{doDeleteMood(selDay);setScreen("calendar");}}
-        onDelSRM={()=>{doDeleteSrm(selDay);setScreen("calendar");}}
+        onDelDay={()=>{doDeleteMood(selDay);doDeleteSrm(selDay);setScreen("calendar");}}
         onMoveDay={moveSelectedDay}
         onSaveMoodEntry={entry=>doReplaceMood(selDay,entry)}
         onSaveSrmItems={items=>doReplaceSrm(selDay,items)}
@@ -1014,7 +1013,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
 }
 
 /* ── DAY VIEW — with edit and delete ── */
-function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onMoveDay,onSaveMoodEntry,onSaveSrmItems,onEditMood,onEditSRM,onLogMood}){
+function DayView({dk:dateKey,mood,srm,meds,onBack,onDelDay,onMoveDay,onSaveMoodEntry,onSaveSrmItems,onEditMood,onEditSRM,onLogMood}){
   const[confirmDel,setConfirmDel]=useState(null);
   const[editMode,setEditMode]=useState(false);
   const[undo,setUndo]=useState(null);
@@ -1062,7 +1061,7 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onMoveDay,o
         <div className="g-day-word">{pm?moodLabel(e):(e?"Logged":s?"SRM logged":"No entry")}</div>
       </div>
     </div>
-    <div className="g-day-body">
+    <div className={`g-day-body${editMode?" g-day-editing":""}`}>
       {!e&&onLogMood&&<button className="g-day-edit-btn" style={{marginBottom:18}} onClick={onLogMood}>Log full day entry</button>}
       {(e||s)&&<><div className="g-day-rowhead"><span className="g-day-eyebrow">Day log</span><button className="g-day-inline-edit" onClick={()=>setEditMode(v=>!v)}>{editMode?"Done":"Edit"}</button></div><div className="g-day-hair"/></>}
       {e&&<>
@@ -1087,13 +1086,12 @@ function DayView({dk:dateKey,mood,srm,meds,onBack,onDelMood,onDelSRM,onMoveDay,o
       </div></>}
       {!e&&!s&&<p className="g-day-empty">No data for this day.</p>}
       {undo&&<div className="g-day-undo"><span>{undo.label} cleared</span><button onClick={()=>{undo.run();setUndo(null);}}>Undo</button></div>}
-      {(e||s)&&<div className="g-day-foot">
-        {e&&<button className="g-day-edit-btn" onClick={onEditMood}>Re-enter values</button>}
-        <div className="g-day-del-row">
-          {e&&(confirmDel==="mood"?<span className="g-day-confirm">Delete mood entry? <button className="g-day-confirm-yes" onClick={onDelMood}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("mood")}>Delete mood entry</button>)}
-          {s&&(confirmDel==="srm"?<span className="g-day-confirm">Delete rhythm log? <button className="g-day-confirm-yes" onClick={onDelSRM}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></span>:<button className="g-day-del" onClick={()=>setConfirmDel("srm")}>Delete rhythm log</button>)}
-        </div>
-        <button className="g-day-move" onClick={()=>{const v=prompt("Move day to date (YYYY-MM-DD):",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==dateKey)onMoveDay(v);}}>Move to another date…</button>
+      {editMode&&(e||s)&&<div className="g-day-manage">
+        {e&&<button className="g-day-mrow" onClick={onEditMood}><span className="ic">✎</span>Re-enter values</button>}
+        <button className="g-day-mrow" onClick={()=>{const v=prompt("Move day to date (YYYY-MM-DD):",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&v!==dateKey)onMoveDay(v);}}><span className="ic">→</span>Move to another date…</button>
+        {confirmDel==="day"
+          ? <div className="g-day-manage-confirm"><span>Delete this entire day?</span><button className="g-day-confirm-yes" onClick={()=>onDelDay()}>Delete</button><button className="g-day-confirm-no" onClick={()=>setConfirmDel(null)}>Cancel</button></div>
+          : <button className="g-day-mrow g-day-mrow-danger" onClick={()=>setConfirmDel("day")}><span className="ic">⌫</span>Delete this day</button>}
       </div>}
     </div>
   </div>);
@@ -2871,6 +2869,16 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-move{display:block;margin:10px auto 0;border:none;background:none;color:var(--g-tx3);font:400 12px/1 'Inter',system-ui,sans-serif;cursor:pointer;padding:6px}
 .g-day-undo{position:sticky;bottom:12px;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 0;padding:10px 13px;border:1px solid var(--g-line);border-radius:12px;background:var(--g-card);box-shadow:0 6px 22px rgba(28,28,26,.08);color:var(--g-tx2);font:400 12px/1.2 'Inter',system-ui,sans-serif}
 .g-day-undo button{border:none;background:none;color:var(--g-tx);font:600 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+/* BB: edit mode — single left rail + "manage this day" group */
+.g-day-editing .g-day-vit{grid-template-columns:1fr}
+.g-day-editing .g-day-cell{padding:14px 0 14px 30px;border-right:none}
+.g-day-editing .g-day-block{padding-left:30px}
+.g-day-editing .g-day-cell>.g-day-clear,.g-day-editing .g-day-block>.g-day-clear{left:5px;top:50%;right:auto;transform:translateY(-50%)}
+.g-day-manage{margin-top:18px;border-top:1px solid var(--g-line);padding-top:8px}
+.g-day-mrow{display:flex;align-items:center;gap:12px;width:100%;border:none;background:none;padding:13px 2px;font:400 14px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);cursor:pointer;text-align:left}
+.g-day-mrow .ic{width:18px;text-align:center;color:var(--g-tx3);flex-shrink:0}
+.g-day-mrow-danger,.g-day-mrow-danger .ic{color:var(--g-warm-err)}
+.g-day-manage-confirm{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 2px;font:400 13px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .cfdraw{stroke-dasharray:40;stroke-dashoffset:40;animation:gCheckDraw .55s cubic-bezier(.2,.85,.25,1) .15s forwards}
 @keyframes gCheckDraw{to{stroke-dashoffset:0}}
 @keyframes gConfirmIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
