@@ -872,15 +872,15 @@ function CatMark({className="",draw=false}){
 /* ── WELCOME ── */
 function Welcome({name,onGo}){
   const[greet]=useState(()=>GREETS[Math.floor(Math.random()*GREETS.length)](name));
-  return(<div className="scr g-welcome g-grain">
+  const onKeyDown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onGo();}};
+  return(<div className="scr g-welcome g-grain" role="button" tabIndex={0} onClick={onGo} onKeyDown={onKeyDown} aria-label="Enter app">
     <div className="g-welcome-sky"/>
     <div className="g-welcome-bubbles"><span className="g-wb"/><span className="g-wb"/><span className="g-wb"/></div>
     <div className="g-welcome-center">
       <div className="g-welcome-cat"><CatMark /></div>
-      <h1 className="g-welcome-title">MooTracker</h1>
       <p className="g-welcome-greet">{greet}</p>
     </div>
-    <div className="g-welcome-actions"><button className="g-btn-p g-welcome-continue" onClick={onGo}>Continue</button></div>
+    <span className="g-welcome-cue" aria-hidden="true"/>
   </div>);
 }
 
@@ -2287,10 +2287,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center}
 .g-welcome-cat{width:128px;height:128px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
 .g-welcome-cat svg{width:100%;height:100%;display:block}
-.g-welcome-title{margin-top:20px;font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.3px;color:var(--g-tx);animation:gWelcomeRise 1s ease .7s both}
 .g-welcome-greet{margin-top:9px;max-width:220px;color:rgba(28,28,26,.66);font:300 13.5px/1.55 'Inter',system-ui,sans-serif;letter-spacing:0;animation:gWelcomeRise 1.2s ease 1s both}
-.g-welcome-actions{position:relative;z-index:4;width:100%;max-width:280px;margin-top:52px;animation:gWelcomeRise 1.2s ease 1s both}
-.g-welcome-continue{width:100%}
+.g-welcome-cue{position:absolute;z-index:4;bottom:calc(28px + env(safe-area-inset-bottom));width:24px;height:1px;border-radius:999px;background:rgba(28,28,26,.22)}
 @keyframes gSkyRise{from{opacity:0;transform:scale(1.05) translateY(3%)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes gSkyBreathe{from{transform:scale(1)}to{transform:scale(1.06) translateY(-1.2%)}}
 @keyframes gCatWake{from{opacity:0;transform:translateY(12px) scale(.9);filter:blur(3px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
@@ -3075,7 +3073,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .n-date{font-family:'Inter',system-ui,sans-serif}
 .g-insights .n-mood{color:var(--g-tx3);font:400 11px/1.2 'Inter',system-ui,sans-serif;text-transform:none}
 .g-insights .nt{font:300 13px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
-.g-welcome-title,.g-insights .ht,.g-settings .ht,.g-entry .qt,.g-srm-picker .ht,.g-srm-single .qt{font-weight:500;font-size:42px;line-height:1.08;letter-spacing:-1.2px;color:var(--g-tx)}
+.g-insights .ht,.g-settings .ht,.g-entry .qt,.g-srm-picker .ht,.g-srm-single .qt{font-weight:500;font-size:42px;line-height:1.08;letter-spacing:-1.2px;color:var(--g-tx)}
 .g-sheet .ht{font:500 38px/1.05 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
 @media(max-width:380px){
   .g-entry .qt,.g-srm-picker .ht{font-size:38px}
