@@ -912,7 +912,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const[toast,setToast]=useState(null);
   const swipeStart=useRef(null);
   const[navDir,setNavDir]=useState("");
-  const[recentExpanded,setRecentExpanded]=useState(false);
+  const[recentLimit,setRecentLimit]=useState(5);
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
@@ -936,8 +936,9 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   }
   const todayLogged=!!(mood[tdk()]||srm[tdk()]?.items?.length);
   // Recent = days Wei actually wrote a note (words-only, gentle-by-default — no mood-only rows, no nudge).
-  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&typeof en.notes==="string"&&en.notes.trim()).sort(([a],[b])=>b.localeCompare(a)).slice(0,30);
-  const recentShown=recentExpanded?recentEntries:recentEntries.slice(0,4);
+  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&typeof en.notes==="string"&&en.notes.trim()).sort(([a],[b])=>b.localeCompare(a));
+  const recentShown=recentEntries.slice(0,recentLimit);
+  const onRecentScroll=e=>{const el=e.currentTarget;if(el.scrollTop+el.clientHeight>=el.scrollHeight-56)setRecentLimit(n=>n<recentEntries.length?n+5:n);};
   const gr=()=>{const h=Number(weiHM().slice(0,2));return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
   return(<div className="scr g-home g-ambient-sky g-grain">
@@ -946,13 +947,13 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       <div className="cal-tr"><SyncBadge/></div>
     </div>
     <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
-    {recentEntries.length>0&&<div className="g-home-recent">
+    {recentEntries.length>0&&<div className="g-home-recent" onScroll={onRecentScroll}>
       <span className="g-home-recent-eyebrow">Recent</span>
       {recentShown.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
         <span className="g-home-r-dot" style={{background:pmk?`var(--${G_MOOD_CLASS[pmk]})`:"var(--g-tx4)"}}/>
         <div className="g-home-r-body"><div className="g-home-r-day">{rel} <em>· {MO[rm-1].slice(0,3)} {rd}</em></div>{en.notes&&<div className="g-home-r-note">{en.notes}</div>}</div>
       </div>);})}
-      {recentEntries.length>4&&<button className="g-home-r-more" onClick={()=>setRecentExpanded(v=>!v)}>{recentExpanded?"Show less":"Show more"}</button>}
+      {recentLimit<recentEntries.length&&<div className="g-home-r-more">Scroll for more</div>}
     </div>}
 
     {bubble&&<div className="g-bubble-scrim" onClick={()=>setBubble(null)}/>}
@@ -2769,7 +2770,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home-r-day{font:500 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home-r-day em{font-style:normal;color:var(--g-tx3);font-weight:400}
 .g-home-r-note{margin-top:2px;color:var(--g-tx);font:400 13px/1.5 'Inter',system-ui,sans-serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.g-home-r-more{display:block;width:100%;text-align:left;background:none;border:0;padding:6px 0 12px;min-height:40px;font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);cursor:pointer}
+.g-home-r-more{text-align:center;padding:4px 0 8px;font:400 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
 .g-home .day-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none}
 .g-home .day-card-date{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home .day-card-arrow{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
