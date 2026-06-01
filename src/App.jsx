@@ -2284,10 +2284,10 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-wb:nth-child(1){width:120px;height:120px;left:12%;animation-duration:22s;animation-delay:0s;background:radial-gradient(circle,rgba(179,168,204,.30) 0%,transparent 70%)}
 .g-wb:nth-child(2){width:80px;height:80px;left:62%;animation-duration:27s;animation-delay:6s}
 .g-wb:nth-child(3){width:150px;height:150px;left:38%;animation-duration:32s;animation-delay:12s;background:radial-gradient(circle,rgba(233,176,120,.28) 0%,transparent 70%)}
-.g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center}
-.g-welcome-cat{width:128px;height:128px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
+.g-welcome-center{position:relative;z-index:4;display:flex;flex-direction:column;align-items:center;transform:translateY(-32px)}
+.g-welcome-cat{width:144px;height:144px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
 .g-welcome-cat svg{width:100%;height:100%;display:block}
-.g-welcome-greet{margin-top:9px;max-width:220px;color:rgba(28,28,26,.66);font:300 13.5px/1.55 'Inter',system-ui,sans-serif;letter-spacing:0;animation:gWelcomeRise 1.2s ease 1s both}
+.g-welcome-greet{margin-top:14px;max-width:268px;color:rgba(28,28,26,.72);font:300 18px/1.5 'Inter',system-ui,sans-serif;letter-spacing:0;animation:gWelcomeRise 1.2s ease 1s both}
 .g-welcome-cue{position:absolute;z-index:4;bottom:calc(28px + env(safe-area-inset-bottom));width:24px;height:1px;border-radius:999px;background:rgba(28,28,26,.22)}
 @keyframes gSkyRise{from{opacity:0;transform:scale(1.05) translateY(3%)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes gSkyBreathe{from{transform:scale(1)}to{transform:scale(1.06) translateY(-1.2%)}}
