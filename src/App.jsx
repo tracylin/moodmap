@@ -1517,8 +1517,9 @@ function Hist({mood,srm,meds,onBack}){
   const hasMoodData=Object.entries(mood||{}).some(validMoodEntry);
   const sorted=Object.entries(mood||{}).filter(entry=>validMoodEntry(entry)&&inRange(entry[0])).sort(([a],[b])=>a.localeCompare(b))
     .map(([k,e])=>{const[y,m,d]=k.split("-").map(Number);return{key:k,day:d,month:m,year:y,label:`${MO[m-1]?.slice(0,3)||"?"} ${d}`,sl:`${m}/${d}`,...e,mv:moodValue(e)};});
-  const wM=sorted.filter(e=>e.mv!=null);const wA=sorted.filter(e=>e.anxiety!=null);
+  const wM=sorted.filter(e=>e.mv!=null);
   const avg=a=>a.length?(a.reduce((s,x)=>s+x,0)/a.length):null;
+  const moodAvg=avg(wM.map(e=>e.mv));
   const moodData=wM.map(e=>({n:e.sl,mood:e.mv,f:e.label}));
   const comboData=sorted.filter(e=>e.anxiety!=null||e.irritability!=null).map(e=>({n:e.sl,sleep:e.sleep,anxiety:e.anxiety,irritability:e.irritability,f:e.label,key:e.key}));
   const weightData=sorted.filter(e=>e.weight!=null).map(e=>({n:e.sl,weight:e.weight,f:e.label}));
@@ -1610,11 +1611,11 @@ function Hist({mood,srm,meds,onBack}){
     const b=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=`mood-rhythm-${tdk()}.csv`;a.click();
   };
 
-  return(<BottomSheet onClose={onBack} sheetClass="g-insights" title="Insights" actions={<button className="bx" onClick={exCSV}>↓ Export</button>}>
+  return(<BottomSheet onClose={onBack} sheetClass="g-insights" title="Insights" actions={<button className="bx" onClick={exCSV} aria-label="Export"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L8 7m4-4 4 4M5 11v8h14v-8"/></svg></button>}>
     {!hasMoodData&&<div className="card" style={{textAlign:"center",padding:"40px 20px"}}><p style={{color:"var(--t2)",fontSize:14,lineHeight:1.6}}>No mood data yet. Log your first mood entry to see insights here.</p></div>}
     {hasMoodData&&<div className="sr">
-      <div className="sb"><div className="sv">{sorted.length}</div><div className="sbl">Days</div></div>
-      <div className="sb"><div className="sv">{avg(wA.map(e=>e.anxiety))?.toFixed(1)??"—"}</div><div className="sbl">Avg Anxiety</div></div>
+      <div className="sb"><div className="sv">{moodAvg==null?"—":moodAvg>0?`+${moodAvg.toFixed(1)}`:moodAvg.toFixed(1)}</div><div className="sbl">Avg Mood</div></div>
+      <div className="sb"><div className="sv">{sleepAvg==null?"—":sleepAvg.toFixed(1)}{sleepAvg!=null&&<small> hrs</small>}</div><div className="sbl">Avg Sleep</div></div>
     </div>}
     {hasMoodData&&<div className="range-bar">{[["1w","1W"],["1m","1M"],["3m","3M"],["all","All"]].map(([k,l])=><button key={k} className={`range-chip ${range===k?"on":""}`} onClick={()=>{setRange(k);setSleepTip(null);}}>{l}</button>)}</div>}
 
@@ -2784,11 +2785,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-insights .hh{padding:0 0 14px;align-items:flex-start}
 .g-insights .ht{font:500 24px/1.15 'Inter',system-ui,sans-serif;letter-spacing:-.6px;color:var(--g-tx)}
 .g-insights .ha{gap:8px}
-.g-insights .bx{padding:8px 13px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif}
+.g-insights .bx{display:flex;width:40px;height:40px;align-items:center;justify-content:center;padding:0;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);cursor:pointer}
+.g-insights .bx svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .g-insights .bi{width:40px;height:40px;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx2);font-family:'Inter',system-ui,sans-serif}
 .g-insights .sr{gap:10px;margin-bottom:14px;padding:0}
 .g-insights .sb{background:var(--g-card);border:1px solid var(--g-line);border-radius:14px;box-shadow:none;padding:13px 10px}
 .g-insights .sv{font:400 25px/1 'Inter',system-ui,sans-serif;letter-spacing:-.5px;color:var(--g-tx)}
+.g-insights .sv small{font-size:12px;color:var(--g-tx3);letter-spacing:0}
 .g-insights .sbl{font:400 10px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:5px}
 .g-insights .range-bar{gap:7px;margin-bottom:14px;padding:0}
 .g-insights .range-chip{padding:7px 14px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif}
