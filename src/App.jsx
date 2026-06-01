@@ -915,6 +915,8 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const[recentLimit,setRecentLimit]=useState(5);
   const[recentLoading,setRecentLoading]=useState(false);
   const recentLoadingRef=useRef(false);
+  const[yearView,setYearView]=useState(false);
+  const[yearVm,setYearVm]=useState(()=>weiYMD()[0]);
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
@@ -943,21 +945,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const onRecentScroll=e=>{const el=e.currentTarget;if(recentLoadingRef.current||recentLimit>=recentEntries.length)return;if(el.scrollTop+el.clientHeight>=el.scrollHeight-56){recentLoadingRef.current=true;setRecentLoading(true);const reduce=typeof window!=="undefined"&&window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;setTimeout(()=>{setRecentLimit(n=>Math.min(n+5,recentEntries.length));setRecentLoading(false);recentLoadingRef.current=false;},reduce?120:520);}};
   const gr=()=>{const h=Number(weiHM().slice(0,2));return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
-  return(<div className="scr g-home g-ambient-sky g-grain">
-    <div className="cal-top">
-      <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className={`cht${navDir?` cht-${navDir}`:""}`} key={`${y}-${m}`}>{MO[m]} {y}</h2></div>
-      <div className="cal-tr"><SyncBadge/></div>
-    </div>
-    <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
-    {recentEntries.length>0&&<div className="g-home-recent" onScroll={onRecentScroll}>
-      <span className="g-home-recent-eyebrow">Recent</span>
-      {recentShown.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
-        <span className="g-home-r-dot" style={{background:pmk?`var(--${G_MOOD_CLASS[pmk]})`:"var(--g-tx4)"}}/>
-        <div className="g-home-r-body"><div className="g-home-r-day">{rel} <em>· {MO[rm-1].slice(0,3)} {rd}</em></div>{en.notes&&<div className="g-home-r-note">{en.notes}</div>}</div>
-      </div>);})}
-      {recentLimit<recentEntries.length&&<div className="g-home-r-more">{recentLoading?<span className="g-home-r-load" aria-label="Loading more"><i/><i/><i/></span>:"Scroll for more"}</div>}
-    </div>}
-
+  const renderBubbleLayer=()=>(<>
     {bubble&&<div className="g-bubble-scrim" onClick={()=>setBubble(null)}/>}
     {bubble&&(()=>{
       const k=bubble.key;const en=mood[k];const s2=srm[k];const pmk=primaryMood(en);
@@ -1000,6 +988,65 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
         </>)}
       </div>);
     })()}
+  </>);
+
+  if(yearView){
+    const[curY,curM,curD]=weiYMD();
+    const lastMonth=yearVm>=curY?curM:11;
+    const months=[];for(let mm=0;mm<=lastMonth;mm++)months.push(mm);
+    return(<div className="scr g-year g-ambient-sky g-grain">
+      <button className="g-year-back" onClick={()=>setYearView(false)}>‹ {MO[m]}</button>
+      <div className="g-year-mast">
+        <h1 className="g-year-h1">{yearVm}</h1>
+        <div className="g-year-nav">
+          <button onClick={()=>setYearVm(yearVm-1)} aria-label="Previous year">‹</button>
+          <button disabled={yearVm>=curY} onClick={()=>{if(yearVm<curY)setYearVm(yearVm+1);}} aria-label="Next year">›</button>
+        </div>
+      </div>
+      <p className="g-year-sub">A year has seasons. This is yours.</p>
+      <div className="g-year-wrap">
+        {months.map(mm=>{
+          const dim=new Date(yearVm,mm+1,0).getDate();
+          const offset=(new Date(yearVm,mm,1).getDay()+6)%7;
+          const ucells=[];let hasAny=false;
+          for(let i=0;i<offset;i++)ucells.push(<div key={`b${i}`} className="g-year-cell"/>);
+          for(let d=1;d<=dim;d++){
+            const k=dk(yearVm,mm,d);const en=mood[k];const ms=moodsArr(en);
+            const tappable=ms.length>0&&k<=tdk();if(tappable)hasAny=true;
+            const isTd=yearVm===curY&&mm===curM&&d===curD;
+            const fill=ms.length>=2?`linear-gradient(135deg, var(--${G_MOOD_CLASS[ms[0]]}) 0 50%, var(--${G_MOOD_CLASS[ms[1]]}) 50% 100%)`:ms.length?`var(--${G_MOOD_CLASS[ms[0]]})`:null;
+            ucells.push(<div key={d} className={`g-year-cell${tappable?" has":""}${isTd?" today":""}`}
+              onClick={tappable?(ev=>{const rect=ev.currentTarget.getBoundingClientRect();setBubble({key:k,rect});}):undefined}>
+              {tappable&&<div className="g-year-dot" style={{background:fill}}/>}
+            </div>);
+          }
+          const isNow=yearVm===curY&&mm===curM;
+          return(<div key={mm} className={`g-year-mini${isNow?" now":""}${!hasAny&&!isNow?" g-year-empty":""}`}>
+            <div className="g-year-mname">{MO[mm].slice(0,3)}</div>
+            <div className="g-year-grid">{ucells}</div>
+          </div>);
+        })}
+      </div>
+      {renderBubbleLayer()}
+    </div>);
+  }
+
+  return(<div className="scr g-home g-ambient-sky g-grain">
+    <div className="cal-top">
+      <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className={`cht${navDir?` cht-${navDir}`:""}`} key={`${y}-${m}`}>{MO[m]} <button className="g-home-yearbtn" onClick={()=>{setYearVm(y);setYearView(true);}}>{y}</button></h2></div>
+      <div className="cal-tr"><SyncBadge/></div>
+    </div>
+    <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
+    {recentEntries.length>0&&<div className="g-home-recent" onScroll={onRecentScroll}>
+      <span className="g-home-recent-eyebrow">Recent</span>
+      {recentShown.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
+        <span className="g-home-r-dot" style={{background:pmk?`var(--${G_MOOD_CLASS[pmk]})`:"var(--g-tx4)"}}/>
+        <div className="g-home-r-body"><div className="g-home-r-day">{rel} <em>· {MO[rm-1].slice(0,3)} {rd}</em></div>{en.notes&&<div className="g-home-r-note">{en.notes}</div>}</div>
+      </div>);})}
+      {recentLimit<recentEntries.length&&<div className="g-home-r-more">{recentLoading?<span className="g-home-r-load" aria-label="Loading more"><i/><i/><i/></span>:"Scroll for more"}</div>}
+    </div>}
+
+    {renderBubbleLayer()}
     {toast&&<div className="g-toast"><span className="g-toast-msg">Logged ✓</span><button className="g-toast-undo" onClick={()=>{onQuickUndo(toast.key,toast.prev);setToast(null);}}>Undo</button></div>}
     <div className="cal-pad"/>
     <div className="cact g-home-actions">
@@ -2740,6 +2787,26 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home .cnav{pointer-events:auto}
 .g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:0 0 9px}
 .g-home .cht{font:500 41px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.5px;color:var(--g-tx)}
+.g-home-yearbtn{font:inherit;letter-spacing:inherit;line-height:inherit;vertical-align:baseline;color:inherit;background:none;border:none;padding:0;margin:0;cursor:pointer;pointer-events:auto}
+/* KK: year view — zoom-out of the month calendar, same dot vocabulary */
+.g-year{height:100dvh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}
+.g-year-back{display:inline-flex;align-items:center;gap:5px;border:none;background:none;color:var(--g-tx3);font:400 14px/1 'Inter',system-ui,sans-serif;cursor:pointer;margin-bottom:14px;padding:8px 0;min-height:40px}
+.g-year-mast{display:flex;align-items:baseline;justify-content:space-between;margin:0 0 4px}
+.g-year-h1{font:500 41px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.5px;color:var(--g-tx)}
+.g-year-nav{display:flex;align-items:center;gap:14px}
+.g-year-nav button{border:none;background:none;color:var(--g-tx3);font:400 21px/1 'Inter',system-ui,sans-serif;cursor:pointer;min-width:40px;min-height:40px}
+.g-year-nav button:disabled{color:var(--g-line)}
+.g-year-sub{font:300 13px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:22px}
+.g-year-wrap{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px 14px}
+.g-year-mname{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-bottom:7px}
+.g-year-mini.now .g-year-mname{color:var(--g-mood-mod-high)}
+.g-year-mini.g-year-empty .g-year-mname{color:var(--g-tx4)}
+.g-year-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.g-year-cell{aspect-ratio:1;display:flex;align-items:center;justify-content:center;position:relative}
+.g-year-cell.has{cursor:pointer}
+.g-year-dot{width:7px;height:7px;border-radius:50%;transition:transform .12s}
+.g-year-cell.has:active .g-year-dot{transform:scale(1.5)}
+.g-year-cell.today::after{content:"";position:absolute;width:13px;height:13px;border-radius:50%;border:1.4px solid var(--g-mood-mod-high);opacity:.55}
 .g-home .cht.cht-next{animation:cgInNext .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cht.cht-prev{animation:cgInPrev .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cal-tr{flex-direction:column;align-items:flex-end;gap:8px}
