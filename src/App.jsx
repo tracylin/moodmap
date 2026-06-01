@@ -873,6 +873,9 @@ function CatMark({className="",draw=false}){
 function Welcome({name,onGo}){
   const[greet]=useState(()=>GREETS[Math.floor(Math.random()*GREETS.length)](name));
   const onKeyDown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();onGo();}};
+  const goRef=useRef(onGo);
+  useEffect(()=>{goRef.current=onGo;});
+  useEffect(()=>{const t=setTimeout(()=>goRef.current(),5000);return()=>clearTimeout(t);},[]);
   return(<div className="scr g-welcome g-grain" role="button" tabIndex={0} onClick={onGo} onKeyDown={onKeyDown} aria-label="Enter app">
     <div className="g-welcome-sky"/>
     <div className="g-welcome-bubbles"><span className="g-wb"/><span className="g-wb"/><span className="g-wb"/></div>
