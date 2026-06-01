@@ -2959,7 +2959,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 /* ── step navigation ── */
 .step-btns{display:flex;flex-direction:column;align-items:center;gap:8px}
 .btn-skip{background:none;border:none;font:300 13px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;padding:4px 12px;letter-spacing:.01em}
-.g-entry .btn-skip{margin-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+.g-entry .btn-skip{margin-bottom:calc(32px + env(safe-area-inset-bottom,0px))}
 .btn-skip:hover{color:var(--t2)}
 /* ── move to date ── */
 .btn-move-date{width:100%;margin-top:8px;padding:11px;border-radius:var(--rs);border:1px solid var(--bd);background:transparent;font:400 13px 'DM Sans',sans-serif;color:var(--t3);cursor:pointer;text-align:center;transition:all .15s}
