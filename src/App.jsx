@@ -912,6 +912,7 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
   const[toast,setToast]=useState(null);
   const swipeStart=useRef(null);
   const[navDir,setNavDir]=useState("");
+  const[recentExpanded,setRecentExpanded]=useState(false);
   const doQuickSave=(k,mk)=>{const prev=mood[k];onQuickMood(k,mk);setBubble(null);setToast({key:k,prev});};
   useEffect(()=>{if(!toast)return;const t=setTimeout(()=>setToast(null),4500);return()=>clearTimeout(t);},[toast]);
   const[y,m]=vm;const days=dIn(y,m);const off=fDay(y,m);
@@ -933,27 +934,25 @@ function Cal({mood,srm,vm,setVm,name,setSelDay,onAdd,onLogForDay,onSrm,onHist,on
       <span className="cn">{d}</span>
     </div>);
   }
-  // Positive-only weekly count (gentle-by-default — never streaks/obligation):
-  // distinct days with any saved entry over the last 7 calendar days.
-  const logActivity=loadLogActivity();
-  let weekCount=0;const sd=new Date(tdk()+"T12:00:00");
-  for(let i=0;i<7;i++){const k=dk(sd.getFullYear(),sd.getMonth(),sd.getDate());if(logActivity.has(k))weekCount++;sd.setDate(sd.getDate()-1);}
   const todayLogged=!!(mood[tdk()]||srm[tdk()]?.items?.length);
-  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&(primaryMood(en)||en.notes)).sort(([a],[b])=>b.localeCompare(a)).slice(0,10);
+  // Recent = days Wei actually wrote a note (words-only, gentle-by-default — no mood-only rows, no nudge).
+  const recentEntries=Object.entries(mood||{}).filter(([rk,en])=>/^\d{4}-\d{2}-\d{2}$/.test(rk)&&typeof en.notes==="string"&&en.notes.trim()).sort(([a],[b])=>b.localeCompare(a)).slice(0,30);
+  const recentShown=recentExpanded?recentEntries:recentEntries.slice(0,4);
   const gr=()=>{const h=Number(weiHM().slice(0,2));return h<12?"Good morning":h<17?"Good afternoon":"Good evening";};
 
   return(<div className="scr g-home g-ambient-sky g-grain">
     <div className="cal-top">
       <div className="cal-mast"><p className="cal-gr">{gr()}{name?`, ${name}`:""}</p><h2 className={`cht${navDir?` cht-${navDir}`:""}`} key={`${y}-${m}`}>{MO[m]} {y}</h2></div>
-      <div className="cal-tr"><SyncBadge/><div className="g-home-week">{weekCount>0?<><b>{weekCount}</b> this week</>:"A fresh week"}</div></div>
+      <div className="cal-tr"><SyncBadge/></div>
     </div>
     <div className={`cg${navDir?` cg-${navDir}`:""}`} key={`${y}-${m}`} onTouchStart={onCalTouchStart} onTouchEnd={onCalTouchEnd}>{DW.map(d=><div key={d} className="clb">{d}</div>)}{cells}</div>
     {recentEntries.length>0&&<div className="g-home-recent">
       <span className="g-home-recent-eyebrow">Recent</span>
-      {recentEntries.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
+      {recentShown.map(([rk,en])=>{const pmk=primaryMood(en);const[ry,rm,rd]=rk.split("-").map(Number);const rdow=new Date(ry,rm-1,rd).getDay();const rel=rk===tdk()?"Today":rk===ydk()?"Yesterday":DW[rdow];return(<div key={rk} className="g-home-r-item" onClick={()=>{setSelDay(rk);onViewDay();}}>
         <span className="g-home-r-dot" style={{background:pmk?`var(--${G_MOOD_CLASS[pmk]})`:"var(--g-tx4)"}}/>
         <div className="g-home-r-body"><div className="g-home-r-day">{rel} <em>· {MO[rm-1].slice(0,3)} {rd}</em></div>{en.notes&&<div className="g-home-r-note">{en.notes}</div>}</div>
       </div>);})}
+      {recentEntries.length>4&&<button className="g-home-r-more" onClick={()=>setRecentExpanded(v=>!v)}>{recentExpanded?"Show less":"Show more"}</button>}
     </div>}
 
     {bubble&&<div className="g-bubble-scrim" onClick={()=>setBubble(null)}/>}
@@ -2733,18 +2732,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home > *{position:relative;z-index:1}
 .g-home .cal-top{padding:32px 0 0;flex-shrink:0;z-index:56;pointer-events:none}
 .g-home .cnav{pointer-events:auto}
-.g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-home .cal-gr{font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:0 0 9px}
 .g-home .cht{font:500 38px/1 'Inter',system-ui,sans-serif;letter-spacing:-1.4px;color:var(--g-tx)}
 .g-home .cht.cht-next{animation:cgInNext .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cht.cht-prev{animation:cgInPrev .28s cubic-bezier(.2,.85,.25,1) both}
 .g-home .cal-tr{flex-direction:column;align-items:flex-end;gap:8px}
 .g-home .sync-badge{margin-left:0}
 .g-home .bi{border:1px solid var(--g-line);color:var(--g-tx2);border-radius:10px}
-.g-home-week{flex-shrink:0;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 0}
-.g-home-week b{color:var(--g-tx2);font-weight:600}
-/* CC: week-count moved into the top-right cluster (arrows removed) */
-.g-home .cal-tr .g-home-week{margin:0;text-align:right;white-space:nowrap}
-.g-home .cg{flex-shrink:0;gap:3px;margin:16px 0 0;touch-action:none}
+.g-home .cg{flex-shrink:0;gap:3px;margin:26px 0 0;touch-action:none}
 @keyframes cgInNext{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 @keyframes cgInPrev{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
 .g-home .cg.cg-next{animation:cgInNext .28s cubic-bezier(.2,.85,.25,1) both}
@@ -2768,12 +2763,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-home-recent{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:none;margin:22px 0 0;padding-bottom:166px}
 .g-home-recent::-webkit-scrollbar{display:none}
 .g-home-recent-eyebrow{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:11px}
-.g-home-r-item{display:flex;gap:12px;align-items:center;margin-bottom:12px;cursor:pointer}
-.g-home-r-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;filter:blur(.4px)}
+.g-home-r-item{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;cursor:pointer}
+.g-home-r-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;filter:blur(.4px);margin-top:3px}
 .g-home-r-body{flex:1;min-width:0}
 .g-home-r-day{font:500 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home-r-day em{font-style:normal;color:var(--g-tx3);font-weight:400}
-.g-home-r-note{overflow:hidden;margin-top:1px;color:var(--g-tx2);font:300 13px/1.45 'Inter',system-ui,sans-serif;text-overflow:ellipsis;white-space:nowrap}
+.g-home-r-note{margin-top:2px;color:var(--g-tx);font:400 13px/1.5 'Inter',system-ui,sans-serif;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.g-home-r-more{display:block;width:100%;text-align:left;background:none;border:0;padding:6px 0 12px;min-height:40px;font:400 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);cursor:pointer}
 .g-home .day-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none}
 .g-home .day-card-date{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-home .day-card-arrow{font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
