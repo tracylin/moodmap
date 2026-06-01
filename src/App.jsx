@@ -363,6 +363,8 @@ const isAMnow=()=>new Date().getHours()<12;
 const normTime=(v)=>{
   if(!v)return"";const s=String(v).trim();
   if(/^\d{1,2}:\d{2}$/.test(s)){const[h,m]=s.split(":").map(Number);return`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;}
+  const ap=s.match(/^(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]?\.?$/);
+  if(ap){let h=Number(ap[1])%12;if(ap[3].toLowerCase()==="p")h+=12;return`${String(h).padStart(2,"0")}:${ap[2]}`;}
   // ISO string — use local time, not UTC
   if(s.includes("T")){try{const d=new Date(s);if(!isNaN(d))return`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;}catch{/* malformed legacy date string; later parsers or raw value can handle it */}}
   // Long date string — extract HH:MM
