@@ -823,6 +823,14 @@ export default function App(){
     saveLifecycle(all,events);saveActiveMeds(active);
     enqueueSync({type:"med_event",id,key:med.key,event_type:change.event_type,new_ct:nextCt,dose_text:dose||null,date:change.date,notes:change.notes||null,actor:getDeviceActor()});
   };
+  const doDeleteMedEvent=(id,key)=>{
+    const events=medEvents.filter(ev=>ev.id!==id||ev.med_key!==key);
+    const latest=events.filter(ev=>ev.med_key===key).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))||String(b.ts||"").localeCompare(String(a.ts||"")))[0];
+    const all=latest?medsAll.map(m=>m.key!==key?m:{...m,default_ct:latest.event_type==="discontinued"?null:latest.new_ct,dose:latest.dose_text||null,status:latest.event_type==="discontinued"?"archived":"active",archived_at:latest.event_type==="discontinued"?latest.date:null}):medsAll.filter(m=>m.key!==key);
+    const active=all.filter(m=>m.status==="active").map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0}));
+    saveLifecycle(all,events);saveActiveMeds(active);
+    enqueueSync({type:"med_event_delete",id,key,actor:getDeviceActor()});
+  };
   const name=settings.name||"";
 
   // Save mood: update local state + push ONLY this one entry to sheets
@@ -914,7 +922,7 @@ export default function App(){
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
       {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;fetch(u,{method:"GET",cache:"no-store"}).catch(()=>{});}} reportEmail={settings.reportEmail||""}/>}
-      {screen==="medications"&&<Medications medsAll={medsAll} medEvents={medEvents} mood={mood} onCreate={doCreateMed} onEvent={doMedEvent} onBack={()=>setScreen("calendar")}/>}
+      {screen==="medications"&&<Medications medsAll={medsAll} medEvents={medEvents} mood={mood} onCreate={doCreateMed} onEvent={doMedEvent} onDeleteEvent={doDeleteMedEvent} onBack={()=>setScreen("calendar")}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} onBack={()=>setScreen("calendar")}/>}
     </div></div>
   </>);
@@ -2217,9 +2225,10 @@ function DevNotesSection(){
   </div>);
 }
 
-function Medications({medsAll,medEvents,mood,onCreate,onEvent,onBack}){
+function Medications({medsAll,medEvents,mood,onCreate,onEvent,onDeleteEvent,onBack}){
   const[mode,setMode]=useState("list");
   const[openKey,setOpenKey]=useState(null);
+  const[deleteId,setDeleteId]=useState(null);
   const[selectedKey,setSelectedKey]=useState("");
   const[dose,setDose]=useState("");
   const[count,setCount]=useState(1);
@@ -2272,7 +2281,8 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onBack}){
         <span className="g-med-chev">›</span>
       </button>
       {isOpen&&<div className="g-med-log">{events.length?events.map(ev=><div className={`g-med-event ${ev.event_type}`} key={ev.id}>
-        <i/><div><div className="g-med-event-top"><b>{medEventLabel(ev)}</b><span>{shortMedDate(ev.date)}</span></div>{ev.notes&&<p>{ev.notes}</p>}</div>
+        <i/><div className="g-med-event-body"><div className="g-med-event-top"><b>{medEventLabel(ev)}</b><span>{shortMedDate(ev.date)}</span></div>{ev.notes&&<p>{ev.notes}</p>}
+        {deleteId===ev.id?<div className="g-med-event-confirm"><span>Remove this change?</span><button onClick={()=>setDeleteId(null)}>Keep</button><button className="remove" onClick={()=>{onDeleteEvent(ev.id,med.key);setDeleteId(null);}}>Remove</button></div>:<button className="g-med-event-delete" onClick={()=>setDeleteId(ev.id)}>Delete</button>}</div>
       </div>):<p className="g-med-empty">No recorded changes yet.</p>}</div>}
     </div>);
   };
@@ -2931,10 +2941,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-med-event>i{position:absolute;left:0;top:3px;width:9px;height:9px;border:2px solid var(--g-bg);border-radius:50%;background:var(--g-mood-mod-high)}
 .g-med-event.started>i,.g-med-event.reactivated>i{background:#9DB28E}
 .g-med-event.discontinued>i{background:var(--g-tx4)}
+.g-med-event-body{min-width:0}
 .g-med-event-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .g-med-event-top b{font:500 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-med-event-top span{font:300 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-med-event p{margin-top:3px;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-med-event-delete{margin-top:6px;border:none;background:none;color:var(--g-tx4);font:500 11px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-med-event-confirm{display:flex;align-items:center;gap:9px;margin-top:8px;font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-med-event-confirm button{border:none;background:none;color:var(--g-tx3);font:500 11px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-med-event-confirm .remove{color:var(--g-warm-err)}
 .g-med-empty{padding:12px 2px;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-med-add{display:flex;width:100%;align-items:center;justify-content:center;gap:7px;margin-top:22px;padding:14px;border:1px solid var(--g-line);border-radius:13px;background:var(--g-card);color:var(--g-tx);font:500 14px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-med-add span{font-size:16px;color:var(--g-tx2)}
