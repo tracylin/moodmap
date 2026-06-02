@@ -137,6 +137,9 @@ export default {
         } else if (type === "med_event") {
           await recordMedicationEvent(env, body, now);
 
+        } else if (type === "med_event_delete") {
+          await deleteMedicationEvent(env, body);
+
         } else if (type === "med_update_meta") {
           await updateMedicationMeta(env, body);
 
@@ -451,6 +454,27 @@ async function recordMedicationEvent(env, body, now) {
       "UPDATE medications SET default_ct = ?, dose = ?, status = ?, archived_at = ? WHERE key = ?"
     ).bind(newCt, doseText, status, archivedAt, key),
   ]);
+}
+
+async function deleteMedicationEvent(env, body) {
+  const id = requiredString(body.id, "id");
+  const key = requiredString(body.key, "key");
+  await env.DB.prepare("DELETE FROM med_events WHERE id = ? AND med_key = ?").bind(id, key).run();
+
+  const med = await env.DB.prepare("SELECT key FROM medications WHERE key = ?").bind(key).first();
+  if (!med) return;
+  const latest = await env.DB.prepare(
+    "SELECT event_type, date, new_ct, dose_text FROM med_events WHERE med_key = ? ORDER BY date DESC, ts DESC LIMIT 1"
+  ).bind(key).first();
+  if (!latest) {
+    await env.DB.prepare("DELETE FROM medications WHERE key = ?").bind(key).run();
+    return;
+  }
+
+  const isStopped = latest.event_type === "discontinued";
+  await env.DB.prepare(
+    "UPDATE medications SET default_ct = ?, dose = ?, status = ?, archived_at = ? WHERE key = ?"
+  ).bind(isStopped ? null : latest.new_ct, latest.dose_text, isStopped ? "archived" : "active", isStopped ? latest.date : null, key).run();
 }
 
 async function updateMedicationMeta(env, body) {
