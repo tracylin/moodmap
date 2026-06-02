@@ -81,8 +81,14 @@ export default {
         const meds = medRows.length
           ? medRows.map((row) => ({ key: row.key, name: row.name, dose: row.dose, defaultCt: row.default_ct ?? 0 }))
           : null;
+        const { results: medsAll = [] } = await env.DB.prepare(
+          "SELECT key, name, brand, display_pref, dose, default_ct, status, archived_at FROM medications ORDER BY sort_order"
+        ).all();
+        const { results: medEvents = [] } = await env.DB.prepare(
+          "SELECT * FROM med_events ORDER BY date DESC, ts DESC"
+        ).all();
 
-        return cors(jsonResponse({ status: "ok", mood, srm, settings, meds }));
+        return cors(jsonResponse({ status: "ok", mood, srm, settings, meds, medsAll, medEvents }));
       } catch (err) {
         return cors(jsonResponse({ status: "error", message: String(err) }, 500));
       }
@@ -123,6 +129,16 @@ export default {
 
         } else if (type === "settings") {
           await writeToD1(env, { settings: body.settings, meds: body.meds });
+          await reconcileActiveMedications(env, body.meds, now);
+
+        } else if (type === "med_create") {
+          await createMedication(env, body, now);
+
+        } else if (type === "med_event") {
+          await recordMedicationEvent(env, body, now);
+
+        } else if (type === "med_update_meta") {
+          await updateMedicationMeta(env, body);
 
         } else if (type === "push_subscribe" || type === "push_unsubscribe" || type === "update_push_role" || type === "update_push_tz") {
           // Push subscription management — forward to Apps Script only.
@@ -354,7 +370,7 @@ async function writeToD1(env, body) {
     body.meds.forEach((med, i) => {
       medsCount += 1;
       statements.push(env.DB.prepare(
-        "INSERT INTO medications (id, key, name, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(key) DO UPDATE SET name=excluded.name, dose=excluded.dose, default_ct=excluded.default_ct"
+        "INSERT INTO medications (id, key, name, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 'active', ?, ?) ON CONFLICT(key) DO UPDATE SET name=CASE WHEN medications.status = 'active' THEN excluded.name ELSE medications.name END, dose=CASE WHEN medications.status = 'active' THEN excluded.dose ELSE medications.dose END, default_ct=CASE WHEN medications.status = 'active' THEN excluded.default_ct ELSE medications.default_ct END"
       ).bind(crypto.randomUUID(), med.key, med.name, med.dose ?? null, med.defaultCt ?? 0, i, now));
     });
   }
@@ -378,6 +394,119 @@ async function syncToSheet(payload, env) {
   } catch (e) {
     console.error("Sheet sync failed (non-blocking):", e);
   }
+}
+
+const MED_EVENT_TYPES = new Set(["increased", "decreased", "discontinued", "reactivated"]);
+const MED_DISPLAY_PREFS = new Set(["generic", "both", "brand"]);
+
+async function createMedication(env, body, now) {
+  const key = requiredString(body.key, "key");
+  const name = requiredString(body.name, "name");
+  const eventId = requiredString(body.id || body.event_id, "id");
+  const startDate = requiredDate(body.start_date, "start_date");
+  const displayPref = displayPreference(body.display_pref);
+  const defaultCt = requiredCount(body.default_ct, "default_ct");
+  const brand = optionalString(body.brand);
+  const dose = optionalString(body.dose);
+  const existing = await env.DB.prepare("SELECT key FROM medications WHERE key = ?").bind(key).first();
+  if (existing) return;
+  const existingEvent = await env.DB.prepare("SELECT id FROM med_events WHERE id = ?").bind(eventId).first();
+  if (existingEvent) return;
+  const maxSort = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), -1) AS max_sort FROM medications").first();
+
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO medications (id, key, name, brand, display_pref, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)"
+    ).bind(crypto.randomUUID(), key, name, brand, displayPref, dose, defaultCt, Number(maxSort?.max_sort ?? -1) + 1, now),
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO med_events (id, med_key, event_type, old_value, new_value, date, notes, ts, new_ct, old_ct, dose_text, source) VALUES (?, ?, 'started', NULL, ?, ?, NULL, ?, ?, NULL, ?, 'manual')"
+    ).bind(eventId, key, String(defaultCt), startDate, now, defaultCt, dose),
+  ]);
+}
+
+async function recordMedicationEvent(env, body, now) {
+  const id = requiredString(body.id, "id");
+  const key = requiredString(body.key, "key");
+  const eventType = requiredString(body.event_type, "event_type");
+  if (!MED_EVENT_TYPES.has(eventType)) throw new Error("invalid event_type");
+  const date = requiredDate(body.date, "date");
+  const existingEvent = await env.DB.prepare("SELECT id FROM med_events WHERE id = ?").bind(id).first();
+  if (existingEvent) return;
+  const med = await env.DB.prepare("SELECT key, dose, default_ct, status FROM medications WHERE key = ?").bind(key).first();
+  if (!med) throw new Error("unknown medication");
+  if (eventType === "reactivated" && med.status === "active") throw new Error("medication is already active");
+  if (eventType !== "reactivated" && med.status !== "active") throw new Error("archived medication must be reactivated");
+
+  const oldCt = nullableNumber(med.default_ct);
+  const newCt = eventType === "discontinued" ? null : requiredCount(body.new_ct, "new_ct");
+  const doseText = optionalString(body.dose_text) ?? optionalString(med.dose);
+  const status = eventType === "discontinued" ? "archived" : "active";
+  const archivedAt = eventType === "discontinued" ? date : null;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO med_events (id, med_key, event_type, old_value, new_value, date, notes, ts, new_ct, old_ct, dose_text, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual')"
+    ).bind(id, key, eventType, oldCt === null ? null : String(oldCt), newCt === null ? null : String(newCt), date, optionalString(body.notes), now, newCt, oldCt, doseText),
+    env.DB.prepare(
+      "UPDATE medications SET default_ct = ?, dose = ?, status = ?, archived_at = ? WHERE key = ?"
+    ).bind(newCt, doseText, status, archivedAt, key),
+  ]);
+}
+
+async function updateMedicationMeta(env, body) {
+  const key = requiredString(body.key, "key");
+  const name = requiredString(body.name, "name");
+  const displayPref = displayPreference(body.display_pref);
+  const result = await env.DB.prepare(
+    "UPDATE medications SET name = ?, brand = ?, display_pref = ? WHERE key = ?"
+  ).bind(name, optionalString(body.brand), displayPref, key).run();
+  if (!result.meta?.changes) throw new Error("unknown medication");
+}
+
+async function reconcileActiveMedications(env, meds, now) {
+  if (!Array.isArray(meds)) return;
+  const keys = [...new Set(meds.map((med) => optionalString(med?.key)).filter(Boolean))];
+  const archivedAt = now.slice(0, 10);
+  const statements = [];
+  if (keys.length) {
+    const placeholders = keys.map(() => "?").join(", ");
+    statements.push(env.DB.prepare(
+      `UPDATE medications SET status = 'archived', archived_at = ? WHERE status = 'active' AND key NOT IN (${placeholders})`
+    ).bind(archivedAt, ...keys));
+  } else {
+    statements.push(env.DB.prepare(
+      "UPDATE medications SET status = 'archived', archived_at = ? WHERE status = 'active'"
+    ).bind(archivedAt));
+  }
+  await env.DB.batch(statements);
+}
+
+function requiredString(value, field) {
+  const normalized = optionalString(value);
+  if (!normalized) throw new Error(`missing ${field}`);
+  return normalized;
+}
+
+function optionalString(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function requiredDate(value, field) {
+  const normalized = requiredString(value, field);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) throw new Error(`invalid ${field}`);
+  return normalized;
+}
+
+function requiredCount(value, field) {
+  const count = nullableNumber(value);
+  if (count === null || count < 0) throw new Error(`invalid ${field}`);
+  return count;
+}
+
+function displayPreference(value) {
+  const pref = optionalString(value) || "generic";
+  if (!MED_DISPLAY_PREFS.has(pref)) throw new Error("invalid display_pref");
+  return pref;
 }
 
 function parseJsonArray(value) {
