@@ -723,8 +723,10 @@ export default function App(){
         // If GS returned no meds (parse failure or empty cols), keep local meds
         const localMeds=local[dt]?.meds||{};
         const finalMeds=Object.keys(rMeds).length>0 ? rMeds : localMeds;
+        const rNote=(r.notes||"").trim();
+        const finalNotes=rNote===""&&SEED_MOOD[dt]?.notes?SEED_MOOD[dt].notes:(r.notes||"");
         local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,anxiety:r.anxiety,
-          irritability:r.irritability,weight:r.weight,notes:r.notes||"",meds:finalMeds};
+          irritability:r.irritability,weight:r.weight,notes:finalNotes,meds:finalMeds};
         changed=true;
       }
       if(changed){setMood({...local});saveMood(local);}
