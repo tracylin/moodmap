@@ -207,6 +207,30 @@ export default {
       }
     }
 
+    if (url.pathname === "/seed-med-history" && request.method === "POST") {
+      if (!checkAuth(request, env)) {
+        return cors(new Response("forbidden", { status: 403 }));
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+      }
+
+      try {
+        const mode = optionalString(body.mode) || "dry";
+        if (mode !== "dry" && mode !== "commit") {
+          return cors(jsonResponse({ ok: false, error: "invalid mode" }, 400));
+        }
+        const result = await seedMedicationHistory(env, mode);
+        return cors(jsonResponse(result));
+      } catch (err) {
+        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
     if (url.pathname === "/dev-notes") {
       if (request.method === "GET") {
         try {
@@ -475,6 +499,120 @@ async function deleteMedicationEvent(env, body) {
   await env.DB.prepare(
     "UPDATE medications SET default_ct = ?, dose = ?, status = ?, archived_at = ? WHERE key = ?"
   ).bind(isStopped ? null : latest.new_ct, latest.dose_text, isStopped ? "archived" : "active", isStopped ? latest.date : null, key).run();
+}
+
+async function seedMedicationHistory(env, mode) {
+  const meds = await computeSeedMedicationHistory(env);
+  if (mode === "dry") return { ok: true, mode, meds: publicSeedMedicationHistory(meds) };
+
+  const now = new Date().toISOString();
+  const statements = [];
+  let inserted = 0;
+  for (const med of meds) {
+    statements.push(env.DB.prepare("DELETE FROM med_events WHERE med_key = ? AND source = 'seed'").bind(med.key));
+    for (const event of med.seeded) {
+      inserted += 1;
+      statements.push(env.DB.prepare(
+        "INSERT INTO med_events (id, med_key, event_type, old_value, new_value, date, notes, ts, new_ct, old_ct, dose_text, source) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'seed')"
+      ).bind(
+        crypto.randomUUID(), med.key, event.event_type,
+        event.old_ct === null ? null : String(event.old_ct),
+        event.new_ct === null ? null : String(event.new_ct),
+        event.date, now, event.new_ct, event.old_ct, event.dose_text,
+      ));
+    }
+  }
+  for (let i = 0; i < statements.length; i += 100) {
+    await env.DB.batch(statements.slice(i, i + 100));
+  }
+  return { ok: true, mode, inserted, meds: publicSeedMedicationHistory(meds) };
+}
+
+function publicSeedMedicationHistory(meds) {
+  return meds.map((med) => ({
+    ...med,
+    seeded: med.seeded.map(({ event_type, date, new_ct, old_ct }) => ({ event_type, date, new_ct, old_ct })),
+  }));
+}
+
+async function computeSeedMedicationHistory(env) {
+  const { results: meds = [] } = await env.DB.prepare(
+    "SELECT key, name, dose FROM medications ORDER BY sort_order"
+  ).all();
+  const { results: rows = [] } = await env.DB.prepare(
+    "SELECT med_key, date, count FROM daily_med_doses ORDER BY med_key, date"
+  ).all();
+  const { results: manualStarted = [] } = await env.DB.prepare(
+    "SELECT DISTINCT med_key FROM med_events WHERE source = 'manual' AND event_type = 'started'"
+  ).all();
+  const manualStartedKeys = new Set(manualStarted.map((row) => row.med_key));
+  const rowsByMed = new Map();
+  for (const row of rows) {
+    const count = nullableNumber(row.count);
+    if (count === null) continue;
+    if (!rowsByMed.has(row.med_key)) rowsByMed.set(row.med_key, []);
+    rowsByMed.get(row.med_key).push({ date: row.date, count });
+  }
+
+  return meds.map((med) => {
+    if (manualStartedKeys.has(med.key)) {
+      return { key: med.key, name: med.name, seeded: [], skipped: "has manual history" };
+    }
+    const seeded = deriveSeedEvents(rowsByMed.get(med.key) || [], med.dose);
+    return {
+      key: med.key,
+      name: med.name,
+      seeded,
+      skipped: seeded.length ? false : "as-needed / never stabilized",
+    };
+  });
+}
+
+function deriveSeedEvents(series, doseText) {
+  const runs = stableRuns(series, 3);
+  const events = [];
+  let current = null;
+  for (const run of runs) {
+    if (current === null) {
+      if (run.count > 0) {
+        events.push(seedEvent("started", run.date, run.count, null, doseText));
+        current = run.count;
+      }
+      continue;
+    }
+    if (run.count === current) continue;
+    if (run.count === 0) {
+      events.push(seedEvent("discontinued", run.date, null, current, doseText));
+      current = 0;
+    } else if (current === 0) {
+      events.push(seedEvent("reactivated", run.date, run.count, null, doseText));
+      current = run.count;
+    } else {
+      events.push(seedEvent(run.count > current ? "increased" : "decreased", run.date, run.count, current, doseText));
+      current = run.count;
+    }
+  }
+  return events;
+}
+
+function stableRuns(series, threshold) {
+  const runs = [];
+  let current = null;
+  for (const item of series) {
+    if (current && current.count === item.count) {
+      current.end = item.date;
+      current.length += 1;
+    } else {
+      if (current && current.length >= threshold) runs.push(current);
+      current = { count: item.count, date: item.date, end: item.date, length: 1 };
+    }
+  }
+  if (current && current.length >= threshold) runs.push(current);
+  return runs;
+}
+
+function seedEvent(eventType, date, newCt, oldCt, doseText) {
+  return { event_type: eventType, date, new_ct: newCt, old_ct: oldCt, dose_text: doseText || null };
 }
 
 async function updateMedicationMeta(env, body) {
