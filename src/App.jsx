@@ -121,8 +121,19 @@ async function pushUpdateTzForCurrentSub(){
 /* ── SYNC LAYER — sequential queue, persisted across reloads ── */
 
 const SYNC_QUEUE_KEY="mt_sync_queue";
+const DEAD_LETTER_KEY="mt_sync_deadletter";
 function loadSyncQueue(){try{const v=localStorage.getItem(SYNC_QUEUE_KEY);return v?JSON.parse(v)||[]:[];}catch{return [];}}
 function saveSyncQueue(q){try{localStorage.setItem(SYNC_QUEUE_KEY,JSON.stringify(q));}catch{/* localStorage unavailable or quota full; in-memory queue still retries this session */}}
+// A job the server permanently rejects (4xx) can never succeed. Park it here so
+// it stops blocking the entries queued behind it (the bug that hid Wei's mood).
+function deadLetterJob(job,reason){
+  try{
+    const dl=JSON.parse(localStorage.getItem(DEAD_LETTER_KEY)||"[]");
+    dl.push({job,reason,ts:new Date().toISOString()});
+    localStorage.setItem(DEAD_LETTER_KEY,JSON.stringify(dl));
+  }catch{/* best-effort; the important part is unblocking the live queue */}
+  console.error("Sync: dropped unrecoverable job",reason,job);
+}
 
 const syncQueue=loadSyncQueue();
 let syncRunning=false;
@@ -143,16 +154,40 @@ async function processQueue(){
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify(job),
+        keepalive:true, // survive the app being backgrounded right after a log
       });
-      if(!res.ok) throw new Error(`write failed: ${res.status}`);
-      syncQueue.shift();
+      if(res.ok){
+        syncQueue.shift();
+        saveSyncQueue(syncQueue);
+        failures=0;
+        await new Promise(r=>setTimeout(r,300));
+        continue;
+      }
+      // The server was REACHED but rejected the write. Only this case may
+      // dead-letter — a connectivity failure (the catch below) never does, so
+      // entries survive arbitrarily long outages (offline for a week is fine).
+      // 4xx (except 429) is permanent; 5xx/429 may be transient, so retry but
+      // cap total rejections so a deterministically-bad job can't block forever.
+      const permanent = res.status>=400 && res.status<500 && res.status!==429;
+      job._attempts=(job._attempts||0)+1;
       saveSyncQueue(syncQueue);
-      failures=0;
-      await new Promise(r=>setTimeout(r,300));
-    }catch(e){
-      console.warn("Sync:",e);
+      if(permanent || job._attempts>=12){
+        deadLetterJob(job, permanent?`HTTP ${res.status}`:`rejected ${job._attempts}x (last HTTP ${res.status})`);
+        syncQueue.shift();
+        saveSyncQueue(syncQueue);
+        failures=0;
+        continue;
+      }
       failures++;
-      if(failures>=3) break; // give up this run; retry on next enqueue or reload
+      if(failures>=3) break; // back off this run; retry on next enqueue or reload
+      await new Promise(r=>setTimeout(r,1000*failures));
+    }catch(e){
+      // Network error — the server was never reached (offline, flaky wifi, DNS).
+      // This is transient and may last days. NEVER dead-letter here: keep the
+      // job and retry on the next reload / online / foreground event.
+      console.warn("Sync (network, will retry):",e);
+      failures++;
+      if(failures>=3) break;
       await new Promise(r=>setTimeout(r,1000*failures));
     }
   }
@@ -440,6 +475,7 @@ function SyncBadge(){
   if(!WORKER_URL)return null;
   if(st.state==="idle")return null;
   if(st.state==="done")return(<span className="sync-badge done">Synced</span>);
+  if(st.state==="error")return(<span className="sync-badge error" style={{color:"#B4503C",fontWeight:600}}>Not synced ({st.pending}) — reopen online</span>);
   return(<span className="sync-badge active">Syncing {st.pending}...</span>);
 }
 const MM={sev_elev:{v:3,label:"Severe Elevated",color:"#D4785C",short:"Sev ↑",bg:"#FDF0EC"},mod_elev:{v:2,label:"Moderate Elevated",color:"#D49A6A",short:"Mod ↑",bg:"#FDF5EE"},mild_elev:{v:1,label:"Mild Elevated",color:"#C9B07A",short:"Mild ↑",bg:"#FAF6ED"},normal:{v:0,label:"Within Normal",color:"#7BA08B",short:"Normal",bg:"#EFF6F1"},mild_dep:{v:-1,label:"Mild Depressed",color:"#7E9AB3",short:"Mild ↓",bg:"#EEF3F8"},mod_dep:{v:-2,label:"Moderate Depressed",color:"#6478A0",short:"Mod ↓",bg:"#EDF0F6"},sev_dep:{v:-3,label:"Severe Depressed",color:"#5A5F8A",short:"Sev ↓",bg:"#EDEEF4"}};

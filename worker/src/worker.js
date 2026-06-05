@@ -381,7 +381,7 @@ async function writeToD1(env, body) {
       statements.push(env.DB.prepare(
         "INSERT OR REPLACE INTO srm_items (id, date, time, am, did_not, with_others, who, who_text, engagement, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
       ).bind(
-        item.id, date, item.time ?? null,
+        item.id ?? crypto.randomUUID(), date, item.time ?? null,
         item.am ? 1 : 0, item.didNot ? 1 : 0, item.withOthers ? 1 : 0,
         JSON.stringify(Array.isArray(item.who) ? item.who : []), item.whoText ?? "",
         nullableInteger(item.engagement) ?? 0, now,
@@ -687,7 +687,9 @@ function parseJsonValue(value, fallback) {
 function dayName(date) {
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const parsed = new Date(`${date}T12:00:00`);
-  return days[parsed.getDay()];
+  // Invalid date -> getDay() is NaN -> days[NaN] is undefined, which D1 rejects
+  // with D1_TYPE_ERROR (a 500 the client then retries forever). Fall back to null.
+  return days[parsed.getDay()] ?? null;
 }
 
 function nullableNumber(value) {
