@@ -1099,16 +1099,18 @@ function weiDayWasDeleted_(activity, weiToday) {
   return saved && deleted;
 }
 
-// Counts distinct Wei-days with at least one mood/srm save in the rolling
+// Counts distinct Wei-days with at least one mood/srm save BY WEI in the rolling
 // 7-Wei-day window ending at weiTodayStr (inclusive). Uses the save event's
 // timestamp shifted into Wei-day, so a backfill of an old date today still
-// counts as today's engagement.
+// counts as today's engagement. Actor-filtered to Wei so the caretaker line
+// "Wei's week: N of 7 days noted" reflects Wei's own logging, not Cuixi's edits.
 function countDistinctWeiDaysInWeek_(activity, tz, weiTodayStr) {
   var todayMs = Date.parse(weiTodayStr + "T12:00:00Z");
   var weekStartMs = todayMs - 6 * 86400000;
   var days = {};
   activity.forEach(function(a){
     if (a.type !== "mood" && a.type !== "srm") return;
+    if (a.actor !== "Wei") return;
     if (!a.ts) return;
     var wd = weiDateKey_(a.ts, tz);
     var wdMs = Date.parse(wd + "T12:00:00Z");
