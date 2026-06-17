@@ -491,7 +491,7 @@ async function deleteMedicationEvent(env, body) {
   const med = await env.DB.prepare("SELECT key FROM medications WHERE key = ?").bind(key).first();
   if (!med) return;
   const latest = await env.DB.prepare(
-    "SELECT event_type, date, new_ct, dose_text FROM med_events WHERE med_key = ? ORDER BY date DESC, ts DESC LIMIT 1"
+    "SELECT event_type, date, new_ct, dose_text FROM med_events WHERE med_key = ? ORDER BY date DESC, ts DESC, id DESC LIMIT 1"
   ).bind(key).first();
   if (!latest) {
     await env.DB.prepare("DELETE FROM medications WHERE key = ?").bind(key).run();
@@ -508,12 +508,12 @@ async function updateMedicationEvent(env, body) {
   const id = requiredString(body.id, "id");
   const key = requiredString(body.key, "key");
   const date = requiredDate(body.date, "date");
-  const event = await env.DB.prepare("SELECT id, event_type FROM med_events WHERE id = ? AND med_key = ?").bind(id, key).first();
-  if (!event) throw new Error("unknown medication event");
+  const event = await env.DB.prepare("SELECT id, event_type, dose_text FROM med_events WHERE id = ? AND med_key = ?").bind(id, key).first();
+  if (!event) return;
 
   const newCt = body.new_ct === null ? null : requiredCount(body.new_ct, "new_ct");
   const eventType = newCt === null ? "discontinued" : event.event_type === "discontinued" ? "reactivated" : event.event_type;
-  const doseText = optionalString(body.dose_text);
+  const doseText = optionalString(body.dose_text) ?? event.dose_text ?? null;
   await env.DB.batch([
     env.DB.prepare(
       "UPDATE med_events SET event_type = ?, new_value = ?, date = ?, notes = ?, new_ct = ?, dose_text = ? WHERE id = ? AND med_key = ?"
@@ -521,7 +521,7 @@ async function updateMedicationEvent(env, body) {
   ]);
 
   const latest = await env.DB.prepare(
-    "SELECT event_type, date, new_ct, dose_text FROM med_events WHERE med_key = ? ORDER BY date DESC, ts DESC LIMIT 1"
+    "SELECT event_type, date, new_ct, dose_text FROM med_events WHERE med_key = ? ORDER BY date DESC, ts DESC, id DESC LIMIT 1"
   ).bind(key).first();
   if (!latest) {
     await env.DB.prepare("DELETE FROM medications WHERE key = ?").bind(key).run();
