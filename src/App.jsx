@@ -1135,7 +1135,6 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
             <span className="g-bubble-mood"><span className="g-bubble-cdot" style={{background:`var(--${G_MOOD_CLASS[pmk]})`}}/><span className="g-bubble-clabel">{moodLabel(en)} <small>{MM[pmk].v>0?`+${MM[pmk].v}`:MM[pmk].v}</small></span></span>
           </button>
           {hasExtras?<div className="g-bubble-sum">{[en.sleep!=null?`${en.sleep}h`:null,medCt?`${medCt} meds`:null,en.notes?"note":null,s2?"rhythm":null].filter(Boolean).join(" · ")}</div>:<div className="g-bubble-caps">Sleep · Meds · Note · Rhythm</div>}
-          <div className="g-bubble-act g-bubble-act-end"><button className="g-bubble-go" onClick={()=>{setBubble(null);onLogForDay(k);}}>Log more →</button></div>
         </>)}
           {regimenEvents[0]&&<div className="g-bubble-regimen"><i/>{regimenBubbleLabel(regimenEvents[0],medsAll)}</div>}
       </div>);
@@ -2567,13 +2566,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-welcome-cat{width:144px;height:144px;color:var(--g-tx);transform-origin:50% 66%;animation:gCatWake .9s cubic-bezier(.2,.85,.25,1) both,gCatBreathe 4.6s ease-in-out 1s infinite alternate}
 .g-welcome-cat svg{width:100%;height:100%;display:block}
 .g-welcome-greet{margin-top:14px;max-width:268px;color:rgba(28,28,26,.72);font:300 18px/1.5 'Inter',system-ui,sans-serif;letter-spacing:0;animation:gWelcomeRise 1.2s ease 1s both}
-.g-welcome-cue{position:absolute;z-index:4;bottom:calc(28px + env(safe-area-inset-bottom));width:24px;height:1px;border-radius:999px;background:rgba(28,28,26,.22)}
+.g-welcome-cue{position:absolute;z-index:4;bottom:calc(28px + env(safe-area-inset-bottom));width:30px;height:4px;border-radius:999px;background:rgba(28,28,26,.36);animation:gCueBreathe 2.8s ease-in-out 1s infinite}
 @keyframes gSkyRise{from{opacity:0;transform:scale(1.05) translateY(3%)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes gSkyBreathe{from{transform:scale(1)}to{transform:scale(1.06) translateY(-1.2%)}}
 @keyframes gCatWake{from{opacity:0;transform:translateY(12px) scale(.9);filter:blur(3px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
 @keyframes gCatBreathe{0%{transform:translateY(0) scale(1) rotate(-1deg)}100%{transform:translateY(-4px) scale(1.06) rotate(1deg)}}
 @keyframes gBubbleFloat{0%{transform:translateY(110%) scale(.9);opacity:0}15%{opacity:1}85%{opacity:1}100%{transform:translateY(-20%) scale(1.05);opacity:0}}
 @keyframes gWelcomeRise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+@keyframes gCueBreathe{0%,100%{opacity:.34;transform:scaleX(.86)}50%{opacity:.58;transform:scaleX(1)}}
 .welcome{display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .w-top{margin-bottom:60px;animation:wIn .8s var(--ease)}
 @keyframes wIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
@@ -3265,9 +3265,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-bubble-sum{font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-bubble-regimen{display:flex;align-items:center;gap:7px;margin-top:8px;font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-bubble-regimen i{width:7px;height:7px;flex-shrink:0;border-radius:50%;background:var(--g-mood-mod-high)}
-.g-bubble-act{display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--g-line);margin-top:10px;padding-top:9px}
-.g-bubble-act-end{justify-content:flex-end}
-.g-bubble-edit{border:none;background:none;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);cursor:pointer}
 .g-toast{position:fixed;left:50%;bottom:calc(186px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:61;display:flex;align-items:center;gap:14px;background:var(--g-tx);color:var(--g-bg);border-radius:999px;padding:10px 16px;box-shadow:0 8px 28px rgba(0,0,0,.22);animation:gToastIn .18s var(--ease);white-space:nowrap}
 @keyframes gToastIn{from{opacity:0;transform:translateX(-50%) translateY(4px)}to{opacity:1;transform:translateX(-50%)}}
 .g-toast-msg{font:400 13px/1 'Inter',system-ui,sans-serif}
@@ -3549,7 +3546,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .actor-pill{flex:1;min-width:80px;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:transparent;font-size:13px;color:var(--t2);cursor:pointer;transition:all 150ms ease;font-family:inherit}
 .actor-pill:hover{background:var(--gbg)}
 .actor-pill-on{border-color:var(--gn);color:var(--gn);background:var(--gbg)}
-.dev-notes-section{margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.dev-notes-section{margin-top:32px;display:flex;flex-direction:column;align-items:center;gap:0}
 .btn-add-note{padding:10px 20px;border:none;border-radius:9px;background:var(--tx);color:#fff;font:500 13px/1 'DM Sans',sans-serif;cursor:pointer;transition:opacity .15s}
 .btn-add-note:hover{opacity:.85}
 .btn-add-note:active{transform:scale(.98);opacity:.8}
@@ -3564,7 +3561,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .dev-notes-section .btn-ghost{padding:6px 12px;border:none;border-radius:7px;background:transparent;color:var(--t2);font:400 12px/1 'DM Sans',sans-serif;cursor:pointer}
 .dev-notes-section .btn-sm-p{padding:6px 14px;border:none;border-radius:7px;background:var(--tx);color:#fff;font:500 12px/1 'DM Sans',sans-serif;cursor:pointer}
 .dev-notes-section .btn-sm-p:disabled{opacity:.3}
-.past-notes{margin-top:12px;width:100%;animation:fadeIn .15s ease}
+.past-notes{margin-top:8px;width:100%;animation:fadeIn .15s ease}
 .past-item{padding:8px 0;border-bottom:1px solid var(--bd);display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .past-item:last-child{border-bottom:none}
 .past-content{flex:1;min-width:0}
@@ -3591,7 +3588,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .c-med-tick{background:var(--g-mood-mod-high);opacity:1;filter:none}
 
 @media(prefers-reduced-motion:reduce){
-  .g-welcome-cat,.g-welcome-sky,.g-wb,.cfdraw,.g-confirm .cfc,
+  .g-welcome-cat,.g-welcome-sky,.g-wb,.g-welcome-cue,.cfdraw,.g-confirm .cfc,
   .g-bubble,.g-insights,.g-settings,.g-medications,.g-day,.g-home .cg,.g-home .cht,.page{animation:none!important}
   .g-welcome-bubbles{display:none}
 }
