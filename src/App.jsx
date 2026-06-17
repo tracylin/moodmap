@@ -618,13 +618,50 @@ function medNames(med,key){
 }
 function medPrimary(med,key){return medNames(med,key).primary;}
 function shortMedDate(date){if(!date)return"";const[,m,d]=String(date).split("-").map(Number);return Number.isFinite(m)&&Number.isFinite(d)?`${MO[m-1]?.slice(0,3)||m} ${d}`:date;}
+function medDowDate(date){if(!date)return"";const[y,m,d]=String(date).split("-").map(Number);if(!Number.isFinite(y)||!Number.isFinite(m)||!Number.isFinite(d))return date;const dt=new Date(y,m-1,d);return{dow:DW[dt.getDay()],label:`${MO[m-1]?.slice(0,3)||m} ${d}`,month:MO[m-1]||String(m)};}
 function medCountLabel(ct){if(ct===null||ct===undefined||ct==="")return"—";return Number(ct)===0?"as needed":`${Number(ct)}/day`;}
-function medEventLabel(event){
-  const ct=event.new_ct;
-  if(event.event_type==="started")return`Started · ${medCountLabel(ct)}`;
-  if(event.event_type==="reactivated")return`Reactivated · ${medCountLabel(ct)}`;
-  if(event.event_type==="discontinued")return"Discontinued";
-  return`${event.event_type==="increased"?"Increased":"Decreased"} to ${medCountLabel(ct)}`;
+function medDoseLabel(dose){return String(dose||"").trim()||"—";}
+function medRegimenLabel(dose,ct){return`${medDoseLabel(dose)} · ${medCountLabel(ct)}`;}
+function medEventAsc(a,b){return String(a.date||"").localeCompare(String(b.date||""))||String(a.ts||"").localeCompare(String(b.ts||""))||String(a.id||"").localeCompare(String(b.id||""));}
+function medEventDesc(a,b){return medEventAsc(b,a);}
+function medDoseNumber(dose){const n=parseFloat(String(dose||"").replace(/,/g,""));return Number.isFinite(n)?n:null;}
+function medCompareDose(a,b){const na=medDoseNumber(a),nb=medDoseNumber(b);if(na!==null&&nb!==null&&na!==nb)return na>nb?1:-1;const sa=medDoseLabel(a),sb=medDoseLabel(b);return sa===sb?0:null;}
+function medCompareCount(a,b){const na=Number(a),nb=Number(b);if(!Number.isFinite(na)||!Number.isFinite(nb)||na===nb)return 0;return na>nb?1:-1;}
+function medIsStoppedEvent(event){return event?.event_type==="discontinued"||event?.new_ct===null||event?.new_ct===undefined;}
+function medEventVerb(event,prev){
+  const nowStopped=medIsStoppedEvent(event);
+  const prevState=prev&&!medIsStoppedEvent(prev)?prev:null;
+  if(nowStopped)return{phrase:"discontinued",was:prevState?medRegimenLabel(prevState.dose_text,prevState.new_ct):""};
+  if(!prevState)return{phrase:`started · ${medRegimenLabel(event.dose_text,event.new_ct)}`,was:""};
+  const doseCmp=medCompareDose(event.dose_text,prevState.dose_text);
+  const ctCmp=medCompareCount(event.new_ct,prevState.new_ct);
+  const doseChanged=medDoseLabel(event.dose_text)!==medDoseLabel(prevState.dose_text);
+  const countChanged=Number(event.new_ct)!==Number(prevState.new_ct);
+  if(doseChanged&&!countChanged){
+    const word=doseCmp<0?"decreased":doseCmp>0?"increased":"changed";
+    return{phrase:`dose ${word} to ${medDoseLabel(event.dose_text)}`,was:medDoseLabel(prevState.dose_text)};
+  }
+  if(countChanged&&!doseChanged){
+    const word=ctCmp<0?"decreased":"increased";
+    return{phrase:`${word} to ${medCountLabel(event.new_ct)}`,was:medCountLabel(prevState.new_ct)};
+  }
+  if(doseChanged&&countChanged){
+    const sameDir=doseCmp!==null&&doseCmp===ctCmp;
+    if(sameDir)return{phrase:`${doseCmp>0?"increased":"decreased"} to ${medRegimenLabel(event.dose_text,event.new_ct)}`,was:medRegimenLabel(prevState.dose_text,prevState.new_ct)};
+    return{phrase:`dose changed to ${medRegimenLabel(event.dose_text,event.new_ct)}`,was:medRegimenLabel(prevState.dose_text,prevState.new_ct)};
+  }
+  return{phrase:`changed to ${medRegimenLabel(event.dose_text,event.new_ct)}`,was:medRegimenLabel(prevState.dose_text,prevState.new_ct)};
+}
+function medEventsWithPrev(events,key){
+  const rows=(events||[]).filter(ev=>ev.med_key===key).sort(medEventAsc);
+  return rows.map((event,i)=>({event,prev:rows[i-1]||null,derived:medEventVerb(event,rows[i-1]||null)}));
+}
+function medLatestForKey(events,key){return(events||[]).filter(ev=>ev.med_key===key).sort(medEventDesc)[0]||null;}
+function medsActiveRows(medsAll){return(medsAll||[]).filter(m=>m.status==="active").map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0}));}
+function recomputeMedsAfterEvents(medsAll,events,key){
+  const latest=medLatestForKey(events,key);
+  if(!latest)return(medsAll||[]).filter(m=>m.key!==key);
+  return(medsAll||[]).map(m=>m.key!==key?m:{...m,default_ct:medIsStoppedEvent(latest)?null:latest.new_ct,dose:latest.dose_text||null,status:medIsStoppedEvent(latest)?"archived":"active",archived_at:medIsStoppedEvent(latest)?latest.date:null});
 }
 function regimenBubbleLabel(event,medsAll){
   const name=medPrimary(medByKey(medsAll,event.med_key),event.med_key);
@@ -855,15 +892,23 @@ export default function App(){
     const event={id,med_key:med.key,event_type:change.event_type,old_ct:med.default_ct??null,new_ct:nextCt,dose_text:dose||null,date:change.date,notes:change.notes||null,source:"manual",ts:now};
     const row={...med,default_ct:nextCt,dose:dose||null,status:isStop?"archived":"active",archived_at:isStop?change.date:null};
     const all=medsAll.map(m=>m.key===med.key?row:m),events=[event,...medEvents];
-    const active=all.filter(m=>m.status==="active").map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0}));
+    const active=medsActiveRows(all);
     saveLifecycle(all,events);saveActiveMeds(active);
     enqueueSync({type:"med_event",id,key:med.key,event_type:change.event_type,new_ct:nextCt,dose_text:dose||null,date:change.date,notes:change.notes||null,actor:getDeviceActor()});
   };
+  const doUpdateMedEvent=change=>{
+    const existing=medEvents.find(ev=>ev.id===change.id&&ev.med_key===change.key);if(!existing)return;
+    const isStop=change.event_type==="discontinued";
+    const updated={...existing,event_type:change.event_type||existing.event_type,new_ct:isStop?null:change.new_ct,dose_text:change.dose_text||null,date:change.date,notes:change.notes||null};
+    const events=medEvents.map(ev=>ev.id===change.id&&ev.med_key===change.key?updated:ev);
+    const all=recomputeMedsAfterEvents(medsAll,events,change.key);
+    saveLifecycle(all,events);saveActiveMeds(medsActiveRows(all));
+    enqueueSync({type:"med_event_update",id:change.id,key:change.key,new_ct:updated.new_ct,dose_text:updated.dose_text,date:updated.date,notes:updated.notes,actor:getDeviceActor()});
+  };
   const doDeleteMedEvent=(id,key)=>{
     const events=medEvents.filter(ev=>ev.id!==id||ev.med_key!==key);
-    const latest=events.filter(ev=>ev.med_key===key).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))||String(b.ts||"").localeCompare(String(a.ts||"")))[0];
-    const all=latest?medsAll.map(m=>m.key!==key?m:{...m,default_ct:latest.event_type==="discontinued"?null:latest.new_ct,dose:latest.dose_text||null,status:latest.event_type==="discontinued"?"archived":"active",archived_at:latest.event_type==="discontinued"?latest.date:null}):medsAll.filter(m=>m.key!==key);
-    const active=all.filter(m=>m.status==="active").map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0}));
+    const all=recomputeMedsAfterEvents(medsAll,events,key);
+    const active=medsActiveRows(all);
     saveLifecycle(all,events);saveActiveMeds(active);
     enqueueSync({type:"med_event_delete",id,key,actor:getDeviceActor()});
   };
@@ -958,7 +1003,7 @@ export default function App(){
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
       {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;fetch(u,{method:"GET",cache:"no-store"}).catch(()=>{});}} reportEmail={settings.reportEmail||""}/>}
-      {screen==="medications"&&<Medications medsAll={medsAll} medEvents={medEvents} mood={mood} onCreate={doCreateMed} onEvent={doMedEvent} onDeleteEvent={doDeleteMedEvent} onBack={()=>setScreen("calendar")}/>}
+      {screen==="medications"&&<Medications medsAll={medsAll} medEvents={medEvents} mood={mood} onCreate={doCreateMed} onEvent={doMedEvent} onUpdateEvent={doUpdateMedEvent} onDeleteEvent={doDeleteMedEvent} onBack={()=>setScreen("calendar")}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} onBack={()=>setScreen("calendar")}/>}
     </div></div>
   </>);
@@ -2261,10 +2306,13 @@ function DevNotesSection(){
   </div>);
 }
 
-function Medications({medsAll,medEvents,mood,onCreate,onEvent,onDeleteEvent,onBack}){
+function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDeleteEvent,onBack}){
   const[mode,setMode]=useState("list");
-  const[openKey,setOpenKey]=useState(null);
+  const[openId,setOpenId]=useState(null);
   const[deleteId,setDeleteId]=useState(null);
+  const[filterKey,setFilterKey]=useState("");
+  const[discOpen,setDiscOpen]=useState(false);
+  const[editing,setEditing]=useState(null);
   const[selectedKey,setSelectedKey]=useState("");
   const[dose,setDose]=useState("");
   const[count,setCount]=useState(1);
@@ -2276,29 +2324,41 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onDeleteEvent,onBa
   const[displayPref,setDisplayPref]=useState("generic");
   const[formError,setFormError]=useState("");
   const active=medsAll.filter(m=>m.status==="active"),stopped=medsAll.filter(m=>m.status!=="active");
-  const eventsFor=key=>medEvents.filter(ev=>ev.med_key===key).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))||String(b.ts||"").localeCompare(String(a.ts||"")));
+  const medColor=key=>["#7C7EAE","#9DB28E","#E9C77E","#D4785C","#8DAEA6","#C0BBAF"][Math.max(0,medsAll.findIndex(m=>m.key===key))%6];
+  const eventsFor=key=>medEventsWithPrev(medEvents,key);
   const firstDoseDate=key=>Object.entries(mood||{}).filter(([,entry])=>(entry.meds?.[key]?.ct??0)>0).map(([k])=>k).sort()[0]||"";
-  const spanStart=med=>eventsFor(med.key).find(ev=>ev.event_type==="reactivated"||ev.event_type==="started")?.date||firstDoseDate(med.key);
+  const spanStart=med=>eventsFor(med.key).find(row=>row.event.event_type==="reactivated"||row.event.event_type==="started")?.event.date||firstDoseDate(med.key);
   const medMeta=med=>{
     const start=spanStart(med);
     if(med.status==="active")return start?`since ${shortMedDate(start)}`:"";
-    const stop=eventsFor(med.key).find(ev=>ev.event_type==="discontinued")?.date||med.archived_at;
+    const stop=eventsFor(med.key).find(row=>row.event.event_type==="discontinued")?.event.date||med.archived_at;
     return[start,stop].filter(Boolean).map(shortMedDate).join(" – ");
   };
-  const reset=()=>{setMode("list");setSelectedKey("");setDose("");setCount(1);setDate(tdk());setReason("");setDiscontinue(false);setGeneric("");setBrand("");setDisplayPref("generic");setFormError("");};
+  const changeCount=dir=>setCount(c=>{const n=Number(c)||0;if(dir>0)return n<1?n+.5:n+1;if(n<=0)return 0;if(n<=1)return Math.max(0,n-.5);return n-1;});
+  const reset=()=>{setMode("list");setEditing(null);setSelectedKey("");setDose("");setCount(1);setDate(tdk());setReason("");setDiscontinue(false);setGeneric("");setBrand("");setDisplayPref("generic");setFormError("");};
   const beginChange=key=>{
     const med=medByKey(medsAll,key)||active[0]||stopped[0];if(!med){setMode("new");return;}
-    setSelectedKey(med.key);setDose(med.dose||"");setCount(Number(med.default_ct??0));setDate(tdk());setReason("");setDiscontinue(false);setFormError("");setMode("change");
+    setEditing(null);setSelectedKey(med.key);setDose(med.dose||"");setCount(Number(med.default_ct??0));setDate(tdk());setReason("");setDiscontinue(false);setFormError("");setMode("change");
+  };
+  const beginEdit=row=>{
+    const ev=row.event;
+    setEditing(row);setSelectedKey(ev.med_key);setDose(ev.dose_text||"");setCount(Number(ev.new_ct??0));setDate(ev.date||tdk());setReason(ev.notes||"");setDiscontinue(medIsStoppedEvent(ev));setFormError("");setMode("change");
   };
   const saveChange=()=>{
     const med=medByKey(medsAll,selectedKey);if(!med)return;
+    const oldCt=editing?editing.prev?.new_ct:med.default_ct;
+    const oldDose=editing?editing.prev?.dose_text:med.dose;
+    const newDose=dose.trim()||oldDose||med.dose||null;
+    const doseChanged=medDoseLabel(newDose)!==medDoseLabel(oldDose);
+    const countChanged=Number(count)!==Number(oldCt??0);
     let eventType;
-    if(med.status!=="active")eventType="reactivated";
-    else if(discontinue)eventType="discontinued";
-    else if(Number(count)>Number(med.default_ct??0))eventType="increased";
-    else if(Number(count)<Number(med.default_ct??0))eventType="decreased";
-    else{setFormError("Change the daily count or choose Discontinue.");return;}
-    onEvent({key:med.key,event_type:eventType,new_ct:Number(count),dose_text:dose.trim()||med.dose,date,notes:reason.trim()});
+    if(discontinue)eventType="discontinued";
+    else if(!editing&&med.status!=="active")eventType="reactivated";
+    else if(countChanged)eventType=Number(count)>Number(oldCt??0)?"increased":"decreased";
+    else if(doseChanged){const cmp=medCompareDose(newDose,oldDose);eventType=cmp<0?"decreased":"increased";}
+    else{setFormError("Change the strength or daily count, or choose Discontinue.");return;}
+    if(editing)onUpdateEvent({id:editing.event.id,key:med.key,event_type:eventType,new_ct:Number(count),dose_text:newDose,date,notes:reason.trim()});
+    else onEvent({key:med.key,event_type:eventType,new_ct:Number(count),dose_text:newDose,date,notes:reason.trim()});
     reset();
   };
   const saveNew=()=>{
@@ -2307,46 +2367,89 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onDeleteEvent,onBa
     onCreate({key,name,brand:b||null,display_pref:b?displayPref:"generic",dose:dose.trim()||null,default_ct:Number(count)||0,start_date:date});
     reset();
   };
-  const renderRow=med=>{
-    const names=medNames(med,med.key),events=eventsFor(med.key),isOpen=openKey===med.key;
-    const rowCt=med.status==="active"?med.default_ct:(events.find(ev=>ev.event_type==="discontinued")?.old_ct??med.default_ct);
-    return(<div className={`g-med-row${isOpen?" open":""}${med.status!=="active"?" stopped":""}`} key={med.key}>
-      <button className="g-med-summary" onClick={()=>setOpenKey(isOpen?null:med.key)}>
-        <span className="g-med-name"><b>{names.primary}</b>{names.secondary&&<small>{names.secondary}</small>}</span>
-        <span className="g-med-meta"><b>{med.dose||"—"} · {medCountLabel(rowCt)}</b>{medMeta(med)&&<small>{medMeta(med)}</small>}</span>
-        <span className="g-med-chev">›</span>
+  const selected=medByKey(medsAll,selectedKey);
+  const priorDose=editing?editing.prev?.dose_text:selected?.dose;
+  const priorCt=editing?editing.prev?.new_ct:selected?.default_ct;
+  const preview=selected?medEventVerb({event_type:discontinue?"discontinued":"changed",dose_text:dose.trim()||priorDose,new_ct:discontinue?null:Number(count)},editing?.prev||{dose_text:priorDose,new_ct:priorCt}):null;
+  const allRows=medsAll.flatMap(m=>medEventsWithPrev(medEvents,m.key).map(row=>({...row,med:m}))).sort((a,b)=>medEventDesc(a.event,b.event));
+  const filteredRows=filterKey?allRows.filter(row=>row.event.med_key===filterKey):allRows;
+  const snapshotFor=row=>{
+    const rows=[];
+    for(const med of medsAll){
+      const latest=(medEvents||[]).filter(ev=>ev.med_key===med.key&&String(ev.date||"")<=String(row.event.date||"")).sort(medEventDesc)[0];
+      if(latest&&!medIsStoppedEvent(latest))rows.push({med,event:latest,subject:med.key===row.event.med_key});
+    }
+    if(!rows.some(r=>r.med.key===row.event.med_key)){
+      const med=medByKey(medsAll,row.event.med_key)||row.med;
+      rows.push({med,event:row.event,subject:true});
+    }
+    return rows;
+  };
+  const renderHistoryRow=(row,isLast)=>{
+    const ev=row.event,med=row.med,names=medNames(med,ev.med_key),dt=medDowDate(ev.date),isOpen=openId===ev.id;
+    return(<div className={`g-med-te${isOpen?" open":""}${medIsStoppedEvent(ev)?" stop":""}${isLast?" lastinmon":""}`} key={ev.id}>
+      <span className="g-med-tdot" style={{background:medColor(ev.med_key)}}/>
+      <button className="g-med-te-head" onClick={()=>{setOpenId(isOpen?null:ev.id);setDeleteId(null);}}>
+        <span className="g-med-te-chev">›</span>
+        <span className="g-med-te-date"><span>{dt.dow}</span>{dt.label}</span>
+        <span className="g-med-te-line"><span className="g-med-te-name" onClick={e=>{e.stopPropagation();setFilterKey(ev.med_key);}}>{names.primary}</span> {row.derived.phrase}{row.derived.was&&<span className="g-med-was"> (was {row.derived.was})</span>}</span>
+        {ev.notes&&<span className="g-med-te-why">{ev.notes}</span>}
       </button>
-      {isOpen&&<div className="g-med-log">{events.length?events.map(ev=><div className={`g-med-event ${ev.event_type}`} key={ev.id}>
-        <i/><div className="g-med-event-body"><div className="g-med-event-top"><b>{medEventLabel(ev)}</b><span>{shortMedDate(ev.date)}</span></div>{ev.notes&&<p>{ev.notes}</p>}
-        {deleteId===ev.id?<div className="g-med-event-confirm"><span>Remove this change?</span><button onClick={()=>setDeleteId(null)}>Keep</button><button className="remove" onClick={()=>{onDeleteEvent(ev.id,med.key);setDeleteId(null);}}>Remove</button></div>:<button className="g-med-event-delete" onClick={()=>setDeleteId(ev.id)}>Delete</button>}</div>
-      </div>):<p className="g-med-empty">No recorded changes yet.</p>}</div>}
+      {isOpen&&<div className="g-med-snap tall"><div className="g-med-snap-in">
+        {snapshotFor(row).map(s=>{
+          const sn=medNames(s.med,s.med.key);
+          return <div className={`g-med-snap-row${s.subject?" subject":""}`} key={s.med.key}>
+            <span className="g-med-snap-tick" style={{"--tick":medColor(s.med.key)}}/>
+            <span className="g-med-snap-stack"><span className="g-med-snap-nm">{sn.primary}</span>
+              {s.subject?<span className="g-med-snap-tr"><span>{row.prev&&!medIsStoppedEvent(row.prev)?medRegimenLabel(row.prev.dose_text,row.prev.new_ct):"none"}</span><i>→</i>{medIsStoppedEvent(ev)?"discontinued":medRegimenLabel(ev.dose_text,ev.new_ct)}</span>:<span className="g-med-snap-dose">{medRegimenLabel(s.event.dose_text,s.event.new_ct)}</span>}
+            </span>
+          </div>;
+        })}
+        {deleteId===ev.id?<div className="g-med-te-confirm"><span>Remove this change?</span><button onClick={()=>setDeleteId(null)}>Keep</button><button className="remove" onClick={()=>{onDeleteEvent(ev.id,ev.med_key);setDeleteId(null);setOpenId(null);}}>Remove</button></div>:<div className="g-med-te-actions"><button className="edit" onClick={()=>beginEdit(row)}><span>✎</span>Edit</button><button className="del" onClick={()=>setDeleteId(ev.id)}>Delete</button></div>}
+      </div></div>}
     </div>);
   };
-  const selected=medByKey(medsAll,selectedKey);
+  const historyGroups=[];
+  for(const row of filteredRows){
+    const month=medDowDate(row.event.date).month;
+    let group=historyGroups[historyGroups.length-1];
+    if(!group||group.month!==month){group={month,rows:[]};historyGroups.push(group);}
+    group.rows.push(row);
+  }
 
-  return(<BottomSheet onClose={onBack} sheetClass="g-medications" title={mode==="list"?"Medications":mode==="new"?"New medication":"Record a change"}>
+  return(<BottomSheet onClose={onBack} sheetClass="g-medications" title={mode==="list"?"Medications":mode==="new"?"New medication":editing?"Edit change":"Record a change"}>
     {mode==="list"&&<>
-      <div className="g-med-section">Active</div>
-      <div className="g-med-list">{active.length?active.map(renderRow):<p className="g-med-empty">No active medications.</p>}</div>
-      {stopped.length>0&&<><div className="g-med-section">Discontinued</div><div className="g-med-list">{stopped.map(renderRow)}</div></>}
-      <button className="g-med-add" onClick={()=>beginChange(active[0]?.key||stopped[0]?.key)}><span>+</span> Record a change</button>
-      <button className="g-med-new-link" onClick={()=>{setMode("new");setDate(tdk());setFormError("");}}>Add a medication</button>
+      <div className="g-med-card">
+        <span className="g-med-ctit">Taking now</span>
+        {active.length?active.map(m=>{const n=medNames(m,m.key);return <button className="g-med-now-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-dose">{medRegimenLabel(m.dose,m.default_ct)}</span></button>;}):<p className="g-med-empty">No active medications.</p>}
+      </div>
+      {stopped.length>0&&<div className={`g-med-disc${discOpen?" open":""}`}><button className="g-med-disc-head" onClick={()=>setDiscOpen(v=>!v)}><span>{stopped.length} discontinued</span><i>›</i></button>{discOpen&&<div className="g-med-disc-body">{stopped.map(m=>{const n=medNames(m,m.key);return <button className="g-med-disc-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-dose">{medRegimenLabel(m.dose,m.default_ct)}{medMeta(m)&&<small>{medMeta(m)}</small>}</span></button>;})}</div>}</div>}
+      <div className="g-med-actions-slot"><button className="g-med-add top" onClick={()=>beginChange(active[0]?.key||stopped[0]?.key)}><span>+</span> Record a change</button><button className="g-med-new-link tight" onClick={()=>{setMode("new");setDate(tdk());setFormError("");}}>Add a medication</button></div>
+      <div className="g-med-card">
+        <div className="g-med-hist-head"><span className="g-med-ctit">History</span>{filterKey&&<button className="g-med-filter" onClick={()=>setFilterKey("")}>× {medPrimary(medByKey(medsAll,filterKey),filterKey)}</button>}</div>
+        {historyGroups.length?historyGroups.map(group=><Fragment key={group.month}><div className="g-med-mon">{group.month}</div>{group.rows.map((row,i)=>renderHistoryRow(row,i===group.rows.length-1))}</Fragment>):<p className="g-med-empty">No recorded changes yet.</p>}
+      </div>
     </>}
     {mode==="change"&&selected&&<>
-      <div className="g-med-field"><label>Medication</label><div className="g-med-chips">{[...active,...stopped].map(m=><button className={`g-med-chip${m.key===selectedKey?" on":""}`} key={m.key} onClick={()=>beginChange(m.key)}>{medPrimary(m,m.key)}</button>)}<button className="g-med-chip new" onClick={()=>{setMode("new");setFormError("");}}>+ New</button></div></div>
-      <div className="g-med-field"><label>Change</label><div className="g-med-two"><div><input className="g-med-input" value={dose} onChange={e=>setDose(e.target.value)} placeholder="100mg"/><small>Dose per pill</small></div><div><div className="g-med-step"><button onClick={()=>setCount(Math.max(0,count-1))}>−</button><b>{count}</b><button onClick={()=>setCount(count+1)}>+</button><span>/ day</span></div><small>Was {medCountLabel(selected.default_ct)}</small></div></div>
-      {selected.status==="active"&&<button className={`g-med-stop${discontinue?" on":""}`} onClick={()=>setDiscontinue(v=>!v)}>⊘ Discontinue</button>}</div>
-      <div className="g-med-field"><label>Effective date</label><input type="date" className="g-med-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
-      <div className="g-med-field"><label>Reason</label><textarea className="g-med-textarea" value={reason} onChange={e=>setReason(e.target.value)} placeholder="Prescriber instruction, side effect, or taper"/></div>
-      {formError&&<p className="g-med-error">{formError}</p>}
+      <div className="g-med-card">
+        <div className="g-med-field"><label>Medication</label><div className="g-med-chips">{[...active,...stopped].map(m=><button className={`g-med-chip${m.key===selectedKey?" on":""}`} key={m.key} onClick={()=>!editing&&beginChange(m.key)}>{medPrimary(m,m.key)}</button>)}{!editing&&<button className="g-med-chip new" onClick={()=>{setMode("new");setFormError("");}}>+ New</button>}</div></div>
+        <div className="g-med-field"><label>Change</label><div className="g-med-two"><div><input className="g-med-input" value={dose} onChange={e=>setDose(e.target.value)} placeholder="100mg"/><small>Was {medDoseLabel(priorDose)}</small></div><div><div className="g-med-step"><button onClick={()=>changeCount(-1)}>−</button><b>{count}</b><button onClick={()=>changeCount(1)}>+</button><span>/ day</span></div><small>Was {medCountLabel(priorCt)}</small></div></div>
+        <button className={`g-med-stop${discontinue?" on":""}`} onClick={()=>setDiscontinue(v=>!v)}>⊘ Discontinue</button></div>
+        <div className="g-med-field"><label>Effective date</label><input type="date" className="g-med-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        <div className="g-med-field"><label>Reason</label><textarea className="g-med-textarea" value={reason} onChange={e=>setReason(e.target.value)} placeholder="Prescriber instruction, side effect, or taper"/></div>
+        {preview&&<div className="g-med-preview"><span>{editing?"Will update":"Will record"}</span><p><b>{medPrimary(selected,selected.key)}</b> {preview.phrase}{preview.was&&<em> (was {preview.was})</em>}<small>Effective {shortMedDate(date)}</small>{reason.trim()&&<small>{reason.trim()}</small>}</p></div>}
+        {formError&&<p className="g-med-error">{formError}</p>}
+      </div>
       <div className="g-med-actions"><button onClick={reset}>Cancel</button><button className="primary" onClick={saveChange}>Save</button></div>
     </>}
     {mode==="new"&&<>
-      <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder="Quetiapine"/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Seroquel"/><em>Either can be left blank.</em></div>
-      <div className="g-med-field"><label>Show as</label><div className="g-med-seg">{["generic","both","brand"].map(pref=><button className={displayPref===pref?"on":""} key={pref} onClick={()=>setDisplayPref(pref)}>{pref[0].toUpperCase()+pref.slice(1)}</button>)}</div><em>Name shown in the list and day log.</em></div>
-      <div className="g-med-field"><label>Starting dose</label><div className="g-med-two"><div><input className="g-med-input" value={dose} onChange={e=>setDose(e.target.value)} placeholder="100mg"/><small>Dose per pill</small></div><div><div className="g-med-step"><button onClick={()=>setCount(Math.max(0,count-1))}>−</button><b>{count}</b><button onClick={()=>setCount(count+1)}>+</button><span>/ day</span></div><small>Daily count</small></div></div></div>
-      <div className="g-med-field"><label>Effective date</label><input type="date" className="g-med-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
-      {formError&&<p className="g-med-error">{formError}</p>}
+      <div className="g-med-card">
+        <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder="Quetiapine"/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Seroquel"/><em>Either can be left blank.</em></div>
+        <div className="g-med-field"><label>Show as</label><div className="g-med-seg">{["generic","both","brand"].map(pref=><button className={displayPref===pref?"on":""} key={pref} onClick={()=>setDisplayPref(pref)}>{pref[0].toUpperCase()+pref.slice(1)}</button>)}</div></div>
+        <div className="g-med-field"><label>Starting dose</label><div className="g-med-two"><div><input className="g-med-input" value={dose} onChange={e=>setDose(e.target.value)} placeholder="100mg"/><small>Dose per pill</small></div><div><div className="g-med-step"><button onClick={()=>changeCount(-1)}>−</button><b>{count}</b><button onClick={()=>changeCount(1)}>+</button><span>/ day</span></div><small>Daily count</small></div></div></div>
+        <div className="g-med-field"><label>Effective date</label><input type="date" className="g-med-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
+        {formError&&<p className="g-med-error">{formError}</p>}
+      </div>
       <div className="g-med-actions"><button onClick={reset}>Cancel</button><button className="primary" onClick={saveNew}>Add</button></div>
     </>}
   </BottomSheet>);
@@ -2957,39 +3060,71 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-medications::after{z-index:0}
 .g-medications > *{position:relative;z-index:1}
 .g-sheet.g-medications .ht{font:500 26px/1.1 'Inter',system-ui,sans-serif;letter-spacing:-.7px;color:var(--g-tx)}
-.g-med-section{margin:22px 2px 5px;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--g-tx3)}
-.g-med-list{border-top:1px solid var(--g-line)}
-.g-med-row{border-bottom:1px solid var(--g-line)}
-.g-med-summary{display:flex;width:100%;align-items:center;gap:10px;border:none;background:none;padding:14px 2px;text-align:left;cursor:pointer}
-.g-med-name{flex:1;min-width:0}
-.g-med-name b{display:block;font:500 15px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.15px;color:var(--g-tx)}
-.g-med-name small,.g-med-meta small{display:block;margin-top:3px;font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-med-meta{flex-shrink:0;text-align:right}
-.g-med-meta b{display:block;font:400 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.g-med-chev{color:var(--g-tx4);font-size:16px;transition:transform .2s}
-.g-med-row.open .g-med-chev{transform:rotate(90deg)}
-.g-med-row.stopped .g-med-name b{font-weight:400;color:var(--g-tx2)}
-.g-med-log{padding:2px 2px 13px 4px}
-.g-med-event{position:relative;padding:0 0 14px 20px}
-.g-med-event:last-child{padding-bottom:2px}
-.g-med-event::before{content:"";position:absolute;left:4px;top:11px;bottom:-3px;width:1px;background:var(--g-line)}
-.g-med-event:last-child::before{display:none}
-.g-med-event>i{position:absolute;left:0;top:3px;width:9px;height:9px;border:2px solid var(--g-bg);border-radius:50%;background:var(--g-mood-mod-high)}
-.g-med-event.started>i,.g-med-event.reactivated>i{background:#9DB28E}
-.g-med-event.discontinued>i{background:var(--g-tx4)}
-.g-med-event-body{min-width:0}
-.g-med-event-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
-.g-med-event-top b{font:500 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.g-med-event-top span{font:300 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-med-event p{margin-top:3px;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
-.g-med-event-delete{margin-top:6px;border:none;background:none;color:var(--g-tx4);font:500 11px/1 'Inter',system-ui,sans-serif;cursor:pointer}
-.g-med-event-confirm{display:flex;align-items:center;gap:9px;margin-top:8px;font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-med-event-confirm button{border:none;background:none;color:var(--g-tx3);font:500 11px/1 'Inter',system-ui,sans-serif;cursor:pointer}
-.g-med-event-confirm .remove{color:var(--g-warm-err)}
+.g-med-card{background:var(--g-card);border:1px solid var(--g-line);border-radius:16px;box-shadow:none;padding:16px;margin-bottom:12px}
+.g-med-ctit{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:12px}
+.g-med-now-row,.g-med-disc-row{display:flex;width:100%;align-items:center;gap:12px;padding:16px 0;border:none;border-bottom:1px solid var(--g-line);background:none;text-align:left;cursor:pointer}
+.g-med-now-row:first-of-type{padding-top:2px}
+.g-med-now-row:last-of-type,.g-med-disc-row:last-child{border-bottom:none;padding-bottom:2px}
+.g-med-sw{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.g-med-now-name{flex:1;min-width:0}
+.g-med-now-name b{display:block;font:500 15px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.15px;color:var(--g-tx)}
+.g-med-now-name small{display:block;margin-top:3px;font:300 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-med-dose{font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2);text-align:right;flex-shrink:0;white-space:nowrap}
+.g-med-dose small{display:block;margin-top:3px;font:300 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-med-disc{margin-bottom:12px}
+.g-med-disc-head{display:flex;width:100%;align-items:center;gap:8px;padding:13px 16px;background:transparent;border:1px solid var(--g-line);border-radius:14px;cursor:pointer;color:var(--g-tx2)}
+.g-med-disc-head span{flex:1;text-align:left;font:400 13px/1 'Inter',system-ui,sans-serif}
+.g-med-disc-head i{font-style:normal;color:var(--g-tx4);font-size:16px;transition:transform .2s}
+.g-med-disc.open .g-med-disc-head{border-radius:14px 14px 0 0}
+.g-med-disc.open .g-med-disc-head i{transform:rotate(90deg)}
+.g-med-disc-body{border:1px solid var(--g-line);border-top:none;border-radius:0 0 14px 14px;padding:0 16px}
+.g-med-disc-row .g-med-now-name b{font-weight:400;color:var(--g-tx2)}
+.g-med-actions-slot{margin-bottom:12px}
 .g-med-empty{padding:12px 2px;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-med-add{display:flex;width:100%;align-items:center;justify-content:center;gap:7px;margin-top:22px;padding:14px;border:1px solid var(--g-line);border-radius:13px;background:var(--g-card);color:var(--g-tx);font:500 14px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-med-add.top{margin-top:0}
 .g-med-add span{font-size:16px;color:var(--g-tx2)}
 .g-med-new-link{display:block;margin:13px auto 0;border:none;background:none;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-med-new-link.tight{margin-top:12px}
+.g-med-hist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.g-med-hist-head .g-med-ctit{margin:0}
+.g-med-filter{border:1px solid var(--g-tx);border-radius:999px;background:var(--g-surface);color:var(--g-tx);font:500 12px/1 'Inter',system-ui,sans-serif;padding:6px 10px;cursor:pointer}
+.g-med-mon{font:400 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:18px 2px 2px}
+.g-med-mon:first-of-type{margin-top:2px}
+.g-med-te{position:relative;padding:0 0 18px 22px}
+.g-med-te::before{content:"";position:absolute;left:4px;top:13px;bottom:0;width:1px;background:var(--g-line)}
+.g-med-te.lastinmon::before{display:none}
+.g-med-tdot{position:absolute;left:0;top:8px;width:9px;height:9px;border-radius:50%;border:2px solid var(--g-bg);z-index:1}
+.g-med-te-head{display:block;width:100%;position:relative;padding:6px 0 2px;border:none;background:none;text-align:left;cursor:pointer}
+.g-med-te-date{display:block;font:500 11.5px/1 'Inter',system-ui,sans-serif;letter-spacing:-.1px;color:var(--g-tx2)}
+.g-med-te-date span{color:var(--g-tx3);font-weight:400;margin-right:5px}
+.g-med-te-line{display:block;margin-top:5px;font:400 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx2);padding-right:18px}
+.g-med-te-name{font-weight:500;letter-spacing:-.1px;color:var(--g-tx)}
+.g-med-was{color:var(--g-tx3)}
+.g-med-te-why{display:block;margin-top:6px;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-med-te-chev{position:absolute;right:0;top:7px;font-size:15px;color:var(--g-tx4);transition:transform .2s}
+.g-med-te.open .g-med-te-chev{transform:rotate(90deg);color:var(--g-tx3)}
+.g-med-te.stop .g-med-te-line{color:var(--g-tx3)}
+.g-med-te.stop .g-med-te-name{font-weight:400;color:var(--g-tx2)}
+.g-med-snap-in{margin:8px 0 6px;padding:2px 0 0 2px}
+.g-med-snap-row{display:flex;align-items:flex-start;gap:11px;padding:9px 0}
+.g-med-snap-tick{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px;background:var(--tick,var(--g-tx4))}
+.g-med-snap-stack{min-width:0;flex:1}
+.g-med-snap-nm{font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-med-snap-dose{display:block;margin-top:3px;font:400 12.5px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-med-snap-row.subject .g-med-snap-tick{background:var(--g-mood-mod-high)}
+.g-med-snap-row.subject .g-med-snap-nm{color:var(--g-tx);font-weight:500}
+.g-med-snap-tr{display:block;margin-top:3px;font:400 12.5px/1.35 'Inter',system-ui,sans-serif;color:#B9743C}
+.g-med-snap-tr span{color:var(--g-tx3)}
+.g-med-snap-tr i{font-style:normal;color:rgba(238,154,82,.7);margin:0 6px}
+.g-med-te-actions,.g-med-te-confirm{display:flex;align-items:center;gap:18px;margin:6px 0 2px;padding:13px 0 2px 2px;border-top:1px solid var(--g-line)}
+.g-med-te-actions button,.g-med-te-confirm button{border:none;background:none;cursor:pointer;font:500 11.5px/1 'Inter',system-ui,sans-serif;padding:2px 0}
+.g-med-te-actions .edit{color:var(--g-tx2)}
+.g-med-te-actions .edit span{margin-right:6px;color:var(--g-tx3);font-weight:400}
+.g-med-te-actions .del{color:var(--g-tx4);margin-left:auto}
+.g-med-te-confirm span{flex:1;font:300 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-med-te-confirm button{color:var(--g-tx2)}
+.g-med-te-confirm .remove{color:var(--g-warm-err)}
 .g-med-field{margin-bottom:19px}
 .g-med-field>label{display:block;margin-bottom:10px;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:var(--g-tx3)}
 .g-med-field small,.g-med-field em{display:block;margin:7px 2px;font:300 11px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx4);font-style:normal}
@@ -3014,6 +3149,12 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-med-actions button{flex:1;padding:14px;border:1px solid var(--g-line);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-med-actions button.primary{flex:2;border-color:var(--g-tx);background:var(--g-tx);color:var(--g-bg)}
 .g-med-error{margin:-7px 0 10px;color:var(--g-warm-err);font:400 12px/1.35 'Inter',system-ui,sans-serif}
+.g-med-preview{margin-top:4px;padding:14px;background:var(--g-surface);border-radius:12px}
+.g-med-preview>span{display:block;margin-bottom:6px;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3)}
+.g-med-preview p{font:400 14px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-med-preview b{font-weight:500;color:var(--g-tx)}
+.g-med-preview em{font-style:normal;color:var(--g-tx3)}
+.g-med-preview small{display:block;margin-top:5px;color:var(--g-tx3)}
 
 /* ── R9 home calendar ── */
 .g-home{height:100dvh;display:flex;flex-direction:column;overflow:hidden}

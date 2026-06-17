@@ -140,6 +140,9 @@ export default {
         } else if (type === "med_event_delete") {
           await deleteMedicationEvent(env, body);
 
+        } else if (type === "med_event_update") {
+          await updateMedicationEvent(env, body);
+
         } else if (type === "med_update_meta") {
           await updateMedicationMeta(env, body);
 
@@ -499,6 +502,36 @@ async function deleteMedicationEvent(env, body) {
   await env.DB.prepare(
     "UPDATE medications SET default_ct = ?, dose = ?, status = ?, archived_at = ? WHERE key = ?"
   ).bind(isStopped ? null : latest.new_ct, latest.dose_text, isStopped ? "archived" : "active", isStopped ? latest.date : null, key).run();
+}
+
+async function updateMedicationEvent(env, body) {
+  const id = requiredString(body.id, "id");
+  const key = requiredString(body.key, "key");
+  const date = requiredDate(body.date, "date");
+  const event = await env.DB.prepare("SELECT id, event_type FROM med_events WHERE id = ? AND med_key = ?").bind(id, key).first();
+  if (!event) throw new Error("unknown medication event");
+
+  const newCt = body.new_ct === null ? null : requiredCount(body.new_ct, "new_ct");
+  const eventType = newCt === null ? "discontinued" : event.event_type === "discontinued" ? "reactivated" : event.event_type;
+  const doseText = optionalString(body.dose_text);
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE med_events SET event_type = ?, new_value = ?, date = ?, notes = ?, new_ct = ?, dose_text = ? WHERE id = ? AND med_key = ?"
+    ).bind(eventType, newCt === null ? null : String(newCt), date, optionalString(body.notes), newCt, doseText, id, key),
+  ]);
+
+  const latest = await env.DB.prepare(
+    "SELECT event_type, date, new_ct, dose_text FROM med_events WHERE med_key = ? ORDER BY date DESC, ts DESC LIMIT 1"
+  ).bind(key).first();
+  if (!latest) {
+    await env.DB.prepare("DELETE FROM medications WHERE key = ?").bind(key).run();
+    return;
+  }
+
+  const latestStopped = latest.event_type === "discontinued";
+  await env.DB.prepare(
+    "UPDATE medications SET default_ct = ?, dose = ?, status = ?, archived_at = ? WHERE key = ?"
+  ).bind(latestStopped ? null : latest.new_ct, latest.dose_text, latestStopped ? "archived" : "active", latestStopped ? latest.date : null, key).run();
 }
 
 async function seedMedicationHistory(env, mode) {
