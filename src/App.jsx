@@ -2423,8 +2423,8 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDe
         <span className="g-med-ctit">Taking now</span>
         {active.length?active.map(m=>{const n=medNames(m,m.key);return <button className="g-med-now-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-dose">{medRegimenLabel(m.dose,m.default_ct)}</span></button>;}):<p className="g-med-empty">No active medications.</p>}
       </div>
-      {stopped.length>0&&<div className={`g-med-disc${discOpen?" open":""}`}><button className="g-med-disc-head" onClick={()=>setDiscOpen(v=>!v)}><span>{stopped.length} discontinued</span><i>›</i></button>{discOpen&&<div className="g-med-disc-body">{stopped.map(m=>{const n=medNames(m,m.key);return <button className="g-med-disc-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-dose">{medRegimenLabel(m.dose,m.default_ct)}{medMeta(m)&&<small>{medMeta(m)}</small>}</span></button>;})}</div>}</div>}
-      <div className="g-med-actions-slot"><button className="g-med-add top" onClick={()=>beginChange(active[0]?.key||stopped[0]?.key)}><span>+</span> Record a change</button><button className="g-med-new-link tight" onClick={()=>{setMode("new");setDate(tdk());setFormError("");}}>Add a medication</button></div>
+      {stopped.length>0&&<div className={`g-med-disc${discOpen?" open":""}`}><button className="g-med-disc-head" onClick={()=>setDiscOpen(v=>!v)}><span>{stopped.length} discontinued</span><i>›</i></button>{discOpen&&<div className="g-med-disc-body">{stopped.map(m=>{const n=medNames(m,m.key);return <button className="g-med-disc-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-disc-range">{medMeta(m)}</span></button>;})}</div>}</div>}
+      <div className="g-med-actions-slot"><button className="g-med-add top" onClick={()=>beginChange(active[0]?.key||stopped[0]?.key)}><span>+</span> Record a change</button></div>
       <div className="g-med-card">
         <div className="g-med-hist-head"><span className="g-med-ctit">History</span>{filterKey&&<button className="g-med-filter" onClick={()=>setFilterKey("")}>× {medPrimary(medByKey(medsAll,filterKey),filterKey)}</button>}</div>
         {historyGroups.length?historyGroups.map(group=><Fragment key={group.month}><div className="g-med-mon">{group.month}</div>{group.rows.map((row,i)=>renderHistoryRow(row,i===group.rows.length-1))}</Fragment>):<p className="g-med-empty">No recorded changes yet.</p>}
@@ -3078,14 +3078,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-med-disc.open .g-med-disc-head{border-radius:14px 14px 0 0}
 .g-med-disc.open .g-med-disc-head i{transform:rotate(90deg)}
 .g-med-disc-body{border:1px solid var(--g-line);border-top:none;border-radius:0 0 14px 14px;padding:0 16px}
+.g-med-disc-row{align-items:center;padding:14px 0}
 .g-med-disc-row .g-med-now-name b{font-weight:400;color:var(--g-tx2)}
-.g-med-actions-slot{margin-bottom:12px}
+.g-med-disc-range{flex-shrink:0;max-width:42%;text-align:right;color:var(--g-tx3);font:300 12px/1.25 'Inter',system-ui,sans-serif}
+.g-med-actions-slot{margin:24px 0 24px}
 .g-med-empty{padding:12px 2px;font:300 12px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-med-add{display:flex;width:100%;align-items:center;justify-content:center;gap:7px;margin-top:22px;padding:14px;border:1px solid var(--g-line);border-radius:13px;background:var(--g-card);color:var(--g-tx);font:500 14px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-med-add{display:flex;width:100%;align-items:center;justify-content:center;gap:7px;margin-top:22px;padding:14px;border:1px solid var(--g-tx);border-radius:13px;background:var(--g-tx);color:var(--g-bg);font:500 14px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-med-add.top{margin-top:0}
-.g-med-add span{font-size:16px;color:var(--g-tx2)}
-.g-med-new-link{display:block;margin:13px auto 0;border:none;background:none;color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
-.g-med-new-link.tight{margin-top:12px}
+.g-med-add span{font-size:16px;color:var(--g-bg)}
 .g-med-hist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .g-med-hist-head .g-med-ctit{margin:0}
 .g-med-filter{border:1px solid var(--g-tx);border-radius:999px;background:var(--g-surface);color:var(--g-tx);font:500 12px/1 'Inter',system-ui,sans-serif;padding:6px 10px;cursor:pointer}
