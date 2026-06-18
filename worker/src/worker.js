@@ -45,11 +45,11 @@ export default {
         }
 
         const { results: doseRows = [] } = await env.DB.prepare(
-          "SELECT date, med_key, count FROM daily_med_doses"
+          "SELECT date, med_key, count, off, note FROM daily_med_doses"
         ).all();
         for (const row of doseRows) {
           if (!mood[row.date]) continue;
-          mood[row.date].meds[row.med_key] = { ct: row.count };
+          mood[row.date].meds[row.med_key] = dailyMedState(row.count, row.off, row.note);
         }
 
         const srm = {};
@@ -370,10 +370,8 @@ async function writeToD1(env, body) {
     ));
 
     for (const [medKey, med] of Object.entries(entry.meds || {})) {
-      const count = Number(med && med.ct);
-      if (count > 0) {
-        statements.push(env.DB.prepare("INSERT OR REPLACE INTO daily_med_doses (date, med_key, count) VALUES (?, ?, ?)").bind(date, medKey, count));
-      }
+      const state = dailyMedState(med && med.ct, med && med.off, med && med.note);
+      statements.push(env.DB.prepare("INSERT OR REPLACE INTO daily_med_doses (date, med_key, count, off, note) VALUES (?, ?, ?, ?, ?)").bind(date, medKey, state.ct, state.off ? 1 : 0, state.note || null));
     }
   }
 
@@ -573,7 +571,7 @@ async function computeSeedMedicationHistory(env) {
     "SELECT key, name, dose FROM medications ORDER BY sort_order"
   ).all();
   const { results: rows = [] } = await env.DB.prepare(
-    "SELECT med_key, date, count FROM daily_med_doses ORDER BY med_key, date"
+    "SELECT med_key, date, count FROM daily_med_doses WHERE count > 0 ORDER BY med_key, date"
   ).all();
   const { results: manualStarted = [] } = await env.DB.prepare(
     "SELECT DISTINCT med_key FROM med_events WHERE source = 'manual' AND event_type = 'started'"
@@ -702,6 +700,13 @@ function displayPreference(value) {
   const pref = optionalString(value) || "generic";
   if (!MED_DISPLAY_PREFS.has(pref)) throw new Error("invalid display_pref");
   return pref;
+}
+
+function dailyMedState(ct, off, note) {
+  const count = Math.max(0, nullableNumber(ct) ?? 0);
+  const isOff = Boolean(off) && count > 0;
+  const cleanNote = optionalString(note);
+  return cleanNote ? { ct: count, off: isOff, note: cleanNote } : { ct: count, off: isOff };
 }
 
 function parseJsonArray(value) {

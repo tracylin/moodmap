@@ -1,0 +1,2 @@
+ALTER TABLE daily_med_doses ADD COLUMN off INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE daily_med_doses ADD COLUMN note TEXT;

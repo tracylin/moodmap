@@ -6,7 +6,7 @@
  *   Mood severity marked with "X" in the corresponding column.
  *
  * POST types:
- *   {type:"mood", date, entry:{mood,mood2,sleep,...,meds:{key:{ct}}}, meds_ref:[{key,name,dose}]}
+ *   {type:"mood", date, entry:{mood,mood2,sleep,...,meds:{key:{ct,off,note}}}, meds_ref:[{key,name,dose}]}
  *   {type:"srm",  date, items:[{id,time,am,...}]}
  *   {type:"delete_mood", date}
  *   {type:"delete_srm",  date}
@@ -522,10 +522,8 @@ function upsertMoodRow_(ss, date, entry, medsRef) {
 
   layout.meds.forEach(function(mc){
     var m = entry.meds && entry.meds[mc.key];
-    var ct = m && m.ct ? Number(m.ct) : 0;
-    if (ct <= 0) return;
     var dose = refMap[mc.key] || mc.dose;
-    row[mc.col - 1] = dose ? (ct + " x " + dose) : ct;
+    row[mc.col - 1] = formatDailyMedCell_(m, dose);
   });
 
   row[layout.notesCol - 1] = entry.notes || "";
@@ -617,12 +615,8 @@ function readMood_(ss) {
     layout.meds.forEach(function(mc){
       var raw = r[mc.col - 1];
       if (raw === "" || raw == null) return;
-      var ct = Number(raw);
-      if (isNaN(ct)) {
-        var match = String(raw).match(/^(\d+)\s*[x×]\s*/i);
-        ct = match ? Number(match[1]) : 0;
-      }
-      if (ct > 0) meds[mc.key] = { ct: ct };
+      var parsedMed = parseDailyMedCell_(raw);
+      if (parsedMed) meds[mc.key] = parsedMed;
     });
     var mood = null, mood2 = null;
     layout.moods.forEach(function(mc){
@@ -646,6 +640,50 @@ function readMood_(ss) {
     };
   });
   return result;
+}
+
+function cleanDailyMedNote_(note) {
+  return String(note || "").replace(/[\r\n]+/g, " ").trim();
+}
+
+function formatDailyMedCell_(m, dose) {
+  if (!m) return "";
+  var ct = Number(m.ct || 0);
+  if (!isFinite(ct) || ct < 0) ct = 0;
+  var off = !!m.off && ct > 0;
+  var note = cleanDailyMedNote_(m.note);
+  if (off) {
+    var base = dose ? (ct + " x " + dose) : String(ct);
+    return base + (note ? " (off schedule: " + note + ")" : " (off schedule)");
+  }
+  if (ct <= 0) return note ? ("0 (" + note + ")") : "0";
+  return dose ? (ct + " x " + dose) : ct;
+}
+
+function parseDailyMedCell_(raw) {
+  var text = String(raw || "").trim();
+  if (!text) return null;
+  var lower = text.toLowerCase();
+  var off = lower.indexOf("off schedule") >= 0;
+  var note = "";
+  var paren = text.match(/\(([^)]*)\)\s*$/);
+  if (paren) {
+    note = paren[1].replace(/^off schedule\s*:?\s*/i, "").trim();
+  }
+  if (lower.indexOf("not taken") === 0) {
+    var missed = { ct: 0, off: false };
+    if (note) missed.note = note;
+    return missed;
+  }
+  var ct = Number(text);
+  if (isNaN(ct)) {
+    var match = text.match(/^(\d+(?:\.\d+)?)\s*[x×]\s*/i);
+    ct = match ? Number(match[1]) : 0;
+  }
+  if (ct <= 0 && !off && !note && text !== "0") return null;
+  var med = { ct: Math.max(0, ct), off: off && ct > 0 };
+  if (note) med.note = note;
+  return med;
 }
 
 

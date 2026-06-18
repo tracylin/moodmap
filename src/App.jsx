@@ -585,7 +585,7 @@ function loadLogActivity(){
     for(const k in mood){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
       const m=mood[k];
-      if(m && (m.mood||m.mood2||m.sleep!=null||m.anxiety!=null||m.irritability!=null||(m.notes&&m.notes.trim()))) set.add(k);
+      if(m && (m.mood||m.mood2||m.sleep!=null||m.anxiety!=null||m.irritability!=null||(m.notes&&m.notes.trim())||entryHasMedState(m))) set.add(k);
     }
     const srm=loadSRM();
     for(const k in srm){
@@ -622,6 +622,35 @@ function medDowDate(date){if(!date)return"";const[y,m,d]=String(date).split("-")
 function medCountLabel(ct){if(ct===null||ct===undefined||ct==="")return"—";return Number(ct)===0?"as needed":`${Number(ct)}/day`;}
 function medDoseLabel(dose){return String(dose||"").trim()||"—";}
 function medRegimenLabel(dose,ct){return`${medDoseLabel(dose)} · ${medCountLabel(ct)}`;}
+function cleanMedNote(note){return String(note||"").replace(/[\r\n]+/g," ").slice(0,500).trim();}
+function normalizeDailyMedState(src){
+  const ctRaw=Number(src?.ct??0);
+  const ct=Number.isFinite(ctRaw)?Math.max(0,ctRaw):0;
+  const off=!!src?.off&&ct>0;
+  const note=cleanMedNote(src?.note);
+  return note?{ct,off,note}:{ct,off};
+}
+function medStateKind(state){
+  const s=normalizeDailyMedState(state);
+  if(s.off)return"off";
+  if(s.ct<=0)return"missed";
+  return"taken";
+}
+function medHasDailyState(state){
+  const s=normalizeDailyMedState(state);
+  return s.ct>0||s.off||!!s.note||Object.prototype.hasOwnProperty.call(state||{},"ct");
+}
+function entryHasMedState(entry){return Object.values(entry?.meds||{}).some(medHasDailyState);}
+function medDoseQtyLabel(med,ct){
+  const dose=String(med?.dose||"").trim();
+  return dose?`${dose} × ${Number(ct||0)}`:`× ${Number(ct||0)}`;
+}
+function dailyMedForChoice(choice,med,prev={}){
+  const defaultCt=Math.max(0,Number(med?.defaultCt??prev.ct??0)||0);
+  const note=choice==="taken"?"":cleanMedNote(prev.note);
+  const base=choice==="missed"?{ct:0,off:false}:choice==="off"?{ct:defaultCt,off:defaultCt>0}: {ct:defaultCt,off:false};
+  return note&&choice!=="taken"?{...base,note}:base;
+}
 function medEventAsc(a,b){return String(a.date||"").localeCompare(String(b.date||""))||String(a.ts||"").localeCompare(String(b.ts||""))||String(a.id||"").localeCompare(String(b.id||""));}
 function medEventDesc(a,b){return medEventAsc(b,a);}
 function medDoseNumber(dose){const n=parseFloat(String(dose||"").replace(/,/g,""));return Number.isFinite(n)?n:null;}
@@ -790,12 +819,13 @@ export default function App(){
       for(const dt in resp.mood){
         const r=resp.mood[dt];
         const rMeds={};
-        if(r.meds && typeof r.meds==='object'){
-          for(const k in r.meds) if(r.meds[k]?.ct) rMeds[k]={ct:r.meds[k].ct};
+        const hasRemoteMeds=r.meds && typeof r.meds==='object';
+        if(hasRemoteMeds){
+          for(const k in r.meds) if(r.meds[k]) rMeds[k]=normalizeDailyMedState(r.meds[k]);
         }
-        // If GS returned no meds (parse failure or empty cols), keep local meds
+        // If a legacy sync response omits meds entirely, keep local meds.
         const localMeds=local[dt]?.meds||{};
-        const finalMeds=Object.keys(rMeds).length>0 ? rMeds : localMeds;
+        const finalMeds=hasRemoteMeds ? rMeds : localMeds;
         const rNote=(r.notes||"").trim();
         const finalNotes=rNote===""&&SEED_MOOD[dt]?.notes?SEED_MOOD[dt].notes:(r.notes||"");
         local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,anxiety:r.anxiety,
@@ -810,7 +840,7 @@ export default function App(){
       const cutoffMs=Date.now()-RECENT_DAYS*86400000;
       for(const dt in local){
         if(!/^\d{4}-\d{2}-\d{2}$/.test(dt)) continue;
-        if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null)){
+        if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null || entryHasMedState(local[dt]))){
           const entryMs=new Date(dt+"T12:00:00").getTime();
           if(entryMs>=cutoffMs) pushMood(dt, local[dt], meds);
         }
@@ -818,7 +848,7 @@ export default function App(){
     } else if(!hasPushedSeed) {
       const local=loadMood();
       for(const dt in local){
-        if(local[dt]?.mood) pushMood(dt, local[dt], meds);
+        if(local[dt]?.mood || entryHasMedState(local[dt])) pushMood(dt, local[dt], meds);
       }
     }
     // Merge SRM
@@ -963,7 +993,7 @@ export default function App(){
   };
   const hasMoodFields=entry=>!!(entry&&(
     moodsArr(entry).length||entry.sleep!=null||entry.anxiety!=null||entry.irritability!=null||
-    entry.weight!=null||entry.notes||Object.values(entry.meds||{}).some(v=>v.ct>0)
+    entry.weight!=null||entry.notes||entryHasMedState(entry)
   ));
   const doReplaceMood=(date,entry)=>{
     if(!hasMoodFields(entry)){doDeleteMood(date);return;}
@@ -1105,7 +1135,7 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
       const left=Math.max(10,Math.min(vw-bw-10,bubble.rect.left+bubble.rect.width/2-bw/2));
       const top=bubble.rect.bottom+9;
       const caretLeft=bubble.rect.left+bubble.rect.width/2-left-6;
-      const medCt=en?.meds?Object.values(en.meds).filter(v=>v.ct>0).length:0;
+      const medCt=en?.meds?Object.values(en.meds).filter(medHasDailyState).length:0;
       const regimenEvents=medEvents.filter(ev=>ev.date===k);
       const hasExtras=!!(en&&(en.sleep!=null||medCt||en.notes||s2||regimenEvents.length));
       const srmMoments=(s2?.items||[]).filter(it=>!it.didNot);
@@ -1241,7 +1271,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
     if(!e)return;
     const prev={...e,meds:{...(e.meds||{})},moods:moodsArr(e)};
     const next={...prev};
-    if(field==="meds") next.meds={...next.meds,[medKey]:{...next.meds[medKey],ct:0}};
+    if(field==="meds"){next.meds={...next.meds};delete next.meds[medKey];}
     else if(field==="moods") next.moods=[];
     else next[field]=field==="notes"?"":null;
     onSaveMoodEntry(next);
@@ -1255,7 +1285,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
     setUndoAction(ac?.label||item?.id||"Rhythm moment",()=>onSaveSrmItems(prev));
   };
   const renderClear=(onClick,label)=>editMode?<button className="g-day-clear" aria-label={`Clear ${label}`} onClick={ev=>{ev.stopPropagation();onClick();}}>×</button>:null;
-  const dayMeds=e?[...new Set([...meds.map(m=>m.key),...Object.keys(e.meds||{})])]:[];
+  const dayMeds=e?Object.keys(e.meds||{}).filter(k=>medHasDailyState(e.meds[k])):[];
   return(<div className="scr g-day">
     <div className="g-day-hero" style={{background:heroBg}}>
       <button className="g-day-close" onClick={onBack}>×</button>
@@ -1276,7 +1306,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
         </div>
         {e.weight!=null&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("weight"),"weight")}<span className="g-day-k">Weight</span><div className="g-day-v">{e.weight}<small> kg</small></div></div></>}
         {e.notes&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("notes"),"note")}<span className="g-day-k">Note</span><p className="g-day-note">{e.notes}</p></div></>}
-        {dayMeds.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{dayMeds.map(k=>{const ct=e.meds?.[k]?.ct??0;const name=medPrimary(medByKey(medsAll,k),k);return(<div key={k} className={`g-day-med-line${ct>0?"":" skip"}`}><i/><span>{name} {ct>0?`×${ct}`:"— not taken"}</span>{ct>0&&renderClear(()=>clearMoodField("meds",k),name)}</div>);})}</div></div></>}
+        {dayMeds.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{dayMeds.map(k=>{const med=medByKey(medsAll,k)||meds.find(m=>m.key===k);const state=normalizeDailyMedState(e.meds?.[k]);const kind=medStateKind(state);const name=medPrimary(med,k);return(<div key={k} className={`g-day-med-row ${kind}`}><span className="dotcol"><i/></span><div className="mtxt"><div className="mt1"><span className="nm">{name}</span><span className="ds">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)}</span>{renderClear(()=>clearMoodField("meds",k),name)}</div>{kind==="off"&&<div className="mchip"><span className="flag">off schedule</span></div>}{kind==="missed"&&<div className="mchip"><span className="flag">not taken</span></div>}{state.note&&<div className="mnote">{state.note}</div>}</div></div>);})}</div><div className="g-day-med-key"><span><i className="off"/>off schedule</span><span><i className="miss"/>missed</span></div></div></>}
       </>}
       {srmItems.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Social rhythm</span>
         <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>{if(!editMode)onEditSRM(it.id);}}>
@@ -1303,14 +1333,14 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
 /* ═══════════════════════════════════════════════════════════════════════════
    MOOD ENTRY
    ═══════════════════════════════════════════════════════════════════════════ */
-const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep last night?",s:"Total hours, roughly"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Medications last night",s:"Pills taken yesterday evening / this morning"},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
+const MSTEPS=[{id:"mood",q:"How was your mood?",s:"Choose up to 2 (if it felt mixed)"},{id:"sleep",q:"Hours of sleep last night?",s:"Total hours, roughly"},{id:"anxiety",q:"Anxiety level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"irritability",q:"Irritability level?",s:"0 none · 1 mild · 2 moderate · 3 severe"},{id:"meds",q:"Today's Meds",s:""},{id:"weight",q:"Weight",s:"Optional daily check-in"},{id:"notes",q:"Anything to note?",s:"Optional — events, thoughts, anything"}];
 
 /* ── MODE STEPS ── */
 const MSTEPS_FULL=[
   {id:"mood",      q:{full:"How was your mood?",         now:"How are you feeling right now?"},  s:""},
   {id:"sleep",     q:{full:"Sleep",  now:null},                               s:"Log bedtime, wake time, or just hours"},
   {id:"anx_irr",   q:{full:"Anxiety & Irritability",    now:"Anxiety & irritability"},            s:"0 none · 1 mild · 2 moderate · 3 severe"},
-  {id:"meds",      q:{full:"Medications last night",     now:null},                               s:"Pills taken yesterday evening / this morning"},
+  {id:"meds",      q:{full:"Today's Meds",               now:null},                               s:""},
   {id:"weight",    q:{full:"Weight",                     now:"Weight check-in"},                  s:"Optional — syncs to your mood log"},
   {id:"notes",     q:{full:"Anything to note?",          now:"Anything to note?"},                s:"Optional — events, thoughts, anything"},
 ];
@@ -1340,25 +1370,6 @@ function notesCopyForMoods(moods){
   const key=NOTES_MOOD_ORDER.find(k=>ms.includes(k))||"partial";
   return NOTES_COPY_BY_MOOD[key];
 }
-function nextCtUp(v){
-  const n=Number(v)||0;
-  if(n<=0) return 0.5;
-  if(n===0.5) return 1;
-  if(n>=1 && Number.isInteger(n)) return n+1;
-  return Math.ceil(n);
-}
-function nextCtDown(v){
-  const n=Number(v)||0;
-  if(n<=0) return 0;
-  if(n<0.5) return 0;
-  if(n===0.5) return 0;
-  if(n<1) return 0.5;
-  if(n===1) return 0.5;
-  if(n>1 && Number.isInteger(n)) return n-1;
-  if(n>1) return Math.floor(n);
-  return 0;
-}
-
 function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood,onX}){
   const mode="full";
   const initialKey=lockedDate||editKey||tdk();
@@ -1368,7 +1379,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const activeSteps=MSTEPS_FULL;
 
   const makeDefault=()=>{
-    const m={};meds.forEach(med=>{m[med.key]={ct:med.defaultCt??0};});
+    const m={};meds.filter(med=>Number(med.defaultCt)>0).forEach(med=>{m[med.key]=dailyMedForChoice("taken",med);});
     return{moods:[],sleep:null,weight:null,anxiety:null,irritability:null,meds:m,notes:""};
   };
 
@@ -1470,7 +1481,16 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const isR=editIdx===null&&step===tot;
   const prog=((step+(isR?1:0))/(tot+1))*100;
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
-  const updMC=(k,v,dose)=>setEntry(e=>({...e,meds:{...e.meds,[k]:{...e.meds[k],ct:Math.max(0,v),dose:dose||e.meds[k]?.dose}}}));
+  const updMedChoice=(med,choice)=>setEntry(e=>{
+    const prev=e.meds?.[med.key]||dailyMedForChoice("taken",med);
+    return{...e,meds:{...e.meds,[med.key]:dailyMedForChoice(choice,med,prev)}};
+  });
+  const updMedNote=(med,note)=>setEntry(e=>{
+    const prev=e.meds?.[med.key]||dailyMedForChoice("taken",med);
+    const state=medStateKind(prev)==="taken"?dailyMedForChoice("off",med,prev):normalizeDailyMedState(prev);
+    const clean=cleanMedNote(note);
+    return{...e,meds:{...e.meds,[med.key]:clean?{...state,note:clean}:{ct:state.ct,off:state.off}}};
+  });
   const notesText=entry.notes||"";
   const activeNoteStarter=NOTE_STARTERS.find(starter=>starter.insert===notesText)||null;
   const showNoteStarters=notesText===""||!!activeNoteStarter;
@@ -1539,8 +1559,12 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           </div>);
         })}
       </div>)}
-      {st.id==="meds"&&(<div className="ml">{meds.map(med=>{const me=entry.meds[med.key]||{ct:0};
-        return(<div key={med.key} className={`mr${me.ct>0?" mo":""}`}><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{med.dose} / pill</div></div><div className="mc"><button className="bs" onClick={()=>updMC(med.key,nextCtDown(me.ct))}>−</button><span className="mv">{me.ct}</span><button className="bs" onClick={()=>updMC(med.key,nextCtUp(me.ct))}>+</button></div></div>);})}</div>)}
+      {st.id==="meds"&&(<div className="ml g-med-log">{meds.filter(med=>Number(med.defaultCt)>0).map(med=>{const me=normalizeDailyMedState(entry.meds[med.key]||dailyMedForChoice("taken",med));const kind=medStateKind(me);
+        return(<div key={med.key} className={`mr med-log-row state-${kind}`}><div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{medDoseQtyLabel(med,Math.max(me.ct,med.defaultCt??0))}</div></div><div className="segA" role="group" aria-label={`${med.name} status`}>
+          <button type="button" className={kind==="missed"?"sel-miss":""} aria-label={`${med.name} missed`} onClick={()=>updMedChoice(med,"missed")}><span className="g g-line"/></button>
+          <button type="button" className={kind==="off"?"sel-off":""} aria-label={`${med.name} off schedule`} onClick={()=>updMedChoice(med,"off")}><span className="g g-half">◑</span></button>
+          <button type="button" className={kind==="taken"?"sel-took":""} aria-label={`${med.name} taken`} onClick={()=>updMedChoice(med,"taken")}><span className="g g-check">✓</span></button>
+        </div></div>{kind!=="taken"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={me.note||""} maxLength={500} placeholder="add a note if you want to" onChange={ev=>updMedNote(med,ev.target.value)}/></div>}</div>);})}<div className="med-state-legend"><span><span className="gi"><span className="g g-check">✓</span></span>taken</span><span><span className="gi"><span className="g g-half">◑</span></span>off schedule</span><span><span className="gi"><span className="g g-line"/></span>missed</span></div></div>)}
       {st.id==="notes"&&(<>
         <div className={`note-starter-wrap${showNoteStarters?"":" note-starter-hidden"}`} aria-hidden={!showNoteStarters}>
           <div className="starter-label">if it helps —</div>
@@ -1557,7 +1581,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           disabled={si===0&&!(entry.moods||[]).length}>
           {isEdit?"Done":si===tot-1?"Review":"Next"}
         </button>
-        {!isEdit&&<button className="btn-skip" onClick={()=>{const sid=activeSteps[si]?.id;setSkippedSteps(prev=>{const n=new Set(prev);n.add(sid);return n;});setStep(Math.min(si+1,tot));}}>skip</button>}
+        {!isEdit&&<button className="btn-skip" onClick={()=>{const sid=activeSteps[si]?.id;setSkippedSteps(prev=>{const n=new Set(prev);n.add(sid);return n;});setStep(Math.min(si+1,tot));}}>Skip for now</button>}
       </div>
     </div>);
   };
@@ -1597,12 +1621,12 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
-            <RvRow l="Meds" v={skippedSteps.has("meds")?"None":(()=>{const taken=Object.entries(entry.meds).filter(([,v])=>v.ct>0);return taken.length?taken.map(([k,v])=>{const med=meds.find(m=>m.key===k);return <span className="rv-med" key={k}><b>{med?.name||k}</b><span>{med?.dose||"—"} · ×{v.ct}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
+            <RvRow l="Meds" v={skippedSteps.has("meds")?"Not logged":(()=>{const logged=Object.entries(entry.meds||{}).filter(([,v])=>medHasDailyState(v));return logged.length?logged.map(([k,v])=>{const med=meds.find(m=>m.key===k);const state=normalizeDailyMedState(v);const kind=medStateKind(state);const label=kind==="off"?"off schedule":kind==="missed"?"not taken":"taken";return <span className={`rv-med rv-med-${kind}`} key={k}><b>{med?.name||k}</b><span>{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)} · {label}{state.note?` · ${state.note}`:""}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
           const finalEntry={...entry};
-          if(skippedSteps.has("meds")){const cleared={};Object.keys(finalEntry.meds||{}).forEach(k=>{cleared[k]={ct:0};});finalEntry.meds=cleared;}
+          if(skippedSteps.has("meds")) finalEntry.meds={};
           // Save SRM bedtime (day before) and bed/wake (selected date)
           if(onSaveSRM){
             let updSrm={...(srm||{})};
@@ -1955,7 +1979,7 @@ function Hist({mood,srm,meds,onBack}){
     const allDates=new Set([...Object.keys(mood),...Object.keys(srm)]);
     [...allDates].sort().forEach(k=>{
       const e=mood[k];const s=srm[k];
-      const ms=e?.meds?Object.entries(e.meds).filter(([,v])=>v.ct>0).map(([k2,v])=>`${k2}:${v.ct}`).join("; "):"";
+      const ms=e?.meds?Object.entries(e.meds).filter(([,v])=>medHasDailyState(v)).map(([k2,v])=>{const state=normalizeDailyMedState(v);const label=state.off?"off schedule":state.ct<=0?"not taken":"taken";return `${k2}:${state.ct}:${label}${state.note?` (${state.note.replace(/"/g,"'")})`:""}`;}).join("; "):"";
       const rhythm=s?.items?s.items.filter(i=>!i.didNot).map(i=>`${i.id}:${fmt12h(normTime(i.time))||"?"}`).join("; "):"";
       csv+=`${k},${moodKeyString(e)},${e?.sleep??""},${e?.weight??""},${e?.anxiety??""},${e?.irritability??""},"${ms}","${(e?.notes||"").replace(/"/g,'""')}","${rhythm}"\n`;
     });
@@ -2699,6 +2723,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-review .rv-med{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:2px 0}
 .g-review .rv-med b{font-weight:500}
 .g-review .rv-med span{color:var(--g-tx3);font-size:12px;white-space:nowrap}
+.g-review .rv-med-off span{color:var(--g-sleep-healthy)}
+.g-review .rv-med-missed span{color:var(--g-warm-err);white-space:normal;text-align:right}
 .g-review .rr-edit{color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif;padding:2px 4px}
 .g-review .btn-p{width:100%;margin-top:auto;border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
 .rv-mood{display:inline-flex;align-items:center;color:var(--g-tx)}
@@ -2863,6 +2889,27 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .mc{gap:12px;flex-shrink:0}
 .g-entry .bs{width:30px;height:30px;border-radius:50%;border:1px solid var(--g-line);color:var(--g-tx2)}
 .g-entry .mv{font:500 15px/1 'Inter',system-ui,sans-serif;min-width:16px}
+.g-entry .med-log-row{display:block;padding:13px 0}
+.g-entry .med-log-row .mr-main{display:flex;align-items:center;gap:13px}
+.g-entry .med-log-row .mi{flex:1}
+.g-entry .segA{display:inline-flex;flex-shrink:0;border:1px solid var(--g-line);border-radius:999px;overflow:hidden;background:var(--g-bg)}
+.g-entry .segA button{appearance:none;border:none;background:transparent;width:38px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--g-tx4);border-right:1px solid var(--g-line);cursor:pointer}
+.g-entry .segA button:last-child{border-right:none}
+.g-entry .segA .g-line{display:inline-block;width:13px;height:2px;border-radius:2px;background:currentColor}
+.g-entry .segA .g-half,.g-entry .segA .g-check{font-size:14px;line-height:1}
+.g-entry .segA button.sel-took{background:var(--g-tx);color:var(--g-bg)}
+.g-entry .segA button.sel-off{background:var(--g-surface);color:var(--g-tx2)}
+.g-entry .segA button.sel-miss{background:var(--g-surface);color:var(--g-tx3)}
+.g-entry .offnote{margin:9px 0 2px}
+.g-entry .offnote .nhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
+.g-entry .offnote .ntitle{font:400 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-entry .offnote .noptional{font:400 9.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);letter-spacing:.05em}
+.g-entry .offnote input{width:100%;border:1px solid var(--g-line);border-radius:999px;background:var(--g-card);color:var(--g-tx);font:400 12.5px/1.4 'Inter',system-ui,sans-serif;padding:9px 14px}
+.g-entry .offnote input::placeholder{color:var(--g-tx4);font-weight:300}
+.g-entry .med-state-legend{display:flex;align-items:center;flex-wrap:wrap;gap:7px 16px;margin-top:18px;padding-top:13px;border-top:1px solid var(--g-line)}
+.g-entry .med-state-legend span{display:inline-flex;align-items:center;gap:7px;font:400 10.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-entry .med-state-legend .gi{width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--g-tx4);flex:0 0 17px}
+.g-entry .med-state-legend .g-line{display:inline-block;width:11px;height:2px;border-radius:2px;background:currentColor}
 
 .ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);caret-color:#8A847B;transition:border .15s;margin-bottom:12px;touch-action:manipulation}
 .ni:focus{outline:none;border-color:var(--tx)}.ni::placeholder{color:var(--t3)}
@@ -3304,6 +3351,23 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-med-line.skip{color:var(--g-tx3)}
 .g-day-med-line>i{width:7px;height:7px;flex-shrink:0;border-radius:50%;background:var(--g-tx4)}
 .g-day-med-line.skip>i{background:transparent;border:1px solid #9AA0BE}
+.g-day-med-row{display:flex;align-items:flex-start;gap:8px;font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-day-med-row .dotcol{width:16px;flex:0 0 16px;display:flex;justify-content:flex-start}
+.g-day-med-row .dotcol i{width:7px;height:7px;border-radius:50%;background:var(--g-tx4);margin-top:5px}
+.g-day-med-row .mtxt{display:flex;flex-direction:column;min-width:0;flex:1}
+.g-day-med-row .mt1{display:flex;align-items:baseline;gap:7px;min-width:0;flex-wrap:nowrap}
+.g-day-med-row .nm{font-weight:500;color:var(--g-tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.g-day-med-row .ds{color:var(--g-tx3);font-size:12px;white-space:nowrap;flex:0 0 auto}
+.g-day-med-row .mchip{margin-top:4px}
+.g-day-med-row .flag{display:inline-block;font:700 9px/1 'Inter',system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;border-radius:999px;padding:4px 9px;white-space:nowrap;border:0}
+.g-day-med-row.off .flag{background:var(--g-sleep-healthy);color:var(--g-tx)}
+.g-day-med-row.missed .flag{background:var(--g-warm-err);color:var(--g-card)}
+.g-day-med-row .mnote{margin:6px 0 3px;padding-left:10px;border-left:2px solid var(--g-line);font:300 11.5px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-day-med-key{display:flex;align-items:center;gap:14px;margin-top:14px;padding-top:11px;border-top:1px solid var(--g-line)}
+.g-day-med-key span{display:inline-flex;align-items:center;gap:6px;font:400 10px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-day-med-key i{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
+.g-day-med-key i.off{background:var(--g-sleep-healthy)}
+.g-day-med-key i.miss{background:var(--g-warm-err)}
 .g-day-clear{flex-shrink:0;width:20px;height:20px;border:1px solid rgba(212,120,92,.42);border-radius:50%;background:rgba(212,120,92,.09);color:var(--g-warm-err);font:500 15px/17px 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-day-cell>.g-day-clear,.g-day-block>.g-day-clear{position:absolute;top:12px;right:0}
 .g-day-tl-item{display:flex;gap:14px;align-items:flex-start;padding:8px 0;cursor:pointer}
