@@ -638,6 +638,7 @@ function medDowDate(date){if(!date)return"";const[y,m,d]=String(date).split("-")
 function medCountLabel(ct){if(ct===null||ct===undefined||ct==="")return"—";return Number(ct)===0?"as needed":`${Number(ct)}/day`;}
 function medDoseLabel(dose){return String(dose||"").trim()||"—";}
 function medRegimenLabel(dose,ct){return`${medDoseLabel(dose)} · ${medCountLabel(ct)}`;}
+function medNoteInput(note){return String(note||"").replace(/[\r\n]+/g," ").slice(0,500);}
 function cleanMedNote(note){return String(note||"").replace(/[\r\n]+/g," ").slice(0,500).trim();}
 function normalizeDailyMedState(src){
   const ctRaw=Number(src?.ct??0);
@@ -1512,8 +1513,8 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const updMedNote=(med,note)=>setEntry(e=>{
     const prev=e.meds?.[med.key]||dailyMedForChoice("taken",med);
     const state=medStateKind(prev)==="taken"?dailyMedForChoice("off",med,prev):normalizeDailyMedState(prev);
-    const clean=cleanMedNote(note);
-    return{...e,meds:{...e.meds,[med.key]:clean?{...state,note:clean}:{ct:state.ct,off:state.off}}};
+    const raw=medNoteInput(note);
+    return{...e,meds:{...e.meds,[med.key]:raw?{...state,note:raw}:{ct:state.ct,off:state.off}}};
   });
   const togglePrnMed=med=>setEntry(e=>{
     const medsNext={...e.meds};
@@ -1597,14 +1598,14 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
       {st.id==="meds"&&(()=>{const routine=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0));const prn=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)==="as_needed"));return <div className="ml g-med-log">
         {routine.length>0&&<div className="med-log-section">
           <div className="sect-h"><span className="sect-k">Routine</span></div>
-          {routine.map(med=>{const me=normalizeDailyMedState(entry.meds[med.key]||dailyMedForChoice("taken",med));const kind=medStateKind(me);const when=medWhenLabel(med);return(
+          {routine.map(med=>{const raw=entry.meds[med.key];const me=normalizeDailyMedState(raw||dailyMedForChoice("taken",med));const kind=medStateKind(me);const when=medWhenLabel(med);const noteValue=raw?.note??"";return(
             <div key={med.key} className={`mr med-log-row state-${kind}`}>
               <div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{medDoseQtyLabel(med,Math.max(me.ct,med.defaultCt??0))}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="segA" role="group" aria-label={`${med.name} status`}>
                 <button type="button" className={kind==="missed"?"sel-miss":""} aria-label={`${med.name} missed`} onClick={()=>updMedChoice(med,"missed")}><span className="g g-line"/></button>
                 <button type="button" className={kind==="off"?"sel-off":""} aria-label={`${med.name} off schedule`} onClick={()=>updMedChoice(med,"off")}><span className="g g-half">◑</span></button>
                 <button type="button" className={kind==="taken"?"sel-took":""} aria-label={`${med.name} taken`} onClick={()=>updMedChoice(med,"taken")}><span className="g g-check">✓</span></button>
               </div></div>
-              {kind!=="taken"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={me.note||""} maxLength={500} placeholder="add a note if you want to" onChange={ev=>updMedNote(med,ev.target.value)}/></div>}
+              {kind!=="taken"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={noteValue} maxLength={500} placeholder="add a note if you want to" onChange={ev=>updMedNote(med,ev.target.value)}/></div>}
             </div>
           );})}
           <div className="med-state-legend"><span><span className="gi"><span className="g g-check">✓</span></span>taken</span><span><span className="gi"><span className="g g-half">◑</span></span>off schedule</span><span><span className="gi"><span className="g g-line"/></span>missed</span></div>
@@ -1670,11 +1671,11 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
-            <RvRow l="Meds" v={skippedSteps.has("meds")?"Not logged":(()=>{const logged=Object.entries(entry.meds||{}).filter(([,v])=>medHasDailyState(v));return logged.length?logged.map(([k,v])=>{const med=meds.find(m=>m.key===k);const state=normalizeDailyMedState(v);const kind=medStateKind(state);const label=kind==="off"?"off schedule":kind==="missed"?"not taken":"taken";return <span className={`rv-med rv-med-${kind}`} key={k}><b>{med?.name||k}</b><span>{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)} · {label}{state.note?` · ${state.note}`:""}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
+            <RvRow l="Meds" v={skippedSteps.has("meds")?"Not logged":(()=>{const logged=Object.entries(entry.meds||{}).filter(([,v])=>medHasDailyState(v));return logged.length?logged.map(([k,v])=>{const med=meds.find(m=>m.key===k);const state=normalizeDailyMedState(v);const kind=medStateKind(state);const label=kind==="off"?"off schedule":kind==="missed"?"not taken":"taken";return <span className={`rv-med rv-med-${kind}`} key={k}><b>{med?.name||k}</b><span className="rv-med-detail">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)} · {label}{state.note?` · ${state.note}`:""}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
-          const finalEntry={...entry};
+          const finalEntry={...entry,meds:Object.fromEntries(Object.entries(entry.meds||{}).map(([key,state])=>{const s=normalizeDailyMedState(state);return[key,s.note?{...s,note:cleanMedNote(s.note)}:{ct:s.ct,off:s.off}];}))};
           if(skippedSteps.has("meds")) finalEntry.meds={};
           // Save SRM bedtime (day before) and bed/wake (selected date)
           if(onSaveSRM){
@@ -2527,7 +2528,7 @@ function Medications({medsAll,medEvents,mood,onCreate,onUpdateMeta,onEvent,onUpd
     </>}
     {mode==="new"&&<>
       <div className="g-med-card">
-        <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder="Quetiapine"/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Seroquel"/><em>Either can be left blank.</em></div>
+        <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder=""/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder=""/><em>Either can be left blank.</em></div>
         <div className="g-med-field"><label>Show as</label><div className="g-med-seg">{["generic","both","brand"].map(pref=><button className={displayPref===pref?"on":""} key={pref} onClick={()=>setDisplayPref(pref)}>{pref[0].toUpperCase()+pref.slice(1)}</button>)}</div></div>
         <div className="g-med-field"><label>Starting dose</label><div className="g-med-two"><div><input className="g-med-input" value={dose} onChange={e=>setDose(e.target.value)} placeholder="100mg"/><small>Dose per pill</small></div><div><div className="g-med-step"><button onClick={()=>changeCount(-1)}>−</button><b>{count}</b><button onClick={()=>changeCount(1)}>+</button><span>/ day</span></div><small>Daily count</small></div></div></div>
         <div className="g-med-field"><label>When taken</label><WhenTakenPicker value={whenTaken} onChange={setWhenTaken}/></div>
@@ -2538,7 +2539,7 @@ function Medications({medsAll,medEvents,mood,onCreate,onUpdateMeta,onEvent,onUpd
     </>}
     {mode==="info"&&selected&&<>
       <div className="g-med-card">
-        <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder="Quetiapine"/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Seroquel"/><em>Either can be left blank.</em></div>
+        <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder=""/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder=""/><em>Either can be left blank.</em></div>
         <div className="g-med-field"><label>Show as</label><div className="g-med-seg">{["generic","both","brand"].map(pref=><button className={displayPref===pref?"on":""} key={pref} onClick={()=>setDisplayPref(pref)}>{pref[0].toUpperCase()+pref.slice(1)}</button>)}</div></div>
         <div className="g-med-field"><label>When taken</label><WhenTakenPicker value={whenTaken} onChange={setWhenTaken}/></div>
         {formError&&<p className="g-med-error">{formError}</p>}
@@ -2790,11 +2791,11 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-review .rr{padding:14px 0;border-bottom:1px solid var(--g-line);gap:12px}
 .g-review .rl{display:block;font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:5px}
 .g-review .rv{font:400 14px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.g-review .rv-med{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:2px 0}
+.g-review .rv-med{display:flex;flex-direction:column;align-items:stretch;gap:3px;padding:4px 0}
 .g-review .rv-med b{font-weight:500}
-.g-review .rv-med span{color:var(--g-tx3);font-size:12px;white-space:nowrap}
-.g-review .rv-med-off span{color:var(--g-sleep-healthy)}
-.g-review .rv-med-missed span{color:var(--g-warm-err);white-space:normal;text-align:right}
+.g-review .rv-med-detail{color:var(--g-tx3);font-size:12px;white-space:normal;overflow-wrap:anywhere}
+.g-review .rv-med-off .rv-med-detail{color:var(--g-sleep-healthy)}
+.g-review .rv-med-missed .rv-med-detail{color:var(--g-warm-err)}
 .g-review .rr-edit{color:var(--g-tx3);font:500 12px/1 'Inter',system-ui,sans-serif;padding:2px 4px}
 .g-review .btn-p{width:100%;margin-top:auto;border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif;color:var(--g-bg)}
 .rv-mood{display:inline-flex;align-items:center;color:var(--g-tx)}
@@ -2952,9 +2953,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .ml{gap:0;margin-bottom:12px}
 .g-entry .mr{padding:11px 0;border:0;border-bottom:1px solid var(--g-line);border-radius:0;background:transparent}
 .g-entry .mo{border-color:var(--g-line);background:transparent}
-.g-entry .mr:not(.mo) .mn,.g-entry .mr:not(.mo) .mv{color:var(--g-tx3)}
+.g-entry .mr:not(.mo):not(.med-log-row) .mn,.g-entry .mr:not(.mo) .mv{color:var(--g-tx3)}
 .g-entry .mi{min-width:0}
-.g-entry .mn{font:500 13px/1.25 'Inter',system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-entry .mn{font:500 13px/1.25 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .g-entry .md-sub{font:400 10px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:1px}
 .g-entry .mc{gap:12px;flex-shrink:0}
 .g-entry .bs{width:30px;height:30px;border-radius:50%;border:1px solid var(--g-line);color:var(--g-tx2)}
@@ -2975,8 +2976,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .segA .g-line{display:inline-block;width:13px;height:2px;border-radius:2px;background:currentColor}
 .g-entry .segA .g-half,.g-entry .segA .g-check{font-size:14px;line-height:1}
 .g-entry .segA button.sel-took{background:var(--g-tx);color:var(--g-bg)}
-.g-entry .segA button.sel-off{background:var(--g-surface);color:var(--g-tx2)}
-.g-entry .segA button.sel-miss{background:var(--g-surface);color:var(--g-tx3)}
+.g-entry .segA button.sel-off{background:var(--g-tx);color:var(--g-bg)}
+.g-entry .segA button.sel-miss{background:var(--g-tx);color:var(--g-bg)}
 .g-entry .offnote{margin:9px 0 2px}
 .g-entry .offnote .nhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
 .g-entry .offnote .ntitle{font:400 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
