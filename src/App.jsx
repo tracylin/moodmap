@@ -668,6 +668,18 @@ function dailyMedForChoice(choice,med,prev={}){
   const base=choice==="missed"?{ct:0,off:false}:choice==="off"?{ct:defaultCt,off:defaultCt>0}: {ct:defaultCt,off:false};
   return note&&choice!=="taken"?{...base,note}:base;
 }
+function defaultRoutineMedsMap(meds){
+  const out={};
+  (meds||[]).filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0).forEach(med=>{out[med.key]=dailyMedForChoice("taken",med);});
+  return out;
+}
+function cloneMedsState(meds){return Object.fromEntries(Object.entries(meds||{}).map(([k,v])=>[k,{...v}]));}
+function normalizeMedsForSave(meds){
+  return Object.fromEntries(Object.entries(meds||{}).map(([key,state])=>{
+    const s=normalizeDailyMedState(state);
+    return[key,s.note?{...s,note:cleanMedNote(s.note)}:{ct:s.ct,off:s.off}];
+  }));
+}
 function medEventAsc(a,b){return String(a.date||"").localeCompare(String(b.date||""))||String(a.ts||"").localeCompare(String(b.ts||""))||String(a.id||"").localeCompare(String(b.id||""));}
 function medEventDesc(a,b){return medEventAsc(b,a);}
 function medDoseNumber(dose){const n=parseFloat(String(dose||"").replace(/,/g,""));return Number.isFinite(n)?n:null;}
@@ -1042,6 +1054,18 @@ export default function App(){
     if(!hasMoodFields(entry)){doDeleteMood(date);return;}
     doSaveMood({...mood,[date]:entry},date);
   };
+  const doSaveMoodBatch=(changes)=>{
+    const next={...mood};
+    const pushes=[],deletes=[];
+    changes.forEach(({date,entry})=>{
+      if(!date)return;
+      if(hasMoodFields(entry)){next[date]=entry;pushes.push({date,entry});}
+      else{delete next[date];deletes.push(date);}
+    });
+    setMood(next);saveMood(next);
+    pushes.forEach(({date,entry})=>{recordLogToday();pushMood(date,entry,meds);});
+    deletes.forEach(date=>pushDeleteMood(date));
+  };
   const doReplaceSrm=(date,items)=>{
     if(!items.length){doDeleteSrm(date);return;}
     doSaveSRM({...srm,[date]:{...(srm[date]||{}),items}},date);
@@ -1070,7 +1094,7 @@ export default function App(){
 
       {screen==="editDayMood"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} editKey={selDay} onSave={e=>{doSaveMood({...mood,[selDay]:e},selDay);setScreen("dayView");}} onMoveMood={to=>{if(moveSelectedDay(to)===true)setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
       {screen==="editDaySrm"&&<SRMSingle id={srmEditId} srm={srm} dateKey={selDay} onSave={item=>{const ex=srm[selDay]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[selDay]:{items}};doSaveSRM(ns,selDay);setScreen("dayView");}} onX={()=>setScreen("dayView")}/>}
-      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
+      {screen==="entry"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} onSave={(e,k,splitMeds)=>{splitMeds?doSaveMoodBatch([{date:splitMeds.yesterdayDate,entry:splitMeds.yesterdayEntry},{date:k,entry:e}]):doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srm"&&<SRMPicker srm={srm} srmDate={srmDate} setSrmDate={setSrmDate} onPick={id=>{setSrmEditId(id);setScreen("srmEdit");}} onX={()=>setScreen("calendar")}/>}
       {screen==="srmEdit"&&<SRMSingle id={srmEditId} srm={srm} dateKey={srmDate} onSave={item=>{const k=srmDate;const ex=srm[k]||{items:[]};const items=[...ex.items.filter(i=>i.id!==item.id),item];const ns={...srm,[k]:{items}};doSaveSRM(ns,k);setScreen("srm");}} onX={()=>setScreen("srm")}/>}
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
@@ -1423,17 +1447,31 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const activeSteps=MSTEPS_FULL;
 
   const makeDefault=()=>{
-    const m={};meds.filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0).forEach(med=>{m[med.key]=dailyMedForChoice("taken",med);});
-    return{moods:[],sleep:null,weight:null,anxiety:null,irritability:null,meds:m,notes:""};
+    return{moods:[],sleep:null,weight:null,anxiety:null,irritability:null,meds:defaultRoutineMedsMap(meds),notes:""};
   };
 
+  const isMedsYesterdayFlow=!editKey&&!lockedDate&&targetKey===tdk();
+  const yesterdayMedKey=ydk();
+  const seedYesterdayMeds=()=>{
+    const y=mood[yesterdayMedKey];
+    return entryHasMedState(y)?cloneMedsState(y.meds):defaultRoutineMedsMap(meds);
+  };
+  const seedTodayMeds=()=>{
+    const t=mood[targetKey];
+    return entryHasMedState(t)?cloneMedsState(t.meds):{};
+  };
   const[step,setStep]=useState(0);const[editIdx,setEditIdx]=useState(null);const[skippedSteps,setSkippedSteps]=useState(new Set());
   const notesRef=useRef(null);
   const[entry,setEntry]=useState(()=>{
     const t=mood[targetKey];
     if(t) return{...t,moods:moodsArr(t),meds:{...t.meds}};
-    return makeDefault();
+    const d=makeDefault();
+    return isMedsYesterdayFlow?{...d,meds:{}}:d;
   });
+  const[yesterdayMeds,setYesterdayMeds]=useState(seedYesterdayMeds);
+  const[todayMeds,setTodayMeds]=useState(seedTodayMeds);
+  const[todayMedsOpen,setTodayMedsOpen]=useState(false);
+  const[todayMedsTouched,setTodayMedsTouched]=useState(false);
 
   // ── Sleep chip state ──
   const initSleepTime=useCallback(()=>{
@@ -1601,7 +1639,11 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const t=mood[targetKey];
     const episodes=storedSleepEpisodes(t);
     if(t) setEntry({...t,moods:moodsArr(t),meds:{...t.meds}});
-    else setEntry(makeDefault());
+    else{const d=makeDefault();setEntry(isMedsYesterdayFlow?{...d,meds:{}}:d);}
+    setYesterdayMeds(seedYesterdayMeds());
+    setTodayMeds(seedTodayMeds());
+    setTodayMedsOpen(false);
+    setTodayMedsTouched(false);
     setSlpTime(episodes[0]?.bed??initSleepTime());
     setWkTime(episodes[0]?.wake??initWakeTime());
     setSlpHrs(episodes[0]?.hrs??t?.sleep??8);
@@ -1614,30 +1656,87 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const isR=editIdx===null&&step===tot;
   const prog=((step+(isR?1:0))/(tot+1))*100;
   const upd=(k,v)=>setEntry(e=>({...e,[k]:v}));
-  const updMedChoice=(med,choice)=>setEntry(e=>{
-    const prev=e.meds?.[med.key]||dailyMedForChoice("taken",med);
-    return{...e,meds:{...e.meds,[med.key]:dailyMedForChoice(choice,med,prev)}};
-  });
-  const updMedNote=(med,note)=>setEntry(e=>{
-    const prev=e.meds?.[med.key]||dailyMedForChoice("taken",med);
+  const updateMedChoiceInMap=(map,med,choice)=>{
+    const prev=map?.[med.key]||dailyMedForChoice("taken",med);
+    return{...map,[med.key]:dailyMedForChoice(choice,med,prev)};
+  };
+  const updateMedNoteInMap=(map,med,note)=>{
+    const prev=map?.[med.key]||dailyMedForChoice("taken",med);
     const state=medStateKind(prev)==="taken"?dailyMedForChoice("off",med,prev):normalizeDailyMedState(prev);
     const raw=medNoteInput(note);
-    return{...e,meds:{...e.meds,[med.key]:raw?{...state,note:raw}:{ct:state.ct,off:state.off}}};
-  });
-  const togglePrnMed=med=>setEntry(e=>{
-    const medsNext={...e.meds};
+    return{...map,[med.key]:raw?{...state,note:raw}:{ct:state.ct,off:state.off}};
+  };
+  const togglePrnInMap=(map,med)=>{
+    const medsNext={...map};
     if(medsNext[med.key]) delete medsNext[med.key];
     else medsNext[med.key]={ct:Math.max(1,Number(med.defaultCt)||1),off:false};
-    return{...e,meds:medsNext};
-  });
-  const nudgePrnMed=(med,delta)=>setEntry(e=>{
-    const prev=normalizeDailyMedState(e.meds?.[med.key]||{ct:1});
+    return medsNext;
+  };
+  const nudgePrnInMap=(map,med,delta)=>{
+    const prev=normalizeDailyMedState(map?.[med.key]||{ct:1});
     const next=Math.max(0.5,Math.round((prev.ct+delta)*2)/2);
-    return{...e,meds:{...e.meds,[med.key]:{ct:next,off:false}}};
-  });
+    return{...map,[med.key]:{ct:next,off:false}};
+  };
+  const updMedChoice=(med,choice)=>setEntry(e=>({...e,meds:updateMedChoiceInMap(e.meds,med,choice)}));
+  const updMedNote=(med,note)=>setEntry(e=>({...e,meds:updateMedNoteInMap(e.meds,med,note)}));
+  const togglePrnMed=med=>setEntry(e=>({...e,meds:togglePrnInMap(e.meds,med)}));
+  const nudgePrnMed=(med,delta)=>setEntry(e=>({...e,meds:nudgePrnInMap(e.meds,med,delta)}));
+  const updateYesterdayChoice=(med,choice)=>setYesterdayMeds(prev=>updateMedChoiceInMap(prev,med,choice));
+  const updateYesterdayNote=(med,note)=>setYesterdayMeds(prev=>updateMedNoteInMap(prev,med,note));
+  const toggleYesterdayPrn=med=>setYesterdayMeds(prev=>togglePrnInMap(prev,med));
+  const nudgeYesterdayPrn=(med,delta)=>setYesterdayMeds(prev=>nudgePrnInMap(prev,med,delta));
+  const updateTodayChoice=(med,choice)=>{setTodayMedsTouched(true);setTodayMeds(prev=>updateMedChoiceInMap(prev,med,choice));};
+  const updateTodayNote=(med,note)=>{setTodayMedsTouched(true);setTodayMeds(prev=>updateMedNoteInMap(prev,med,note));};
+  const toggleTodayPrn=med=>{setTodayMedsTouched(true);setTodayMeds(prev=>togglePrnInMap(prev,med));};
+  const nudgeTodayPrn=(med,delta)=>{setTodayMedsTouched(true);setTodayMeds(prev=>nudgePrnInMap(prev,med,delta));};
   const notesText=entry.notes||"";
   const activeNoteStarter=NOTE_STARTERS.find(starter=>starter.insert===notesText)||null;
   const showNoteStarters=notesText===""||!!activeNoteStarter;
+  const renderMedsLog=({medMap,onChoice,onNote,onTogglePrn,onNudgePrn,defaultTaken})=>{
+    const routine=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0));
+    const prn=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)==="as_needed"));
+    return <div className="ml g-med-log">
+      {routine.length>0&&<div className="med-log-section">
+        <div className="sect-h"><span className="sect-k">Routine</span></div>
+        {routine.map(med=>{const raw=medMap?.[med.key];const hasRaw=raw!==undefined;const me=hasRaw?normalizeDailyMedState(raw):dailyMedForChoice("taken",med);const kind=hasRaw||defaultTaken?medStateKind(me):"none";const when=medWhenLabel(med);const noteValue=raw?.note??"";return(
+          <div key={med.key} className={`mr med-log-row state-${kind}`}>
+            <div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{medDoseQtyLabel(med,Math.max(me.ct,med.defaultCt??0))}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="segA" role="group" aria-label={`${med.name} status`}>
+              <button type="button" className={kind==="missed"?"sel-miss":""} aria-label={`${med.name} missed`} onClick={()=>onChoice(med,"missed")}><span className="g g-line"/></button>
+              <button type="button" className={kind==="off"?"sel-off":""} aria-label={`${med.name} off schedule`} onClick={()=>onChoice(med,"off")}><span className="g g-half">◑</span></button>
+              <button type="button" className={kind==="taken"?"sel-took":""} aria-label={`${med.name} taken`} onClick={()=>onChoice(med,"taken")}><span className="g g-check">✓</span></button>
+            </div></div>
+            {kind!=="taken"&&kind!=="none"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={noteValue} maxLength={500} placeholder="add a note if you want to" onChange={ev=>onNote(med,ev.target.value)}/></div>}
+          </div>
+        );})}
+        <div className="med-state-legend"><span><span className="gi"><span className="g g-check">✓</span></span>taken</span><span><span className="gi"><span className="g g-half">◑</span></span>off schedule</span><span><span className="gi"><span className="g g-line"/></span>missed</span></div>
+      </div>}
+      {prn.length>0&&<div className="med-log-section">
+        <div className="sect-h"><span className="sect-k">As needed</span><span className="sect-hint">only if you took it</span></div>
+        {prn.map(med=>{const state=medMap?.[med.key]?normalizeDailyMedState(medMap[med.key]):null;const when=medWhenLabel(med);return <div key={med.key} className={`mr med-log-row prn${state?" on":""}`}><div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{med.dose||"as needed"}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="prn-ctl"><button type="button" className={`prn-tog${state?" on":""}`} onClick={()=>onTogglePrn(med)}><span className="g">✓</span>took it</button>{state&&<div className="prn-ct"><button type="button" onClick={()=>onNudgePrn(med,-0.5)}>−</button><span className="n">{state.ct}</span><button type="button" onClick={()=>onNudgePrn(med,0.5)}>+</button></div>}</div></div></div>;})}
+      </div>}
+    </div>;
+  };
+  const renderMedsReviewMap=(medMap,emptyText="None")=>{
+    const logged=Object.entries(medMap||{}).filter(([,v])=>medHasDailyState(v));
+    if(!logged.length)return emptyText;
+    if(logged.every(([,v])=>medStateKind(v)==="taken"))return"All taken";
+    return logged.map(([k,v])=>{
+      const med=meds.find(m=>m.key===k);
+      const state=normalizeDailyMedState(v);
+      const kind=medStateKind(state);
+      const label=kind==="off"?"off schedule":kind==="missed"?"not taken":"taken";
+      return <span className={`rv-med rv-med-${kind}`} key={k}><b>{med?.name||k}</b><span className="rv-med-detail">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)} · {label}{state.note?` · ${state.note}`:""}</span></span>;
+    });
+  };
+  const renderMedsReview=()=>{
+    if(skippedSteps.has("meds"))return"Not logged";
+    if(!isMedsYesterdayFlow)return renderMedsReviewMap(entry.meds);
+    const todayHasMeds=entryHasMedState({meds:todayMeds});
+    return <div className="rv-meds-days">
+      <div className="rv-meds-day"><span className="rv-meds-day-k">Yesterday · {new Date(yesterdayMedKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span><div>{renderMedsReviewMap(yesterdayMeds)}</div></div>
+      {todayMedsOpen&&<div className="rv-meds-day"><span className="rv-meds-day-k">Today · {new Date(tdk()+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span><div>{todayHasMeds?renderMedsReviewMap(todayMeds):"Not logged"}</div></div>}
+    </div>;
+  };
   const toggleMood=(key)=>{
     const cur=entry.moods||[];
     if(cur.includes(key)) upd("moods",cur.filter(k=>k!==key));
@@ -1661,8 +1760,8 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const renderStep=(si)=>{
     const st=activeSteps[si];const isEdit=editIdx!==null;
     const notesCopy=st.id==="notes"?notesCopyForMoods(entry.moods):null;
-    const q=notesCopy?.q||(typeof st.q==="object"?st.q.full:st.q);
-    const sub=notesCopy?.s||st.s;
+    const q=st.id==="meds"&&isMedsYesterdayFlow?"Meds Check":notesCopy?.q||(typeof st.q==="object"?st.q.full:st.q);
+    const sub=st.id==="meds"&&isMedsYesterdayFlow?"Log yesterday's meds":notesCopy?.s||st.s;
     return(<div className="qa" key={si+"-"+isEdit}>
       <h2 className={`qt${st.id==="notes"?" qt-notes":""}`}>{q}</h2>{sub&&<p className="qs">{sub}</p>}
 
@@ -1722,26 +1821,19 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           </div>);
         })}
       </div>)}
-      {st.id==="meds"&&(()=>{const routine=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0));const prn=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)==="as_needed"));return <div className="ml g-med-log">
-        {routine.length>0&&<div className="med-log-section">
-          <div className="sect-h"><span className="sect-k">Routine</span></div>
-          {routine.map(med=>{const raw=entry.meds[med.key];const me=normalizeDailyMedState(raw||dailyMedForChoice("taken",med));const kind=medStateKind(me);const when=medWhenLabel(med);const noteValue=raw?.note??"";return(
-            <div key={med.key} className={`mr med-log-row state-${kind}`}>
-              <div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{medDoseQtyLabel(med,Math.max(me.ct,med.defaultCt??0))}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="segA" role="group" aria-label={`${med.name} status`}>
-                <button type="button" className={kind==="missed"?"sel-miss":""} aria-label={`${med.name} missed`} onClick={()=>updMedChoice(med,"missed")}><span className="g g-line"/></button>
-                <button type="button" className={kind==="off"?"sel-off":""} aria-label={`${med.name} off schedule`} onClick={()=>updMedChoice(med,"off")}><span className="g g-half">◑</span></button>
-                <button type="button" className={kind==="taken"?"sel-took":""} aria-label={`${med.name} taken`} onClick={()=>updMedChoice(med,"taken")}><span className="g g-check">✓</span></button>
-              </div></div>
-              {kind!=="taken"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={noteValue} maxLength={500} placeholder="add a note if you want to" onChange={ev=>updMedNote(med,ev.target.value)}/></div>}
-            </div>
-          );})}
-          <div className="med-state-legend"><span><span className="gi"><span className="g g-check">✓</span></span>taken</span><span><span className="gi"><span className="g g-half">◑</span></span>off schedule</span><span><span className="gi"><span className="g g-line"/></span>missed</span></div>
+      {st.id==="meds"&&(isMedsYesterdayFlow?<div className="meds-yday">
+        <div className="meds-dayline"><span/> {new Date(yesterdayMedKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}</div>
+        {renderMedsLog({medMap:yesterdayMeds,onChoice:updateYesterdayChoice,onNote:updateYesterdayNote,onTogglePrn:toggleYesterdayPrn,onNudgePrn:nudgeYesterdayPrn,defaultTaken:true})}
+        <button type="button" className={`meds-also-row${todayMedsOpen?" open":""}`} onClick={()=>setTodayMedsOpen(v=>!v)}>
+          <span className="chev">›</span>
+          <span className="also-tx"><span className="a1">Also log today?</span><span className="a2">If today's doses are done too. Optional.</span></span>
+        </button>
+        {todayMedsOpen&&<div className="meds-today-drawer">
+          <div className="meds-today-head"><span>Today's meds</span><small>{new Date(tdk()+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}</small></div>
+          <p className="meds-today-note">Only fill this in if today's doses have already happened.</p>
+          {renderMedsLog({medMap:todayMeds,onChoice:updateTodayChoice,onNote:updateTodayNote,onTogglePrn:toggleTodayPrn,onNudgePrn:nudgeTodayPrn,defaultTaken:false})}
         </div>}
-        {prn.length>0&&<div className="med-log-section">
-          <div className="sect-h"><span className="sect-k">As needed</span><span className="sect-hint">only if you took it</span></div>
-          {prn.map(med=>{const state=entry.meds?.[med.key]?normalizeDailyMedState(entry.meds[med.key]):null;const when=medWhenLabel(med);return <div key={med.key} className={`mr med-log-row prn${state?" on":""}`}><div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{med.dose||"as needed"}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="prn-ctl"><button type="button" className={`prn-tog${state?" on":""}`} onClick={()=>togglePrnMed(med)}><span className="g">✓</span>took it</button>{state&&<div className="prn-ct"><button type="button" onClick={()=>nudgePrnMed(med,-0.5)}>−</button><span className="n">{state.ct}</span><button type="button" onClick={()=>nudgePrnMed(med,0.5)}>+</button></div>}</div></div></div>;})}
-        </div>}
-      </div>;})()}
+      </div>:renderMedsLog({medMap:entry.meds,onChoice:updMedChoice,onNote:updMedNote,onTogglePrn:togglePrnMed,onNudgePrn:nudgePrnMed,defaultTaken:true}))}
       {st.id==="notes"&&(<>
         <div className={`note-starter-wrap${showNoteStarters?"":" note-starter-hidden"}`} aria-hidden={!showNoteStarters}>
           <div className="starter-label">if it helps —</div>
@@ -1798,12 +1890,15 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs{sleepMultiCue(entry.sleeps)&&<span className="rv-sleep-cue">{sleepMultiCue(entry.sleeps)}</span>}</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
-            <RvRow l="Meds" v={skippedSteps.has("meds")?"Not logged":(()=>{const logged=Object.entries(entry.meds||{}).filter(([,v])=>medHasDailyState(v));return logged.length?logged.map(([k,v])=>{const med=meds.find(m=>m.key===k);const state=normalizeDailyMedState(v);const kind=medStateKind(state);const label=kind==="off"?"off schedule":kind==="missed"?"not taken":"taken";return <span className={`rv-med rv-med-${kind}`} key={k}><b>{med?.name||k}</b><span className="rv-med-detail">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)} · {label}{state.note?` · ${state.note}`:""}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
+            <RvRow l="Meds" v={renderMedsReview()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
           const sleepEpisodes=[primaryEpisode(),...extraSleeps.map(uiExtraEpisode)].filter(ep=>ep.hrs!=null||ep.bed||ep.wake);
-          const finalEntry={...entry,sleep:sleepEpisodes.length?sleepEpisodeTotal(sleepEpisodes):null,sleeps:sleepEpisodes.length>1?sleepEpisodes.map(sleepEpisodeForStorage):null,meds:Object.fromEntries(Object.entries(entry.meds||{}).map(([key,state])=>{const s=normalizeDailyMedState(state);return[key,s.note?{...s,note:cleanMedNote(s.note)}:{ct:s.ct,off:s.off}];}))};
+          const todayMedsForSave=isMedsYesterdayFlow
+            ? (todayMedsTouched?normalizeMedsForSave(todayMeds):normalizeMedsForSave(entry.meds))
+            : normalizeMedsForSave(entry.meds);
+          const finalEntry={...entry,sleep:sleepEpisodes.length?sleepEpisodeTotal(sleepEpisodes):null,sleeps:sleepEpisodes.length>1?sleepEpisodes.map(sleepEpisodeForStorage):null,meds:todayMedsForSave};
           if(skippedSteps.has("meds")) finalEntry.meds={};
           // Save SRM bedtime (day before) and bed/wake (selected date)
           if(onSaveSRM){
@@ -1822,7 +1917,11 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
               onSaveSRM(updSrm,targetKey);
             }
           }
-          onSave(finalEntry,targetKey);
+          const splitMeds=!skippedSteps.has("meds")&&isMedsYesterdayFlow&&entryHasMedState({meds:yesterdayMeds})?{
+            yesterdayDate:yesterdayMedKey,
+            yesterdayEntry:{...(mood[yesterdayMedKey]||{}),meds:normalizeMedsForSave(yesterdayMeds)},
+          }:null;
+          onSave(finalEntry,targetKey,splitMeds);
         }}>Save entry</button>
         {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
           const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
@@ -3139,6 +3238,22 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .med-state-legend span{display:inline-flex;align-items:center;gap:7px;font:400 10.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-entry .med-state-legend .gi{width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--g-tx4);flex:0 0 17px}
 .g-entry .med-state-legend .g-line{display:inline-block;width:11px;height:2px;border-radius:2px;background:currentColor}
+.g-entry .meds-dayline{display:inline-flex;align-items:center;gap:7px;margin:0 0 14px;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-entry .meds-dayline span{width:5px;height:5px;border-radius:50%;background:var(--g-tx4)}
+.g-entry .meds-also-row{margin-top:18px;width:100%;border:1px solid var(--g-line);border-radius:12px;background:var(--g-card);padding:13px 15px;display:flex;align-items:center;gap:11px;text-align:left;color:var(--g-tx);cursor:pointer}
+.g-entry .meds-also-row .chev{color:var(--g-tx4);font-size:13px;transition:transform .15s;flex:0 0 auto}
+.g-entry .meds-also-row.open .chev{transform:rotate(90deg)}
+.g-entry .meds-also-row .also-tx{display:flex;flex-direction:column;gap:3px;min-width:0}
+.g-entry .meds-also-row .a1{font:500 13px/1.25 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-entry .meds-also-row .a2{font:400 11.5px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-entry .meds-today-drawer{position:relative;margin-top:12px;border:1px solid var(--g-line);border-radius:12px;background:var(--g-card);padding:14px 15px 14px}
+.g-entry .meds-today-drawer::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:var(--g-sleep-healthy);opacity:.5}
+.g-entry .meds-today-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.g-entry .meds-today-head span{font:600 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-entry .meds-today-head small{font:400 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-entry .meds-today-note{font:400 11.5px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:8px 0 4px}
+.g-review .rv-meds-days{display:flex;flex-direction:column;gap:12px}
+.g-review .rv-meds-day-k{display:block;margin-bottom:5px;font:600 10.5px/1 'Inter',system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--g-tx3)}
 
 .ni{width:100%;min-height:120px;border-radius:var(--r);border:1.5px solid var(--bd);padding:16px;font:16px/1.55 'DM Sans',sans-serif;resize:vertical;background:transparent;color:var(--tx);caret-color:#8A847B;transition:border .15s;margin-bottom:12px;touch-action:manipulation}
 .ni:focus{outline:none;border-color:var(--tx)}.ni::placeholder{color:var(--t3)}
