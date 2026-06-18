@@ -601,7 +601,7 @@ function recordLogToday(){const set=loadLogActivity();set.add(tdk());saveLogActi
 function emptyItem(id){return{id,time:"",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0};}
 function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds});}
 const MEDS_ALL_KEY="mt_meds_all",MED_EVENTS_KEY="mt_med_events";
-const activeToLifecycle=meds=>(meds||[]).map(m=>({key:m.key,name:m.name,brand:null,display_pref:"generic",dose:m.dose,default_ct:m.defaultCt??0,status:"active",archived_at:null}));
+const activeToLifecycle=meds=>(meds||[]).map(m=>({key:m.key,name:m.name,brand:null,display_pref:"generic",dose:m.dose,default_ct:m.defaultCt??0,when_taken:normalizeWhenTaken(m.whenTaken),status:"active",archived_at:null}));
 function loadMedsAll(){const cached=loadJ(MEDS_ALL_KEY,null);return Array.isArray(cached)?cached:activeToLifecycle(loadJ("mt_meds",DEF_MEDS));}
 function loadMedEvents(){const cached=loadJ(MED_EVENTS_KEY,[]);return Array.isArray(cached)?cached:[];}
 function saveMedsAll(meds){try{localStorage.setItem(MEDS_ALL_KEY,JSON.stringify(meds));}catch{/* lifecycle cache best-effort only */}}
@@ -617,6 +617,22 @@ function medNames(med,key){
   return{primary:generic||brand,secondary:brand};
 }
 function medPrimary(med,key){return medNames(med,key).primary;}
+const WHEN_TAKEN_OPTIONS=[
+  {key:"",label:"Unset"},
+  {key:"morning",label:"Morning"},
+  {key:"midday",label:"Midday"},
+  {key:"dinner",label:"Dinner"},
+  {key:"bedtime",label:"Bedtime"},
+  {key:"as_needed",label:"As needed"},
+];
+const WHEN_TAKEN_LABEL=Object.fromEntries(WHEN_TAKEN_OPTIONS.map(o=>[o.key,o.label.toLowerCase()]));
+const WHEN_TAKEN_ORDER={morning:0,midday:1,dinner:2,bedtime:3,"":4,as_needed:5};
+function normalizeWhenTaken(value){return["morning","midday","dinner","bedtime","as_needed"].includes(value)?value:"";}
+function medWhenTaken(med){return normalizeWhenTaken(med?.when_taken??med?.whenTaken);}
+function medWhenLabel(med){const slot=medWhenTaken(med);return slot?WHEN_TAKEN_LABEL[slot]:"";}
+function medTimelineIndex(med){return WHEN_TAKEN_ORDER[medWhenTaken(med)]??WHEN_TAKEN_ORDER[""];}
+function sortMedsByWhen(meds){return[...(meds||[])].sort((a,b)=>medTimelineIndex(a)-medTimelineIndex(b)||String(a.name||a.key||"").localeCompare(String(b.name||b.key||"")));}
+function WhenTakenPicker({value,onChange}){return <div className="g-med-chips when-picker">{WHEN_TAKEN_OPTIONS.map(opt=><button type="button" className={`g-med-chip when${value===opt.key?" on":""}`} key={opt.key} onClick={()=>onChange(opt.key)}>{opt.label}</button>)}</div>;}
 function shortMedDate(date){if(!date)return"";const[,m,d]=String(date).split("-").map(Number);return Number.isFinite(m)&&Number.isFinite(d)?`${MO[m-1]?.slice(0,3)||m} ${d}`:date;}
 function medDowDate(date){if(!date)return"";const[y,m,d]=String(date).split("-").map(Number);if(!Number.isFinite(y)||!Number.isFinite(m)||!Number.isFinite(d))return date;const dt=new Date(y,m-1,d);return{dow:DW[dt.getDay()],label:`${MO[m-1]?.slice(0,3)||m} ${d}`,month:MO[m-1]||String(m)};}
 function medCountLabel(ct){if(ct===null||ct===undefined||ct==="")return"—";return Number(ct)===0?"as needed":`${Number(ct)}/day`;}
@@ -686,7 +702,7 @@ function medEventsWithPrev(events,key){
   return rows.map((event,i)=>({event,prev:rows[i-1]||null,derived:medEventVerb(event,rows[i-1]||null)}));
 }
 function medLatestForKey(events,key){return(events||[]).filter(ev=>ev.med_key===key).sort(medEventDesc)[0]||null;}
-function medsActiveRows(medsAll){return(medsAll||[]).filter(m=>m.status==="active").map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0}));}
+function medsActiveRows(medsAll){return sortMedsByWhen((medsAll||[]).filter(m=>m.status==="active")).map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0,whenTaken:medWhenTaken(m)}));}
 function recomputeMedsAfterEvents(medsAll,events,key){
   const latest=medLatestForKey(events,key);
   if(!latest)return(medsAll||[]).filter(m=>m.key!==key);
@@ -908,12 +924,19 @@ export default function App(){
   const saveLifecycle=(all,events)=>{setMedsAll(all);saveMedsAll(all);setMedEvents(events);saveMedEvents(events);};
   const doCreateMed=med=>{
     const id=crypto.randomUUID(),now=new Date().toISOString();
-    const row={key:med.key,name:med.name,brand:med.brand||null,display_pref:med.display_pref,dose:med.dose||null,default_ct:med.default_ct,status:"active",archived_at:null};
+    const row={key:med.key,name:med.name,brand:med.brand||null,display_pref:med.display_pref,dose:med.dose||null,default_ct:med.default_ct,when_taken:normalizeWhenTaken(med.when_taken),status:"active",archived_at:null};
     const event={id,med_key:med.key,event_type:"started",old_ct:null,new_ct:med.default_ct,dose_text:med.dose||null,date:med.start_date,notes:null,source:"manual",ts:now};
     const all=[...medsAll,row],events=[event,...medEvents];
-    const active=[...meds,{key:row.key,name:row.name,dose:row.dose,defaultCt:row.default_ct}];
+    const active=medsActiveRows(all);
     saveLifecycle(all,events);saveActiveMeds(active);
-    enqueueSync({type:"med_create",id,key:row.key,name:row.name,brand:row.brand,display_pref:row.display_pref,dose:row.dose,default_ct:row.default_ct,start_date:med.start_date,actor:getDeviceActor()});
+    enqueueSync({type:"med_create",id,key:row.key,name:row.name,brand:row.brand,display_pref:row.display_pref,dose:row.dose,default_ct:row.default_ct,when_taken:row.when_taken,start_date:med.start_date,actor:getDeviceActor()});
+  };
+  const doUpdateMedMeta=meta=>{
+    const med=medByKey(medsAll,meta.key);if(!med)return;
+    const row={...med,name:meta.name,brand:meta.brand||null,display_pref:meta.display_pref,when_taken:normalizeWhenTaken(meta.when_taken)};
+    const all=medsAll.map(m=>m.key===med.key?row:m);
+    saveLifecycle(all,medEvents);saveActiveMeds(medsActiveRows(all));
+    enqueueSync({type:"med_update_meta",key:row.key,name:row.name,brand:row.brand,display_pref:row.display_pref,when_taken:row.when_taken,actor:getDeviceActor()});
   };
   const doMedEvent=change=>{
     const med=medByKey(medsAll,change.key);if(!med)return;
@@ -1033,7 +1056,7 @@ export default function App(){
       {screen==="confirm"&&<Confirm msg="Mood entry logged" sub="You showed up today. That matters." onDone={()=>setScreen("calendar")}/>}
       {screen==="calEntry"&&<MoodEntry mood={mood} meds={meds} srm={srm} onSaveSRM={doSaveSRM} lockedDate={selDay} onSave={(e,k)=>{doSaveMood({...mood,[k]:e},k);setScreen("confirm");}} onX={()=>setScreen("calendar")}/>}
       {screen==="history"&&<Hist mood={mood} srm={srm} name={name} meds={meds} onBack={()=>setScreen("calendar")} onSendReport={()=>{if(!SHEETS_URL||!settings.reportEmail)return;const u=`${SHEETS_URL}?action=send_report&email=${encodeURIComponent(settings.reportEmail)}&name=${encodeURIComponent(settings.name||"")}`;fetch(u,{method:"GET",cache:"no-store"}).catch(()=>{});}} reportEmail={settings.reportEmail||""}/>}
-      {screen==="medications"&&<Medications medsAll={medsAll} medEvents={medEvents} mood={mood} onCreate={doCreateMed} onEvent={doMedEvent} onUpdateEvent={doUpdateMedEvent} onDeleteEvent={doDeleteMedEvent} onBack={()=>setScreen("calendar")}/>}
+      {screen==="medications"&&<Medications medsAll={medsAll} medEvents={medEvents} mood={mood} onCreate={doCreateMed} onUpdateMeta={doUpdateMedMeta} onEvent={doMedEvent} onUpdateEvent={doUpdateMedEvent} onDeleteEvent={doDeleteMedEvent} onBack={()=>setScreen("calendar")}/>}
       {screen==="settings"&&<Settings settings={settings} setS={setS} onBack={()=>setScreen("calendar")}/>}
     </div></div>
   </>);
@@ -1285,7 +1308,8 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
     setUndoAction(ac?.label||item?.id||"Rhythm moment",()=>onSaveSrmItems(prev));
   };
   const renderClear=(onClick,label)=>editMode?<button className="g-day-clear" aria-label={`Clear ${label}`} onClick={ev=>{ev.stopPropagation();onClick();}}>×</button>:null;
-  const dayMeds=e?Object.keys(e.meds||{}).filter(k=>medHasDailyState(e.meds[k])):[];
+  const medForDayKey=k=>medByKey(medsAll,k)||meds.find(m=>m.key===k)||{key:k,name:k};
+  const dayMeds=e?Object.keys(e.meds||{}).filter(k=>medHasDailyState(e.meds[k])).sort((a,b)=>medTimelineIndex(medForDayKey(a))-medTimelineIndex(medForDayKey(b))||String(a).localeCompare(String(b))):[];
   return(<div className="scr g-day">
     <div className="g-day-hero" style={{background:heroBg}}>
       <button className="g-day-close" onClick={onBack}>×</button>
@@ -1306,7 +1330,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
         </div>
         {e.weight!=null&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("weight"),"weight")}<span className="g-day-k">Weight</span><div className="g-day-v">{e.weight}<small> kg</small></div></div></>}
         {e.notes&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("notes"),"note")}<span className="g-day-k">Note</span><p className="g-day-note">{e.notes}</p></div></>}
-        {dayMeds.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{dayMeds.map(k=>{const med=medByKey(medsAll,k)||meds.find(m=>m.key===k);const state=normalizeDailyMedState(e.meds?.[k]);const kind=medStateKind(state);const name=medPrimary(med,k);return(<div key={k} className={`g-day-med-row ${kind}`}><span className="dotcol"><i/></span><div className="mtxt"><div className="mt1"><span className="nm">{name}</span><span className="ds">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)}</span>{renderClear(()=>clearMoodField("meds",k),name)}</div>{kind==="off"&&<div className="mchip"><span className="flag">off schedule</span></div>}{kind==="missed"&&<div className="mchip"><span className="flag">not taken</span></div>}{state.note&&<div className="mnote">{state.note}</div>}</div></div>);})}</div><div className="g-day-med-key"><span><i className="off"/>off schedule</span><span><i className="miss"/>missed</span></div></div></>}
+        {dayMeds.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{dayMeds.map(k=>{const med=medForDayKey(k);const state=normalizeDailyMedState(e.meds?.[k]);const kind=medStateKind(state);const name=medPrimary(med,k);const when=medWhenLabel(med);return(<div key={k} className={`g-day-med-row ${kind}`}><span className="dotcol"><i/></span><div className="mtxt"><div className="mt1"><span className="nm">{name}</span><span className="ds">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)}</span>{when&&<span className="when-tag">{when}</span>}{renderClear(()=>clearMoodField("meds",k),name)}</div>{kind==="off"&&<div className="mchip"><span className="flag">off schedule</span></div>}{kind==="missed"&&<div className="mchip"><span className="flag">not taken</span></div>}{state.note&&<div className="mnote">{state.note}</div>}</div></div>);})}</div><div className="g-day-med-key"><span><i className="off"/>off schedule</span><span><i className="miss"/>missed</span></div></div></>}
       </>}
       {srmItems.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Social rhythm</span>
         <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>{if(!editMode)onEditSRM(it.id);}}>
@@ -1379,7 +1403,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const activeSteps=MSTEPS_FULL;
 
   const makeDefault=()=>{
-    const m={};meds.filter(med=>Number(med.defaultCt)>0).forEach(med=>{m[med.key]=dailyMedForChoice("taken",med);});
+    const m={};meds.filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0).forEach(med=>{m[med.key]=dailyMedForChoice("taken",med);});
     return{moods:[],sleep:null,weight:null,anxiety:null,irritability:null,meds:m,notes:""};
   };
 
@@ -1491,6 +1515,17 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const clean=cleanMedNote(note);
     return{...e,meds:{...e.meds,[med.key]:clean?{...state,note:clean}:{ct:state.ct,off:state.off}}};
   });
+  const togglePrnMed=med=>setEntry(e=>{
+    const medsNext={...e.meds};
+    if(medsNext[med.key]) delete medsNext[med.key];
+    else medsNext[med.key]={ct:Math.max(1,Number(med.defaultCt)||1),off:false};
+    return{...e,meds:medsNext};
+  });
+  const nudgePrnMed=(med,delta)=>setEntry(e=>{
+    const prev=normalizeDailyMedState(e.meds?.[med.key]||{ct:1});
+    const next=Math.max(0.5,Math.round((prev.ct+delta)*2)/2);
+    return{...e,meds:{...e.meds,[med.key]:{ct:next,off:false}}};
+  });
   const notesText=entry.notes||"";
   const activeNoteStarter=NOTE_STARTERS.find(starter=>starter.insert===notesText)||null;
   const showNoteStarters=notesText===""||!!activeNoteStarter;
@@ -1559,12 +1594,26 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           </div>);
         })}
       </div>)}
-      {st.id==="meds"&&(<div className="ml g-med-log">{meds.filter(med=>Number(med.defaultCt)>0).map(med=>{const me=normalizeDailyMedState(entry.meds[med.key]||dailyMedForChoice("taken",med));const kind=medStateKind(me);
-        return(<div key={med.key} className={`mr med-log-row state-${kind}`}><div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub">{medDoseQtyLabel(med,Math.max(me.ct,med.defaultCt??0))}</div></div><div className="segA" role="group" aria-label={`${med.name} status`}>
-          <button type="button" className={kind==="missed"?"sel-miss":""} aria-label={`${med.name} missed`} onClick={()=>updMedChoice(med,"missed")}><span className="g g-line"/></button>
-          <button type="button" className={kind==="off"?"sel-off":""} aria-label={`${med.name} off schedule`} onClick={()=>updMedChoice(med,"off")}><span className="g g-half">◑</span></button>
-          <button type="button" className={kind==="taken"?"sel-took":""} aria-label={`${med.name} taken`} onClick={()=>updMedChoice(med,"taken")}><span className="g g-check">✓</span></button>
-        </div></div>{kind!=="taken"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={me.note||""} maxLength={500} placeholder="add a note if you want to" onChange={ev=>updMedNote(med,ev.target.value)}/></div>}</div>);})}<div className="med-state-legend"><span><span className="gi"><span className="g g-check">✓</span></span>taken</span><span><span className="gi"><span className="g g-half">◑</span></span>off schedule</span><span><span className="gi"><span className="g g-line"/></span>missed</span></div></div>)}
+      {st.id==="meds"&&(()=>{const routine=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)!=="as_needed"&&Number(med.defaultCt)>0));const prn=sortMedsByWhen(meds.filter(med=>medWhenTaken(med)==="as_needed"));return <div className="ml g-med-log">
+        {routine.length>0&&<div className="med-log-section">
+          <div className="sect-h"><span className="sect-k">Routine</span></div>
+          {routine.map(med=>{const me=normalizeDailyMedState(entry.meds[med.key]||dailyMedForChoice("taken",med));const kind=medStateKind(me);const when=medWhenLabel(med);return(
+            <div key={med.key} className={`mr med-log-row state-${kind}`}>
+              <div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{medDoseQtyLabel(med,Math.max(me.ct,med.defaultCt??0))}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="segA" role="group" aria-label={`${med.name} status`}>
+                <button type="button" className={kind==="missed"?"sel-miss":""} aria-label={`${med.name} missed`} onClick={()=>updMedChoice(med,"missed")}><span className="g g-line"/></button>
+                <button type="button" className={kind==="off"?"sel-off":""} aria-label={`${med.name} off schedule`} onClick={()=>updMedChoice(med,"off")}><span className="g g-half">◑</span></button>
+                <button type="button" className={kind==="taken"?"sel-took":""} aria-label={`${med.name} taken`} onClick={()=>updMedChoice(med,"taken")}><span className="g g-check">✓</span></button>
+              </div></div>
+              {kind!=="taken"&&<div className="offnote"><div className="nhead"><span className="ntitle">anything to note?</span><span className="noptional">optional</span></div><input value={me.note||""} maxLength={500} placeholder="add a note if you want to" onChange={ev=>updMedNote(med,ev.target.value)}/></div>}
+            </div>
+          );})}
+          <div className="med-state-legend"><span><span className="gi"><span className="g g-check">✓</span></span>taken</span><span><span className="gi"><span className="g g-half">◑</span></span>off schedule</span><span><span className="gi"><span className="g g-line"/></span>missed</span></div>
+        </div>}
+        {prn.length>0&&<div className="med-log-section">
+          <div className="sect-h"><span className="sect-k">As needed</span><span className="sect-hint">only if you took it</span></div>
+          {prn.map(med=>{const state=entry.meds?.[med.key]?normalizeDailyMedState(entry.meds[med.key]):null;const when=medWhenLabel(med);return <div key={med.key} className={`mr med-log-row prn${state?" on":""}`}><div className="mr-main"><div className="mi"><div className="mn">{med.name}</div><div className="md-sub"><span>{med.dose||"as needed"}</span>{when&&<span className="when-tag">{when}</span>}</div></div><div className="prn-ctl"><button type="button" className={`prn-tog${state?" on":""}`} onClick={()=>togglePrnMed(med)}><span className="g">✓</span>took it</button>{state&&<div className="prn-ct"><button type="button" onClick={()=>nudgePrnMed(med,-0.5)}>−</button><span className="n">{state.ct}</span><button type="button" onClick={()=>nudgePrnMed(med,0.5)}>+</button></div>}</div></div></div>;})}
+        </div>}
+      </div>;})()}
       {st.id==="notes"&&(<>
         <div className={`note-starter-wrap${showNoteStarters?"":" note-starter-hidden"}`} aria-hidden={!showNoteStarters}>
           <div className="starter-label">if it helps —</div>
@@ -2329,7 +2378,7 @@ function DevNotesSection(){
   </div>);
 }
 
-function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDeleteEvent,onBack}){
+function Medications({medsAll,medEvents,mood,onCreate,onUpdateMeta,onEvent,onUpdateEvent,onDeleteEvent,onBack}){
   const[mode,setMode]=useState("list");
   const[openId,setOpenId]=useState(null);
   const[deleteId,setDeleteId]=useState(null);
@@ -2345,8 +2394,9 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDe
   const[generic,setGeneric]=useState("");
   const[brand,setBrand]=useState("");
   const[displayPref,setDisplayPref]=useState("generic");
+  const[whenTaken,setWhenTaken]=useState("");
   const[formError,setFormError]=useState("");
-  const active=medsAll.filter(m=>m.status==="active"),stopped=medsAll.filter(m=>m.status!=="active");
+  const active=sortMedsByWhen(medsAll.filter(m=>m.status==="active")),stopped=sortMedsByWhen(medsAll.filter(m=>m.status!=="active"));
   const medColor=key=>["#7C7EAE","#9DB28E","#E9C77E","#D4785C","#8DAEA6","#C0BBAF"][Math.max(0,medsAll.findIndex(m=>m.key===key))%6];
   const eventsFor=key=>medEventsWithPrev(medEvents,key);
   const firstDoseDate=key=>Object.entries(mood||{}).filter(([,entry])=>(entry.meds?.[key]?.ct??0)>0).map(([k])=>k).sort()[0]||"";
@@ -2358,10 +2408,14 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDe
     return[start,stop].filter(Boolean).map(shortMedDate).join(" – ");
   };
   const changeCount=dir=>setCount(c=>{const n=Number(c)||0;if(dir>0)return n<1?n+.5:n+1;if(n<=0)return 0;if(n<=1)return Math.max(0,n-.5);return n-1;});
-  const reset=()=>{setMode("list");setEditing(null);setSelectedKey("");setDose("");setCount(1);setDate(tdk());setReason("");setDiscontinue(false);setGeneric("");setBrand("");setDisplayPref("generic");setFormError("");};
+  const reset=()=>{setMode("list");setEditing(null);setSelectedKey("");setDose("");setCount(1);setDate(tdk());setReason("");setDiscontinue(false);setGeneric("");setBrand("");setDisplayPref("generic");setWhenTaken("");setFormError("");};
   const beginChange=key=>{
     const med=medByKey(medsAll,key)||active[0]||stopped[0];if(!med){setMode("new");return;}
     setEditing(null);setSelectedKey(med.key);setDose(med.dose||"");setCount(Number(med.default_ct??0));setDate(tdk());setReason("");setDiscontinue(false);setFormError("");setMode("change");
+  };
+  const beginInfo=key=>{
+    const med=medByKey(medsAll,key);if(!med)return;
+    setEditing(null);setSelectedKey(med.key);setGeneric(med.name||"");setBrand(med.brand||"");setDisplayPref(med.brand?med.display_pref||"both":"generic");setWhenTaken(medWhenTaken(med));setFormError("");setMode("info");
   };
   const beginEdit=row=>{
     const ev=row.event;
@@ -2387,7 +2441,13 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDe
   const saveNew=()=>{
     const g=generic.trim(),b=brand.trim();if(!g&&!b){setFormError("Enter a generic or brand name.");return;}
     const name=g||b,key=(g||b).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_|_$/g,"")+"_"+Date.now();
-    onCreate({key,name,brand:b||null,display_pref:b?displayPref:"generic",dose:dose.trim()||null,default_ct:Number(count)||0,start_date:date});
+    onCreate({key,name,brand:b||null,display_pref:b?displayPref:"generic",dose:dose.trim()||null,default_ct:Number(count)||0,when_taken:whenTaken,start_date:date});
+    reset();
+  };
+  const saveInfo=()=>{
+    const med=medByKey(medsAll,selectedKey);if(!med)return;
+    const g=generic.trim(),b=brand.trim();if(!g&&!b){setFormError("Enter a generic or brand name.");return;}
+    onUpdateMeta({key:med.key,name:g||b,brand:b||null,display_pref:b?displayPref:"generic",when_taken:whenTaken});
     reset();
   };
   const selected=medByKey(medsAll,selectedKey);
@@ -2440,13 +2500,13 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDe
     group.rows.push(row);
   }
 
-  return(<BottomSheet onClose={onBack} sheetClass="g-medications" title={mode==="list"?"Medications":mode==="new"?"New medication":editing?"Edit change":"Record a change"}>
+  return(<BottomSheet onClose={onBack} sheetClass="g-medications" title={mode==="list"?"Medications":mode==="new"?"New medication":mode==="info"?"Med info":editing?"Edit change":"Record a change"}>
     {mode==="list"&&<>
       <div className="g-med-card">
         <span className="g-med-ctit">Taking now</span>
-        {active.length?active.map(m=>{const n=medNames(m,m.key);return <button className="g-med-now-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-dose">{medRegimenLabel(m.dose,m.default_ct)}</span></button>;}):<p className="g-med-empty">No active medications.</p>}
+        {active.length?active.map(m=>{const n=medNames(m,m.key),when=medWhenLabel(m);return <button className="g-med-now-row" key={m.key} onClick={()=>beginInfo(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-dose">{medRegimenLabel(m.dose,m.default_ct)}{when&&<small>{when}</small>}</span></button>;}):<p className="g-med-empty">No active medications.</p>}
       </div>
-      {stopped.length>0&&<div className={`g-med-disc${discOpen?" open":""}`}><button className="g-med-disc-head" onClick={()=>setDiscOpen(v=>!v)}><span>{stopped.length} discontinued</span><i>›</i></button>{discOpen&&<div className="g-med-disc-body">{stopped.map(m=>{const n=medNames(m,m.key);return <button className="g-med-disc-row" key={m.key} onClick={()=>setFilterKey(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}</span><span className="g-med-disc-range">{medMeta(m)}</span></button>;})}</div>}</div>}
+      {stopped.length>0&&<div className={`g-med-disc${discOpen?" open":""}`}><button className="g-med-disc-head" onClick={()=>setDiscOpen(v=>!v)}><span>{stopped.length} discontinued</span><i>›</i></button>{discOpen&&<div className="g-med-disc-body">{stopped.map(m=>{const n=medNames(m,m.key),when=medWhenLabel(m);return <button className="g-med-disc-row" key={m.key} onClick={()=>beginInfo(m.key)}><span className="g-med-sw" style={{background:medColor(m.key)}}/><span className="g-med-now-name"><b>{n.primary}</b>{n.secondary&&<small>{n.secondary}</small>}{when&&<small>{when}</small>}</span><span className="g-med-disc-range">{medMeta(m)}</span></button>;})}</div>}</div>}
       <div className="g-med-actions-slot"><button className="g-med-add top" onClick={()=>beginChange(active[0]?.key||stopped[0]?.key)}><span>+</span> Record a change</button></div>
       <div className="g-med-card">
         <div className="g-med-hist-head"><span className="g-med-ctit">History</span>{filterKey&&<button className="g-med-filter" onClick={()=>setFilterKey("")}>× {medPrimary(medByKey(medsAll,filterKey),filterKey)}</button>}</div>
@@ -2470,10 +2530,20 @@ function Medications({medsAll,medEvents,mood,onCreate,onEvent,onUpdateEvent,onDe
         <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder="Quetiapine"/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Seroquel"/><em>Either can be left blank.</em></div>
         <div className="g-med-field"><label>Show as</label><div className="g-med-seg">{["generic","both","brand"].map(pref=><button className={displayPref===pref?"on":""} key={pref} onClick={()=>setDisplayPref(pref)}>{pref[0].toUpperCase()+pref.slice(1)}</button>)}</div></div>
         <div className="g-med-field"><label>Starting dose</label><div className="g-med-two"><div><input className="g-med-input" value={dose} onChange={e=>setDose(e.target.value)} placeholder="100mg"/><small>Dose per pill</small></div><div><div className="g-med-step"><button onClick={()=>changeCount(-1)}>−</button><b>{count}</b><button onClick={()=>changeCount(1)}>+</button><span>/ day</span></div><small>Daily count</small></div></div></div>
+        <div className="g-med-field"><label>When taken</label><WhenTakenPicker value={whenTaken} onChange={setWhenTaken}/></div>
         <div className="g-med-field"><label>Effective date</label><input type="date" className="g-med-input" value={date} onChange={e=>setDate(e.target.value)}/></div>
         {formError&&<p className="g-med-error">{formError}</p>}
       </div>
       <div className="g-med-actions"><button onClick={reset}>Cancel</button><button className="primary" onClick={saveNew}>Add</button></div>
+    </>}
+    {mode==="info"&&selected&&<>
+      <div className="g-med-card">
+        <div className="g-med-field"><label>Name</label><small>Generic / scientific name</small><input className="g-med-input" value={generic} onChange={e=>setGeneric(e.target.value)} placeholder="Quetiapine"/><small>Brand or nickname</small><input className="g-med-input" value={brand} onChange={e=>setBrand(e.target.value)} placeholder="Seroquel"/><em>Either can be left blank.</em></div>
+        <div className="g-med-field"><label>Show as</label><div className="g-med-seg">{["generic","both","brand"].map(pref=><button className={displayPref===pref?"on":""} key={pref} onClick={()=>setDisplayPref(pref)}>{pref[0].toUpperCase()+pref.slice(1)}</button>)}</div></div>
+        <div className="g-med-field"><label>When taken</label><WhenTakenPicker value={whenTaken} onChange={setWhenTaken}/></div>
+        {formError&&<p className="g-med-error">{formError}</p>}
+      </div>
+      <div className="g-med-actions"><button onClick={reset}>Cancel</button><button className="primary" onClick={saveInfo}>Save</button></div>
     </>}
   </BottomSheet>);
 }
@@ -2892,6 +2962,13 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .med-log-row{display:block;padding:13px 0}
 .g-entry .med-log-row .mr-main{display:flex;align-items:center;gap:13px}
 .g-entry .med-log-row .mi{flex:1}
+.g-entry .med-log-section+.med-log-section{margin-top:16px}
+.g-entry .sect-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:2px 0 4px}
+.g-entry .sect-k{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:var(--g-tx3)}
+.g-entry .sect-hint{font:300 10.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-entry .md-sub{display:flex;align-items:center;gap:6px;min-width:0}
+.g-entry .when-tag,.g-day-med-row .when-tag{display:inline-flex;align-items:center;gap:5px;color:var(--g-tx4);white-space:nowrap}
+.g-entry .when-tag::before,.g-day-med-row .when-tag::before{content:"";width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.7}
 .g-entry .segA{display:inline-flex;flex-shrink:0;border:1px solid var(--g-line);border-radius:999px;overflow:hidden;background:var(--g-bg)}
 .g-entry .segA button{appearance:none;border:none;background:transparent;width:38px;height:30px;display:flex;align-items:center;justify-content:center;color:var(--g-tx4);border-right:1px solid var(--g-line);cursor:pointer}
 .g-entry .segA button:last-child{border-right:none}
@@ -2906,6 +2983,14 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .offnote .noptional{font:400 9.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);letter-spacing:.05em}
 .g-entry .offnote input{width:100%;border:1px solid var(--g-line);border-radius:999px;background:var(--g-card);color:var(--g-tx);font:400 12.5px/1.4 'Inter',system-ui,sans-serif;padding:9px 14px}
 .g-entry .offnote input::placeholder{color:var(--g-tx4);font-weight:300}
+.g-entry .prn-ctl{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.g-entry .prn-tog{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-entry .prn-tog .g{font-size:12px;color:var(--g-tx4)}
+.g-entry .prn-tog.on{background:var(--g-tx);border-color:var(--g-tx);color:var(--g-bg)}
+.g-entry .prn-tog.on .g{color:var(--g-bg)}
+.g-entry .prn-ct{display:inline-flex;align-items:center;height:32px;border:1px solid var(--g-line);border-radius:999px;overflow:hidden;background:var(--g-bg)}
+.g-entry .prn-ct button{width:30px;height:30px;border:0;background:transparent;color:var(--g-tx2);font:500 15px/1 'Inter',system-ui,sans-serif;cursor:pointer}
+.g-entry .prn-ct .n{min-width:26px;text-align:center;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-entry .med-state-legend{display:flex;align-items:center;flex-wrap:wrap;gap:7px 16px;margin-top:18px;padding-top:13px;border-top:1px solid var(--g-line)}
 .g-entry .med-state-legend span{display:inline-flex;align-items:center;gap:7px;font:400 10.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-entry .med-state-legend .gi{width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--g-tx4);flex:0 0 17px}
@@ -3179,6 +3264,8 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-med-chip{padding:8px 12px;border:1px solid var(--g-line);border-radius:999px;background:transparent;color:var(--g-tx2);font:400 12px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-med-chip.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx);font-weight:500}
 .g-med-chip.new{border-style:dashed;color:var(--g-tx3)}
+.g-med-chip.when{padding:8px 11px}
+.g-med-chips.when-picker{gap:8px}
 .g-med-input,.g-med-textarea{width:100%;border:1px solid var(--g-line);border-radius:11px;background:var(--g-card);color:var(--g-tx);font:400 16px/1.2 'Inter',system-ui,sans-serif;padding:11px 12px}
 .g-med-textarea{min-height:68px;resize:none;line-height:1.45}
 .g-med-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -3358,6 +3445,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-day-med-row .mt1{display:flex;align-items:baseline;gap:7px;min-width:0;flex-wrap:nowrap}
 .g-day-med-row .nm{font-weight:500;color:var(--g-tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .g-day-med-row .ds{color:var(--g-tx3);font-size:12px;white-space:nowrap;flex:0 0 auto}
+.g-day-med-row .when-tag{font-size:11px;flex:0 0 auto}
 .g-day-med-row .mchip{margin-top:4px}
 .g-day-med-row .flag{display:inline-block;font:700 9px/1 'Inter',system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;border-radius:999px;padding:4px 9px;white-space:nowrap;border:0}
 .g-day-med-row.off .flag{background:var(--g-sleep-healthy);color:var(--g-tx)}

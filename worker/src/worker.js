@@ -76,13 +76,13 @@ export default {
         const settings = settingsRow ? parseJsonValue(settingsRow.value, null) : null;
 
         const { results: medRows = [] } = await env.DB.prepare(
-          "SELECT key, name, dose, default_ct FROM medications WHERE status = 'active' ORDER BY sort_order"
+          "SELECT key, name, dose, default_ct, when_taken FROM medications WHERE status = 'active' ORDER BY sort_order"
         ).all();
         const meds = medRows.length
-          ? medRows.map((row) => ({ key: row.key, name: row.name, dose: row.dose, defaultCt: row.default_ct ?? 0 }))
+          ? medRows.map((row) => ({ key: row.key, name: row.name, dose: row.dose, defaultCt: row.default_ct ?? 0, whenTaken: row.when_taken ?? null }))
           : null;
         const { results: medsAll = [] } = await env.DB.prepare(
-          "SELECT key, name, brand, display_pref, dose, default_ct, status, archived_at FROM medications ORDER BY sort_order"
+          "SELECT key, name, brand, display_pref, dose, default_ct, status, archived_at, when_taken FROM medications ORDER BY sort_order"
         ).all();
         const { results: medEvents = [] } = await env.DB.prepare(
           "SELECT * FROM med_events ORDER BY date DESC, ts DESC"
@@ -426,6 +426,7 @@ async function syncToSheet(payload, env) {
 
 const MED_EVENT_TYPES = new Set(["increased", "decreased", "discontinued", "reactivated"]);
 const MED_DISPLAY_PREFS = new Set(["generic", "both", "brand"]);
+const MED_WHEN_TAKEN = new Set(["morning", "midday", "dinner", "bedtime", "as_needed"]);
 
 async function createMedication(env, body, now) {
   const key = requiredString(body.key, "key");
@@ -436,6 +437,7 @@ async function createMedication(env, body, now) {
   const defaultCt = requiredCount(body.default_ct, "default_ct");
   const brand = optionalString(body.brand);
   const dose = optionalString(body.dose);
+  const whenTaken = whenTakenSlot(body.when_taken);
   const existing = await env.DB.prepare("SELECT key FROM medications WHERE key = ?").bind(key).first();
   if (existing) return;
   const existingEvent = await env.DB.prepare("SELECT id FROM med_events WHERE id = ?").bind(eventId).first();
@@ -444,8 +446,8 @@ async function createMedication(env, body, now) {
 
   await env.DB.batch([
     env.DB.prepare(
-      "INSERT INTO medications (id, key, name, brand, display_pref, dose, default_ct, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)"
-    ).bind(crypto.randomUUID(), key, name, brand, displayPref, dose, defaultCt, Number(maxSort?.max_sort ?? -1) + 1, now),
+      "INSERT INTO medications (id, key, name, brand, display_pref, dose, default_ct, when_taken, status, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)"
+    ).bind(crypto.randomUUID(), key, name, brand, displayPref, dose, defaultCt, whenTaken, Number(maxSort?.max_sort ?? -1) + 1, now),
     env.DB.prepare(
       "INSERT OR IGNORE INTO med_events (id, med_key, event_type, old_value, new_value, date, notes, ts, new_ct, old_ct, dose_text, source) VALUES (?, ?, 'started', NULL, ?, ?, NULL, ?, ?, NULL, ?, 'manual')"
     ).bind(eventId, key, String(defaultCt), startDate, now, defaultCt, dose),
@@ -650,9 +652,10 @@ async function updateMedicationMeta(env, body) {
   const key = requiredString(body.key, "key");
   const name = requiredString(body.name, "name");
   const displayPref = displayPreference(body.display_pref);
+  const whenTaken = whenTakenSlot(body.when_taken);
   const result = await env.DB.prepare(
-    "UPDATE medications SET name = ?, brand = ?, display_pref = ? WHERE key = ?"
-  ).bind(name, optionalString(body.brand), displayPref, key).run();
+    "UPDATE medications SET name = ?, brand = ?, display_pref = ?, when_taken = ? WHERE key = ?"
+  ).bind(name, optionalString(body.brand), displayPref, whenTaken, key).run();
   if (!result.meta?.changes) throw new Error("unknown medication");
 }
 
@@ -700,6 +703,13 @@ function displayPreference(value) {
   const pref = optionalString(value) || "generic";
   if (!MED_DISPLAY_PREFS.has(pref)) throw new Error("invalid display_pref");
   return pref;
+}
+
+function whenTakenSlot(value) {
+  const slot = optionalString(value);
+  if (!slot) return null;
+  if (!MED_WHEN_TAKEN.has(slot)) throw new Error("invalid when_taken");
+  return slot;
 }
 
 function dailyMedState(ct, off, note) {
