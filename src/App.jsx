@@ -718,13 +718,32 @@ function regimenBubbleLabel(event,medsAll){
 function buildTimeRange(sH,sM,eH,eM){const out=[];let h=sH,m=sM;for(let i=0;i<100;i++){out.push({h,m});m+=30;if(m>=60){m=0;h=(h+1)%24;}if(out.length>1&&h===((eH*60+eM+30)/60|0)%24&&m===((eM+30)%60))break;if(out.length>48)break;}return out;}
 const SLP_ALL=buildTimeRange(20,0,6,0);   // sleep: 8pm–6am
 const WK_ALL=buildTimeRange(4,0,16,0);    // wake: 4am–4pm
+const SLP_DAY_ALL=buildTimeRange(8,0,20,0);
+const WK_DAY_ALL=buildTimeRange(10,0,22,0);
 const SLP_VIS=8;                          // visible chips at a time
 const SLP_DEF_OFF=SLP_ALL.findIndex(c=>c.h===23&&c.m===0);
 const WK_DEF_OFF=WK_ALL.findIndex(c=>c.h===10&&c.m===0);
+const SLP_DAY_DEF_OFF=SLP_DAY_ALL.findIndex(c=>c.h===10&&c.m===0);
+const WK_DAY_DEF_OFF=WK_DAY_ALL.findIndex(c=>c.h===14&&c.m===0);
 function slpFmt12(h,m){const ap=h<12?"am":"pm";const h12=h%12||12;return`${h12}:${String(m).padStart(2,"0")} ${ap}`;}
 function slpChipLabel(h,m){const ap=h<12?" am":" pm";const h12=h%12||12;return m===0?`${h12}${ap}`:`${h12}:${String(m).padStart(2,"0")}${ap}`;}
 function slpDur(sH,sM,wH,wM){let d=(wH*60+wM)-(sH*60+sM);if(d<=0)d+=1440;return Math.round(d/30)*0.5;}
 function slpMinToHM(mins){const m=((mins%1440)+1440)%1440;return{h:Math.floor(m/60),m:m%60};}
+function slpHMToString(t){return t?`${String(t.h).padStart(2,"0")}:${String(t.m).padStart(2,"0")}`:null;}
+function slpStringToHM(value){if(!value||typeof value!=="string")return null;const[h,m]=value.split(":").map(Number);return Number.isFinite(h)&&Number.isFinite(m)?{h,m}:null;}
+function normalizeSleepEpisode(ep){
+  const hrs=Number(ep?.hrs);
+  return{hrs:Number.isFinite(hrs)?Math.max(0,Math.round(hrs*2)/2):null,bed:slpStringToHM(ep?.bed),wake:slpStringToHM(ep?.wake)};
+}
+function storedSleepEpisodes(entry){
+  const list=Array.isArray(entry?.sleeps)?entry.sleeps.map(normalizeSleepEpisode).filter(ep=>ep.hrs!=null||ep.bed||ep.wake):[];
+  return list.length>1?list:[];
+}
+function sleepEpisodeTotal(episodes){return Math.round(episodes.reduce((sum,ep)=>sum+(Number(ep.hrs)||0),0)*2)/2;}
+function sleepEpisodeForStorage(ep){return{hrs:ep.hrs??0,bed:slpHMToString(ep.bed),wake:slpHMToString(ep.wake)};}
+function sleepEpisodeSummary(ep){const parts=[];if(ep.bed)parts.push(slpFmt12(ep.bed.h,ep.bed.m));if(ep.wake)parts.push(`${ep.bed?"→ ":""}${slpFmt12(ep.wake.h,ep.wake.m)}`);return parts.join(" ")||"time not set";}
+function sleepPartLabel(ep,index){if(!ep.bed)return index===0?"sleep":`sleep ${index+1}`;const h=ep.bed.h;return h>=5&&h<12?"morning":h>=12&&h<18?"afternoon":h>=18&&h<22?"evening":"night";}
+function sleepMultiCue(sleeps){const eps=Array.isArray(sleeps)?sleeps.map(normalizeSleepEpisode):[];return eps.length>1?`across ${eps.length} sleeps · ${eps.map(sleepPartLabel).join(" + ")}`:"";}
 function slpDerived(sleepTime,wakeTime,hrs,editOrder){
   const filled=[];if(sleepTime)filled.push("sleep");if(wakeTime)filled.push("wake");if(hrs!==null)filled.push("hrs");
   if(filled.length<2)return null;
@@ -845,7 +864,7 @@ export default function App(){
         const finalMeds=hasRemoteMeds ? rMeds : localMeds;
         const rNote=(r.notes||"").trim();
         const finalNotes=rNote===""&&SEED_MOOD[dt]?.notes?SEED_MOOD[dt].notes:(r.notes||"");
-        local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,anxiety:r.anxiety,
+        local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,sleeps:Array.isArray(r.sleeps)&&r.sleeps.length>1?r.sleeps:null,anxiety:r.anxiety,
           irritability:r.irritability,weight:r.weight,notes:finalNotes,meds:finalMeds};
         changed=true;
       }
@@ -1297,7 +1316,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
     const next={...prev};
     if(field==="meds"){next.meds={...next.meds};delete next.meds[medKey];}
     else if(field==="moods") next.moods=[];
-    else next[field]=field==="notes"?"":null;
+    else{next[field]=field==="notes"?"":null;if(field==="sleep")next.sleeps=null;}
     onSaveMoodEntry(next);
     const labels={moods:"Mood",sleep:"Sleep",anxiety:"Anxiety",irritability:"Irritability",weight:"Weight",notes:"Note"};
     setUndoAction(field==="meds"?(meds.find(m=>m.key===medKey)?.name||"Medication"):labels[field],()=>onSaveMoodEntry(prev));
@@ -1325,7 +1344,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
       {e&&<>
         <div className="g-day-vit">
           <div className="g-day-cell">{pm&&renderClear(()=>clearMoodField("moods"),"mood")}<span className="g-day-k">Mood</span><div className="g-day-v">{pm?moodLabel(e):"—"}{pm&&<small> {MM[pm].v>0?`+${MM[pm].v}`:MM[pm].v}</small>}</div></div>
-          <div className="g-day-cell">{e.sleep!=null&&renderClear(()=>clearMoodField("sleep"),"sleep")}<span className="g-day-k">Sleep</span><div className="g-day-v">{e.sleep!=null?<>{e.sleep}<small> hrs</small></>:"—"}</div></div>
+          <div className="g-day-cell">{e.sleep!=null&&renderClear(()=>clearMoodField("sleep"),"sleep")}<span className="g-day-k">Sleep</span><div className="g-day-v">{e.sleep!=null?<>{e.sleep}<small> hrs</small></>:"—"}</div>{sleepMultiCue(e.sleeps)&&<div className="slp-read-cue">{sleepMultiCue(e.sleeps)}</div>}</div>
           <div className="g-day-cell">{e.anxiety!=null&&renderClear(()=>clearMoodField("anxiety"),"anxiety")}<span className="g-day-k">Anxiety</span><div className="g-day-v">{e.anxiety!=null?<>{SEV[e.anxiety].l}<small> {e.anxiety}/3</small></>:"—"}</div>{e.anxiety!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.anxiety?"on":""}/>)}</div>}</div>
           <div className="g-day-cell">{e.irritability!=null&&renderClear(()=>clearMoodField("irritability"),"irritability")}<span className="g-day-k">Irritability</span><div className="g-day-v">{e.irritability!=null?<>{SEV[e.irritability].l}<small> {e.irritability}/3</small></>:"—"}</div>{e.irritability!=null&&<div className="g-day-scale">{[0,1,2].map(i=><i key={i} className={i<e.irritability?"on":""}/>)}</div>}</div>
         </div>
@@ -1418,36 +1437,61 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
 
   // ── Sleep chip state ──
   const initSleepTime=useCallback(()=>{
+    const ep=storedSleepEpisodes(mood[targetKey])[0];
+    if(ep?.bed)return ep.bed;
     // load existing bedtime SRM from day before
     const prevKey=prevDateKey(targetKey);
     const prevItems=(srm[prevKey]||{}).items||[];
     const bt=prevItems.find(i=>i.id==="bedtime");
     if(bt&&bt.time){const[h,m]=bt.time.split(":").map(Number);return{h,m};}
     return null;
-  },[targetKey,srm]);
+  },[targetKey,srm,mood]);
   const initWakeTime=useCallback(()=>{
+    const ep=storedSleepEpisodes(mood[targetKey])[0];
+    if(ep?.wake)return ep.wake;
     const items=(srm[targetKey]||{}).items||[];
     const bd=items.find(i=>i.id==="bed");
     if(bd&&bd.time){const[h,m]=bd.time.split(":").map(Number);return{h,m};}
     return null;
-  },[targetKey,srm]);
+  },[targetKey,srm,mood]);
   const[slpTime,setSlpTime]=useState(initSleepTime);
   const[wkTime,setWkTime]=useState(initWakeTime);
-  const[slpHrs,setSlpHrs]=useState(()=>{const t=mood[targetKey];return t?.sleep??8;});
+  const[slpHrs,setSlpHrs]=useState(()=>{const t=mood[targetKey];const ep=storedSleepEpisodes(t)[0];return ep?.hrs??t?.sleep??8;});
   const[slpEditOrder,setSlpEditOrder]=useState(()=>{
     // if existing data, mark those as edited
     const ord=[];
-    const st=initSleepTime();const wt=initWakeTime();const t=mood[targetKey];
-    if(st)ord.push("sleep");if(wt)ord.push("wake");if(t?.sleep!=null)ord.push("hrs");
+    const st=initSleepTime();const wt=initWakeTime();const t=mood[targetKey];const ep=storedSleepEpisodes(t)[0];
+    if(st)ord.push("sleep");if(wt)ord.push("wake");if(ep?.hrs!=null||t?.sleep!=null)ord.push("hrs");
     return ord;
   });
   const[slpOffset,setSlpOffset]=useState(SLP_DEF_OFF);
   const[wkOffset,setWkOffset]=useState(WK_DEF_OFF);
   const[slpPicker,setSlpPicker]=useState(null); // 'sleep'|'wake'|null
   const[slpPickerDef,setSlpPickerDef]=useState(null);
+  const makeExtraSleep=useCallback((episode={},index=1,open=false)=>({
+    id:`sleep-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    slpTime:episode.bed||null,
+    wkTime:episode.wake||null,
+    slpHrs:episode.hrs??1,
+    editOrder:[episode.bed?"sleep":null,episode.wake?"wake":null,episode.hrs!=null?"hrs":null].filter(Boolean),
+    slpOffset:index>0?SLP_DAY_DEF_OFF:SLP_DEF_OFF,
+    wkOffset:index>0?WK_DAY_DEF_OFF:WK_DEF_OFF,
+    picker:null,
+    pickerDef:null,
+    open,
+  }),[]);
+  const[extraSleeps,setExtraSleeps]=useState(()=>storedSleepEpisodes(mood[targetKey]).slice(1).map((ep,i,arr)=>makeExtraSleep(ep,i+1,i===arr.length-1)));
+  const[primaryOpen,setPrimaryOpen]=useState(()=>storedSleepEpisodes(mood[targetKey]).length<=1);
 
   const slpMarkEdited=(f)=>setSlpEditOrder(prev=>[...prev.filter(x=>x!==f),f]);
   const slpDf=slpDerived(slpTime,wkTime,slpHrs,slpEditOrder);
+  const primaryEpisode=(override={})=>({hrs:override.hrs??slpHrs,bed:override.st??slpTime,wake:override.wt??wkTime});
+  const uiExtraEpisode=ep=>({hrs:ep.slpHrs,bed:ep.slpTime,wake:ep.wkTime});
+  const syncSleepEntry=(primary=primaryEpisode(),extras=extraSleeps)=>setEntry(e=>{
+    const episodes=[primary,...extras.map(uiExtraEpisode)].filter(ep=>ep.hrs!=null||ep.bed||ep.wake);
+    const total=episodes.length?sleepEpisodeTotal(episodes):null;
+    return{...e,sleep:total,sleeps:episodes.length>1?episodes.map(sleepEpisodeForStorage):null};
+  });
 
   const slpAutoCalc=(st,wt,hrs,df)=>{
     if(!df)return{st,wt,hrs};
@@ -1462,14 +1506,14 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const df=slpDerived({h,m},wkTime,slpHrs,newOrd);
     const r=slpAutoCalc({h,m},wkTime,slpHrs,df);
     setSlpTime(r.st);setWkTime(r.wt);setSlpHrs(r.hrs);setSlpEditOrder(newOrd);
-    upd("sleep",r.hrs);
+    syncSleepEntry({hrs:r.hrs,bed:r.st,wake:r.wt});
   };
   const doSetWkTime=(h,m)=>{
     const newOrd=[...slpEditOrder.filter(x=>x!=="wake"),"wake"];
     const df=slpDerived(slpTime,{h,m},slpHrs,newOrd);
     const r=slpAutoCalc(slpTime,{h,m},slpHrs,df);
     setSlpTime(r.st);setWkTime(r.wt);setSlpHrs(r.hrs);setSlpEditOrder(newOrd);
-    upd("sleep",r.hrs);
+    syncSleepEntry({hrs:r.hrs,bed:r.st,wake:r.wt});
   };
   const doSetSlpHrs=(v)=>{
     if(v<0)v=0;if(v>24)v=24;
@@ -1477,7 +1521,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const df=slpDerived(slpTime,wkTime,v,newOrd);
     const r=slpAutoCalc(slpTime,wkTime,v,df);
     setSlpTime(r.st);setWkTime(r.wt);setSlpHrs(r.hrs);setSlpEditOrder(newOrd);
-    upd("sleep",r.hrs);
+    syncSleepEntry({hrs:r.hrs,bed:r.st,wake:r.wt});
   };
   const doNudgeHrs=(delta)=>{const cur=slpHrs??8;doSetSlpHrs(Math.round((cur+delta)*2)/2);};
 
@@ -1494,12 +1538,76 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   };
   const slpConfirmPicker=(val)=>{if(!val)return;const[h,m]=val.split(":").map(Number);if(slpPicker==="sleep")doSetSlpTime(h,m);else doSetWkTime(h,m);setSlpPicker(null);setSlpPickerDef(null);};
   const slpCancelPicker=()=>{setSlpPicker(null);setSlpPickerDef(null);};
+  const updateExtraSleeps=updater=>{
+    setExtraSleeps(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      syncSleepEntry(primaryEpisode(),next);
+      return next;
+    });
+  };
+  const extraArrays=which=>which==="sleep"?SLP_DAY_ALL:WK_DAY_ALL;
+  const extraGetVisible=(ep,which)=>{
+    const arr=extraArrays(which);const off=which==="sleep"?ep.slpOffset:ep.wkOffset;
+    return arr.slice(off,off+SLP_VIS);
+  };
+  const extraScooch=(id,which,dir)=>updateExtraSleeps(prev=>prev.map(ep=>{
+    if(ep.id!==id)return ep;
+    const arr=extraArrays(which);const off=which==="sleep"?ep.slpOffset:ep.wkOffset;const newOff=off+dir;
+    if(newOff<0||newOff+SLP_VIS>arr.length){
+      let def;if(dir===-1){const f=arr[0];def=slpMinToHM(f.h*60+f.m-30);}else{const l=arr[arr.length-1];def=slpMinToHM(l.h*60+l.m+30);}
+      return{...ep,picker:which,pickerDef:def};
+    }
+    return which==="sleep"?{...ep,slpOffset:newOff}:{...ep,wkOffset:newOff};
+  }));
+  const extraSet=(id,field,h,m)=>updateExtraSleeps(prev=>prev.map(ep=>{
+    if(ep.id!==id)return ep;
+    const newOrd=[...ep.editOrder.filter(x=>x!==field),field];
+    const st=field==="sleep"?{h,m}:ep.slpTime;
+    const wt=field==="wake"?{h,m}:ep.wkTime;
+    const df=slpDerived(st,wt,ep.slpHrs,newOrd);
+    const r=slpAutoCalc(st,wt,ep.slpHrs,df);
+    return{...ep,slpTime:r.st,wkTime:r.wt,slpHrs:r.hrs,editOrder:newOrd};
+  }));
+  const extraNudgeHrs=(id,delta)=>updateExtraSleeps(prev=>prev.map(ep=>{
+    if(ep.id!==id)return ep;
+    const hrs=Math.max(0,Math.min(24,Math.round(((ep.slpHrs??1)+delta)*2)/2));
+    const newOrd=[...ep.editOrder.filter(x=>x!=="hrs"),"hrs"];
+    const df=slpDerived(ep.slpTime,ep.wkTime,hrs,newOrd);
+    const r=slpAutoCalc(ep.slpTime,ep.wkTime,hrs,df);
+    return{...ep,slpTime:r.st,wkTime:r.wt,slpHrs:r.hrs,editOrder:newOrd};
+  }));
+  const extraConfirmPicker=(id,val)=>{
+    if(!val)return;
+    const[h,m]=val.split(":").map(Number);
+    updateExtraSleeps(prev=>prev.map(ep=>{
+      if(ep.id!==id)return ep;
+      const field=ep.picker;
+      if(!field)return{...ep,picker:null,pickerDef:null};
+      const newOrd=[...ep.editOrder.filter(x=>x!==field),field];
+      const st=field==="sleep"?{h,m}:ep.slpTime;
+      const wt=field==="wake"?{h,m}:ep.wkTime;
+      const df=slpDerived(st,wt,ep.slpHrs,newOrd);
+      const r=slpAutoCalc(st,wt,ep.slpHrs,df);
+      return{...ep,slpTime:r.st,wkTime:r.wt,slpHrs:r.hrs,editOrder:newOrd,picker:null,pickerDef:null};
+    }));
+  };
+  const extraCancelPicker=id=>updateExtraSleeps(prev=>prev.map(ep=>ep.id===id?{...ep,picker:null,pickerDef:null}:ep));
+  const addExtraSleep=()=>{const next=makeExtraSleep({},extraSleeps.length+1,true);setPrimaryOpen(false);updateExtraSleeps(prev=>[...prev.map(ep=>({...ep,open:false})),next]);};
+  const removeExtraSleep=id=>updateExtraSleeps(prev=>prev.filter(ep=>ep.id!==id));
+  const toggleExtraOpen=id=>updateExtraSleeps(prev=>prev.map(ep=>ep.id===id?{...ep,open:!ep.open}:{...ep,open:false}));
 
   useEffect(()=>{
     if(editKey||lockedDate) return;
     const t=mood[targetKey];
+    const episodes=storedSleepEpisodes(t);
     if(t) setEntry({...t,moods:moodsArr(t),meds:{...t.meds}});
     else setEntry(makeDefault());
+    setSlpTime(episodes[0]?.bed??initSleepTime());
+    setWkTime(episodes[0]?.wake??initWakeTime());
+    setSlpHrs(episodes[0]?.hrs??t?.sleep??8);
+    setSlpEditOrder([episodes[0]?.bed||initSleepTime()?"sleep":null,episodes[0]?.wake||initWakeTime()?"wake":null,episodes[0]?.hrs!=null||t?.sleep!=null?"hrs":null].filter(Boolean));
+    setExtraSleeps(episodes.slice(1).map((ep,i,arr)=>makeExtraSleep(ep,i+1,i===arr.length-1)));
+    setPrimaryOpen(episodes.length<=1);
   },[targetKey]); // eslint-disable-line
 
   const tot=activeSteps.length;
@@ -1569,14 +1677,33 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         </div>
       </div>)}
 
-      {st.id==="sleep"&&(<SleepChips
-        slpTime={slpTime} wkTime={wkTime} slpHrs={slpHrs} slpDf={slpDf}
-        slpOffset={slpOffset} wkOffset={wkOffset}
-        slpPicker={slpPicker} slpPickerDef={slpPickerDef}
-        onSetSlp={doSetSlpTime} onSetWk={doSetWkTime} onNudgeHrs={doNudgeHrs}
-        onScooch={slpScooch} getVisible={slpGetVisible} canScooch={slpCanScooch}
-        onConfirmPicker={slpConfirmPicker} onCancelPicker={slpCancelPicker}
-      />)}
+      {st.id==="sleep"&&(<div className="slp-multi">
+        {extraSleeps.length>0&&<div className="slp-ep-head"><span className="slp-ep-title">Sleep 1</span><button type="button" className="slp-ep-x" onClick={()=>setPrimaryOpen(v=>!v)}>{primaryOpen?"⌃":"⌄"} <span className="lbl">{primaryOpen?"done":"edit"}</span></button></div>}
+        {primaryOpen||extraSleeps.length===0?<SleepChips
+          slpTime={slpTime} wkTime={wkTime} slpHrs={slpHrs} slpDf={slpDf}
+          slpOffset={slpOffset} wkOffset={wkOffset}
+          slpPicker={slpPicker} slpPickerDef={slpPickerDef}
+          onSetSlp={doSetSlpTime} onSetWk={doSetWkTime} onNudgeHrs={doNudgeHrs}
+          onScooch={slpScooch} getVisible={slpGetVisible} canScooch={slpCanScooch}
+          onConfirmPicker={slpConfirmPicker} onCancelPicker={slpCancelPicker}
+        />:<div className="slp-ep-sum"><span className="h">{slpHrs??0}<span className="slp-hrs-unit"> hrs</span></span><span className="r">{sleepEpisodeSummary(primaryEpisode())}</span></div>}
+        {extraSleeps.map((ep,index)=>{const df=slpDerived(ep.slpTime,ep.wkTime,ep.slpHrs,ep.editOrder);return <Fragment key={ep.id}>
+          <hr className="slp-ep-sep"/>
+          <div className="slp-ep-head"><span className="slp-ep-title">Sleep {index+2}</span><button type="button" className="slp-ep-x" onClick={()=>removeExtraSleep(ep.id)}>✕ <span className="lbl">remove</span></button></div>
+          {ep.open?<SleepChips
+            slpTime={ep.slpTime} wkTime={ep.wkTime} slpHrs={ep.slpHrs} slpDf={df}
+            slpOffset={ep.slpOffset} wkOffset={ep.wkOffset}
+            slpPicker={ep.picker} slpPickerDef={ep.pickerDef}
+            sleepAll={SLP_DAY_ALL} wakeAll={WK_DAY_ALL}
+            onSetSlp={(h,m)=>extraSet(ep.id,"sleep",h,m)} onSetWk={(h,m)=>extraSet(ep.id,"wake",h,m)} onNudgeHrs={delta=>extraNudgeHrs(ep.id,delta)}
+            onScooch={(which,dir)=>extraScooch(ep.id,which,dir)} getVisible={which=>extraGetVisible(ep,which)} canScooch={()=>true}
+            onConfirmPicker={val=>extraConfirmPicker(ep.id,val)} onCancelPicker={()=>extraCancelPicker(ep.id)}
+          />:<button type="button" className="slp-ep-sum slp-ep-sum-btn" onClick={()=>toggleExtraOpen(ep.id)}><span className="h">{ep.slpHrs??0}<span className="slp-hrs-unit"> hrs</span></span><span className="r">{sleepEpisodeSummary(uiExtraEpisode(ep))}</span><span className="chev">⌄ edit</span></button>}
+        </Fragment>;})}
+        <div className="slp-add"><button type="button" onClick={addExtraSleep}><span className="pl">+</span> Add another sleep</button></div>
+        {extraSleeps.length===0&&<p className="slp-add-help">Only if Wei slept more than once today.</p>}
+        {extraSleeps.length>0&&<p className="slp-total-cue">Total {entry.sleep??sleepEpisodeTotal([primaryEpisode(),...extraSleeps.map(uiExtraEpisode)])} hrs across {extraSleeps.length+1} sleeps.</p>}
+      </div>)}
       {st.id==="weight"&&(<div className="wgt"><input className="wgi" type="number" inputMode="decimal" step="0.01" value={entry.weight??""} onChange={e=>upd("weight",e.target.value===""?null:Math.round(parseFloat(e.target.value)*100)/100)} placeholder="e.g. 68.45"/><div className="wgu">kg</div></div>)}
       {st.id==="anx_irr"&&(<div className="ai-combo">
         {[{field:"anxiety",label:"Anxiety"},{field:"irritability",label:"Irritability"}].map(({field,label})=>{
@@ -1668,14 +1795,15 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         <p className="qs">{new Date(targetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
         <div className="rc">
           <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} className="rv-mood"><span className={`rv-dot ${G_MOOD_CLASS[k]}`}/>{MM[k].label}<span className="rv-muted"> · {MM[k].v>0?`+${MM[k].v}`:MM[k].v}</span>{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
-          <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
+          <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs{sleepMultiCue(entry.sleeps)&&<span className="rv-sleep-cue">{sleepMultiCue(entry.sleeps)}</span>}</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
             <RvRow l="Weight" v={entry.weight!=null?`${entry.weight} kg`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="weight"))}/>
             <RvRow l="Anxiety / Irritability" v={entry.anxiety!=null||entry.irritability!=null?`${entry.anxiety??"—"} / ${entry.irritability??"—"}`:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="anx_irr"))}/>
             <RvRow l="Meds" v={skippedSteps.has("meds")?"Not logged":(()=>{const logged=Object.entries(entry.meds||{}).filter(([,v])=>medHasDailyState(v));return logged.length?logged.map(([k,v])=>{const med=meds.find(m=>m.key===k);const state=normalizeDailyMedState(v);const kind=medStateKind(state);const label=kind==="off"?"off schedule":kind==="missed"?"not taken":"taken";return <span className={`rv-med rv-med-${kind}`} key={k}><b>{med?.name||k}</b><span className="rv-med-detail">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)} · {label}{state.note?` · ${state.note}`:""}</span></span>}):"None";})()} onEdit={()=>{setSkippedSteps(prev=>{const n=new Set(prev);n.delete("meds");return n;});setEditIdx(activeSteps.findIndex(s=>s.id==="meds"))}}/>
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
-          const finalEntry={...entry,meds:Object.fromEntries(Object.entries(entry.meds||{}).map(([key,state])=>{const s=normalizeDailyMedState(state);return[key,s.note?{...s,note:cleanMedNote(s.note)}:{ct:s.ct,off:s.off}];}))};
+          const sleepEpisodes=[primaryEpisode(),...extraSleeps.map(uiExtraEpisode)].filter(ep=>ep.hrs!=null||ep.bed||ep.wake);
+          const finalEntry={...entry,sleep:sleepEpisodes.length?sleepEpisodeTotal(sleepEpisodes):null,sleeps:sleepEpisodes.length>1?sleepEpisodes.map(sleepEpisodeForStorage):null,meds:Object.fromEntries(Object.entries(entry.meds||{}).map(([key,state])=>{const s=normalizeDailyMedState(state);return[key,s.note?{...s,note:cleanMedNote(s.note)}:{ct:s.ct,off:s.off}];}))};
           if(skippedSteps.has("meds")) finalEntry.meds={};
           // Save SRM bedtime (day before) and bed/wake (selected date)
           if(onSaveSRM){
@@ -1705,14 +1833,14 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   </div>);
 }
 /* ── SLEEP CHIPS COMPONENT ── */
-function SleepChips({slpTime,wkTime,slpHrs,slpDf,slpOffset,wkOffset,slpPicker,slpPickerDef,onSetSlp,onSetWk,onNudgeHrs,onScooch,getVisible,canScooch,onConfirmPicker,onCancelPicker}){
+function SleepChips({slpTime,wkTime,slpHrs,slpDf,slpOffset,wkOffset,slpPicker,slpPickerDef,sleepAll=SLP_ALL,wakeAll=WK_ALL,onSetSlp,onSetWk,onNudgeHrs,onScooch,getVisible,canScooch,onConfirmPicker,onCancelPicker}){
   const pickerRef=useCallback(node=>{if(node)setTimeout(()=>node.focus(),50);},[]);
 
   const renderRow=(which,selTime,onSet)=>{
     const visible=getVisible(which);
     const selVis=selTime&&visible.some(c=>c.h===selTime.h&&c.m===selTime.m);
     const selOff=selTime&&!selVis;
-    const allArr=which==="sleep"?SLP_ALL:WK_ALL;
+    const allArr=which==="sleep"?sleepAll:wakeAll;
     const off=which==="sleep"?slpOffset:wkOffset;
 
     let leftExtra=null,rightExtra=null;
@@ -2907,6 +3035,21 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .slp-hrs-unit{font-size:13px;color:var(--g-tx3)}
 .g-entry .slp-edge-ti{border-color:var(--g-tx);font-family:'Inter',system-ui,sans-serif}
 .g-entry .slp-edge-ok{border-radius:999px;background:var(--g-tx);font-family:'Inter',system-ui,sans-serif}
+.g-entry .slp-add{margin:18px 0 2px;display:flex;justify-content:center}
+.g-entry .slp-add button{border:1px dashed var(--g-line);background:transparent;color:var(--g-tx2);font:500 12.5px/1 'Inter',system-ui,sans-serif;padding:11px 16px;border-radius:999px;display:inline-flex;align-items:center;gap:7px}
+.g-entry .slp-add .pl{font-size:14px;color:var(--g-tx3)}
+.g-entry .slp-add-help,.g-entry .slp-total-cue{text-align:center;font:400 11px/1.4 'Inter',system-ui,sans-serif;color:var(--g-tx4);margin:7px 0 0}
+.g-entry .slp-ep-head{display:flex;align-items:center;justify-content:space-between;margin:2px 0 12px}
+.g-entry .slp-ep-title{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--g-tx3)}
+.g-entry .slp-ep-x{border:none;background:none;color:var(--g-tx3);font:400 14px/1 'Inter',system-ui,sans-serif;display:inline-flex;align-items:center;gap:5px}
+.g-entry .slp-ep-x .lbl{font-size:11px}
+.g-entry .slp-ep-sep{border:0;border-top:1px solid var(--g-line);margin:22px 0 18px}
+.g-entry .slp-ep-sum{display:flex;align-items:baseline;gap:8px;width:100%;border:0;background:transparent;text-align:left;color:var(--g-tx);padding:0}
+.g-entry .slp-ep-sum .h{font:400 22px/1 'Inter',system-ui,sans-serif}
+.g-entry .slp-ep-sum .r{font:400 12px/1.25 'Inter',system-ui,sans-serif;color:var(--g-tx3);flex:1}
+.g-entry .slp-ep-sum .chev{font:400 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.slp-read-cue,.rv-sleep-cue{display:block;margin-top:7px;font:400 11.5px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.slp-read-cue::before,.rv-sleep-cue::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--g-sleep-healthy);margin-right:6px;vertical-align:middle}
 
 .ai-combo{display:flex;flex-direction:column;gap:36px;margin-bottom:24px}
 .ai-row{}
