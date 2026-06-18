@@ -40,6 +40,7 @@ export default {
             anxiety: row.anxiety,
             notes: row.notes,
             weight: row.weight,
+            sleeps: parseJsonArray(row.sleeps),
             meds: {},
           };
         }
@@ -362,10 +363,10 @@ async function writeToD1(env, body) {
       ? entry.moods.filter(Boolean)
       : [entry.mood, entry.mood2].filter(Boolean);
     statements.push(env.DB.prepare(
-      "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+      "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, sleeps, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
     ).bind(
       date, dayName(date), JSON.stringify(moods),
-      nullableNumber(entry.sleep), nullableInteger(entry.irritability), nullableInteger(entry.anxiety),
+      nullableNumber(entry.sleep), sleepEpisodesJson(entry.sleeps), nullableInteger(entry.irritability), nullableInteger(entry.anxiety),
       entry.notes ?? null, nullableNumber(entry.weight), now,
     ));
 
@@ -710,6 +711,16 @@ function whenTakenSlot(value) {
   if (!slot) return null;
   if (!MED_WHEN_TAKEN.has(slot)) throw new Error("invalid when_taken");
   return slot;
+}
+
+function sleepEpisodesJson(value) {
+  if (!Array.isArray(value) || value.length <= 1) return null;
+  const episodes = value.map((episode) => ({
+    hrs: nullableNumber(episode && episode.hrs),
+    bed: optionalString(episode && episode.bed),
+    wake: optionalString(episode && episode.wake),
+  })).filter((episode) => episode.hrs !== null || episode.bed || episode.wake);
+  return episodes.length > 1 ? JSON.stringify(episodes) : null;
 }
 
 function dailyMedState(ct, off, note) {
