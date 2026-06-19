@@ -4026,7 +4026,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .c-cal-ticks{position:absolute;bottom:4px;left:50%;z-index:2;display:flex;gap:3px;transform:translateX(-50%);pointer-events:none}
 .c-srm-tick,.c-med-tick,.c-med-irregular-tick{width:4px;height:4px;border-radius:50%;background:var(--g-tx3);opacity:.65;filter:blur(.5px)}
 .c-med-tick{background:var(--g-mood-mod-high);opacity:1;filter:none}
-.c-med-irregular-tick{background:var(--g-warm-err);opacity:1;filter:none}
+.c-med-irregular-tick{background:var(--g-warm-err)}
 
 @media(prefers-reduced-motion:reduce){
   .g-welcome-cat,.g-welcome-sky,.g-wb,.g-welcome-cue,.cfdraw,.g-confirm .cfc,
