@@ -1249,7 +1249,7 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
       if(mm===11){yy++;mm=0;}else mm++;
     }
     return(<div className="scr g-year g-ambient-sky g-grain">
-      <button className="g-year-back" onClick={()=>setYearView(false)}>‹ {MO[m]}</button>
+      <button className="g-year-back" onClick={()=>setYearView(false)}>‹ Back</button>
       <p className="g-year-sub">A year has seasons. This is yours.</p>
       <div className="g-year-wrap">
         {months.map(({year:yy,month:mm},index)=>{
@@ -1861,7 +1861,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         if(editIdx!==null)setEditIdx(null);
         else if(step>0)setStep(step-1);
         else onX();
-      }}>‹ Back</button>
+      }}>‹</button>
       <span className="es">{isR?"Review":editIdx!==null?"Editing":`${(editIdx??step)+1} / ${tot}`}</span>
       <button className="btn-ghost" onClick={onX}>Cancel</button>
     </div>
