@@ -1176,12 +1176,13 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
   for(let d=1;d<=days;d++){
     const k=dk(y,m,d);const e=mood[k];const s=srm[k];
     const hasRegimen=medEvents.some(ev=>ev.date===k);
+    const hasIrregularMeds=Object.values(e?.meds||{}).some(state=>{const kind=medStateKind(state);return kind==="missed"||kind==="off";});
     const isT=d===td;const hasData=e||s||hasRegimen;
     const pm=primaryMood(e);const isFuture=k>tdk();
     cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${bubble?.key===k?" cc-open":""}${isFuture?" cc-future":""}`}
       onClick={(ev)=>{if(bubble){setBubble(null);return;}if(isFuture)return;const rect=ev.currentTarget.getBoundingClientRect();setBubble({key:k,rect});}}>
       {pm&&<div className={`g-cal-glow ${G_MOOD_CLASS[pm]}`}/>}
-      {(s||hasRegimen)&&<div className="c-cal-ticks">{s&&<span className="c-srm-tick"/>}{hasRegimen&&<span className="c-med-tick"/>}</div>}
+      {(s||hasRegimen||hasIrregularMeds)&&<div className="c-cal-ticks">{s&&<span className="c-srm-tick"/>}{hasRegimen&&<span className="c-med-tick"/>}{hasIrregularMeds&&<span className="c-med-irregular-tick"/>}</div>}
       <span className="cn">{d}</span>
     </div>);
   }
@@ -1248,7 +1249,7 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
       if(mm===11){yy++;mm=0;}else mm++;
     }
     return(<div className="scr g-year g-ambient-sky g-grain">
-      <button className="g-year-back" onClick={()=>setYearView(false)}>‹ {MO[m]}</button>
+      <button className="g-year-back" onClick={()=>setYearView(false)}>‹ Back</button>
       <p className="g-year-sub">A year has seasons. This is yours.</p>
       <div className="g-year-wrap">
         {months.map(({year:yy,month:mm},index)=>{
@@ -1453,8 +1454,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const isMedsYesterdayFlow=!editKey&&!lockedDate&&targetKey===tdk();
   const yesterdayMedKey=ydk();
   const seedYesterdayMeds=()=>{
-    const y=mood[yesterdayMedKey];
-    return entryHasMedState(y)?cloneMedsState(y.meds):defaultRoutineMedsMap(meds);
+    return defaultRoutineMedsMap(meds);
   };
   const seedTodayMeds=()=>{
     const t=mood[targetKey];
@@ -3234,6 +3234,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .prn-ct{display:inline-flex;align-items:center;height:32px;border:1px solid var(--g-line);border-radius:999px;overflow:hidden;background:var(--g-bg)}
 .g-entry .prn-ct button{width:30px;height:30px;border:0;background:transparent;color:var(--g-tx2);font:500 15px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-entry .prn-ct .n{min-width:26px;text-align:center;font:500 12px/1 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-entry .med-log-row:has(+ .med-state-legend){border-bottom:0}
 .g-entry .med-state-legend{display:flex;align-items:center;flex-wrap:wrap;gap:7px 16px;margin-top:18px;padding-top:13px;border-top:1px solid var(--g-line)}
 .g-entry .med-state-legend span{display:inline-flex;align-items:center;gap:7px;font:400 10.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-entry .med-state-legend .gi{width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--g-tx4);flex:0 0 17px}
@@ -3995,8 +3996,9 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 
 /* ── SRM bottom-edge tick on calendar cells ── */
 .c-cal-ticks{position:absolute;bottom:4px;left:50%;z-index:2;display:flex;gap:3px;transform:translateX(-50%);pointer-events:none}
-.c-srm-tick,.c-med-tick{width:4px;height:4px;border-radius:50%;background:var(--g-tx3);opacity:.65;filter:blur(.5px)}
+.c-srm-tick,.c-med-tick,.c-med-irregular-tick{width:4px;height:4px;border-radius:50%;background:var(--g-tx3);opacity:.65;filter:blur(.5px)}
 .c-med-tick{background:var(--g-mood-mod-high);opacity:1;filter:none}
+.c-med-irregular-tick{background:var(--g-mood-sev-high);opacity:1;filter:none}
 
 @media(prefers-reduced-motion:reduce){
   .g-welcome-cat,.g-welcome-sky,.g-wb,.g-welcome-cue,.cfdraw,.g-confirm .cfc,
