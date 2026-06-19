@@ -716,6 +716,32 @@ function medEventsWithPrev(events,key){
 }
 function medLatestForKey(events,key){return(events||[]).filter(ev=>ev.med_key===key).sort(medEventDesc)[0]||null;}
 function medsActiveRows(medsAll){return sortMedsByWhen((medsAll||[]).filter(m=>m.status==="active")).map(m=>({key:m.key,name:m.name,dose:m.dose,defaultCt:m.default_ct??0,whenTaken:medWhenTaken(m)}));}
+function routineMedsAsOfDate(medsAll,events,dateKey){
+  const routine=[];
+  for(const med of medsAll||[]){
+    const medEvents=(events||[]).filter(ev=>ev.med_key===med.key);
+    const latest=medEvents.filter(ev=>String(ev.date||"")<=String(dateKey||"")).sort(medEventDesc)[0];
+    let row=null;
+    if(latest&&!medIsStoppedEvent(latest)){
+      row={...med,dose:latest.dose_text||med.dose||null,default_ct:latest.new_ct,defaultCt:latest.new_ct};
+    }else if(!latest&&medEvents.length===0&&med.status==="active"){
+      row={...med,defaultCt:med.default_ct??med.defaultCt??0};
+    }
+    if(row&&medWhenTaken(row)!=="as_needed"&&Number(row.default_ct??row.defaultCt)>0) routine.push(row);
+  }
+  return sortMedsByWhen(routine);
+}
+function hasPositiveMedLog(entry){return Object.values(entry?.meds||{}).some(state=>normalizeDailyMedState(state).ct>0);}
+function hasIrregularMedsForDate(entry,medsAll,events,dateKey){
+  const medsMap=entry?.meds||{};
+  const presentIrregular=Object.values(medsMap).filter(medHasDailyState).some(state=>{const kind=medStateKind(state);return kind==="missed"||kind==="off";});
+  if(presentIrregular)return true;
+  if(!hasPositiveMedLog(entry))return false;
+  return routineMedsAsOfDate(medsAll,events,dateKey).some(med=>{
+    const raw=medsMap[med.key];
+    return raw===undefined||normalizeDailyMedState(raw).ct<=0;
+  });
+}
 function recomputeMedsAfterEvents(medsAll,events,key){
   const latest=medLatestForKey(events,key);
   if(!latest)return(medsAll||[]).filter(m=>m.key!==key);
@@ -1083,7 +1109,7 @@ export default function App(){
       {screen==="welcome"&&<Welcome name={name} onGo={()=>{if(settings.passcode){setScreen("lock");}else if(!consumePendingNav()){setScreen("calendar");}}}/>}
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>{if(!consumePendingNav()) setScreen("calendar");}}/>}
       {["calendar","history","medications","settings"].includes(screen)&&<Cal mood={mood} srm={srm} medsAll={medsAll} medEvents={medEvents} vm={vm} setVm={setVm} name={name} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onMeds={()=>setScreen("medications")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);pushDeleteMood(k);}}}/>}
-      {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} medsAll={medsAll} onBack={()=>setScreen("calendar")}
+      {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} medsAll={medsAll} medEvents={medEvents} onBack={()=>setScreen("calendar")}
         onDelDay={()=>{doDeleteMood(selDay);doDeleteSrm(selDay);setScreen("calendar");}}
         onMoveDay={moveSelectedDay}
         onSaveMoodEntry={entry=>doReplaceMood(selDay,entry)}
@@ -1176,7 +1202,7 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
   for(let d=1;d<=days;d++){
     const k=dk(y,m,d);const e=mood[k];const s=srm[k];
     const hasRegimen=medEvents.some(ev=>ev.date===k);
-    const hasIrregularMeds=Object.values(e?.meds||{}).some(state=>{const kind=medStateKind(state);return kind==="missed"||kind==="off";});
+    const hasIrregularMeds=hasIrregularMedsForDate(e,medsAll,medEvents,k);
     const isT=d===td;const hasData=e||s||hasRegimen;
     const pm=primaryMood(e);const isFuture=k>tdk();
     cells.push(<div key={d} className={`cc${hasData?" cl":""}${isT?" ct":""}${bubble?.key===k?" cc-open":""}${isFuture?" cc-future":""}`}
@@ -1313,7 +1339,7 @@ function Cal({mood,srm,medsAll,medEvents,vm,setVm,name,setSelDay,onAdd,onLogForD
 }
 
 /* ── DAY VIEW — with edit and delete ── */
-function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onSaveMoodEntry,onSaveSrmItems,onEditMood,onEditSRM,onLogMood}){
+function DayView({dk:dateKey,mood,srm,meds,medsAll,medEvents,onBack,onDelDay,onMoveDay,onSaveMoodEntry,onSaveSrmItems,onEditMood,onEditSRM,onLogMood}){
   const[confirmDel,setConfirmDel]=useState(null);
   const[editMode,setEditMode]=useState(false);
   const[undo,setUndo]=useState(null);
@@ -1353,8 +1379,10 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
     setUndoAction(ac?.label||item?.id||"Rhythm moment",()=>onSaveSrmItems(prev));
   };
   const renderClear=(onClick,label)=>editMode?<button className="g-day-clear" aria-label={`Clear ${label}`} onClick={ev=>{ev.stopPropagation();onClick();}}>×</button>:null;
-  const medForDayKey=k=>medByKey(medsAll,k)||meds.find(m=>m.key===k)||{key:k,name:k};
-  const dayMeds=e?Object.keys(e.meds||{}).filter(k=>medHasDailyState(e.meds[k])).sort((a,b)=>medTimelineIndex(medForDayKey(a))-medTimelineIndex(medForDayKey(b))||String(a).localeCompare(String(b))):[];
+  const routineMeds=e&&hasPositiveMedLog(e)?routineMedsAsOfDate(medsAll,medEvents,dateKey):[];
+  const routineByKey=Object.fromEntries(routineMeds.map(med=>[med.key,med]));
+  const medForDayKey=k=>routineByKey[k]||medByKey(medsAll,k)||meds.find(m=>m.key===k)||{key:k,name:k};
+  const dayMeds=e?[...new Set([...Object.keys(e.meds||{}).filter(k=>medHasDailyState(e.meds[k])),...routineMeds.filter(med=>e.meds?.[med.key]===undefined||normalizeDailyMedState(e.meds?.[med.key]).ct<=0).map(med=>med.key)])].sort((a,b)=>medTimelineIndex(medForDayKey(a))-medTimelineIndex(medForDayKey(b))||String(a).localeCompare(String(b))):[];
   return(<div className="scr g-day">
     <div className="g-day-hero" style={{background:heroBg}}>
       <button className="g-day-close" onClick={onBack}>×</button>
@@ -1375,7 +1403,7 @@ function DayView({dk:dateKey,mood,srm,meds,medsAll,onBack,onDelDay,onMoveDay,onS
         </div>
         {e.weight!=null&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("weight"),"weight")}<span className="g-day-k">Weight</span><div className="g-day-v">{e.weight}<small> kg</small></div></div></>}
         {e.notes&&<><div className="g-day-hair"/><div className="g-day-block">{renderClear(()=>clearMoodField("notes"),"note")}<span className="g-day-k">Note</span><p className="g-day-note">{e.notes}</p></div></>}
-        {dayMeds.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{dayMeds.map(k=>{const med=medForDayKey(k);const state=normalizeDailyMedState(e.meds?.[k]);const kind=medStateKind(state);const name=medPrimary(med,k);const when=medWhenLabel(med);return(<div key={k} className={`g-day-med-row ${kind}`}><span className="dotcol"><i/></span><div className="mtxt"><div className="mt1"><span className="nm">{name}</span><span className="ds">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)}</span>{when&&<span className="when-tag">{when}</span>}{renderClear(()=>clearMoodField("meds",k),name)}</div>{kind==="off"&&<div className="mchip"><span className="flag">off schedule</span></div>}{kind==="missed"&&<div className="mchip"><span className="flag">not taken</span></div>}{state.note&&<div className="mnote">{state.note}</div>}</div></div>);})}</div><div className="g-day-med-key"><span><i className="off"/>off schedule</span><span><i className="miss"/>missed</span></div></div></>}
+        {dayMeds.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Medication</span><div className="g-day-meds">{dayMeds.map(k=>{const med=medForDayKey(k);const hasRaw=e.meds?.[k]!==undefined;const state=hasRaw?normalizeDailyMedState(e.meds?.[k]):{ct:0,off:false};const kind=medStateKind(state);const name=medPrimary(med,k);const when=medWhenLabel(med);return(<div key={k} className={`g-day-med-row ${kind}`}><span className="dotcol"><i/></span><div className="mtxt"><div className="mt1"><span className="nm">{name}</span><span className="ds">{medDoseQtyLabel(med,kind==="missed"?(med?.default_ct??med?.defaultCt??state.ct):state.ct)}</span>{when&&<span className="when-tag">{when}</span>}{hasRaw&&renderClear(()=>clearMoodField("meds",k),name)}</div>{kind==="off"&&<div className="mchip"><span className="flag">off schedule</span></div>}{kind==="missed"&&<div className="mchip"><span className="flag">not taken</span></div>}{state.note&&<div className="mnote">{state.note}</div>}</div></div>);})}</div><div className="g-day-med-key"><span><i className="off"/>off schedule</span><span><i className="miss"/>missed</span></div></div></>}
       </>}
       {srmItems.length>0&&<><div className="g-day-hair"/><div className="g-day-block"><span className="g-day-k">Social rhythm</span>
         <div className="g-day-tl">{srmItems.map(it=>{const ac=SRM_ACT.find(a=>a.id===it.id)||{label:it.id};const t=it.time?fmt12h(to24h(normTime(it.time),it.am)):"";return(<div key={it.id} className="g-day-tl-item" onClick={()=>{if(!editMode)onEditSRM(it.id);}}>
@@ -3998,7 +4026,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .c-cal-ticks{position:absolute;bottom:4px;left:50%;z-index:2;display:flex;gap:3px;transform:translateX(-50%);pointer-events:none}
 .c-srm-tick,.c-med-tick,.c-med-irregular-tick{width:4px;height:4px;border-radius:50%;background:var(--g-tx3);opacity:.65;filter:blur(.5px)}
 .c-med-tick{background:var(--g-mood-mod-high);opacity:1;filter:none}
-.c-med-irregular-tick{background:var(--g-mood-sev-high);opacity:1;filter:none}
+.c-med-irregular-tick{background:var(--g-warm-err)}
 
 @media(prefers-reduced-motion:reduce){
   .g-welcome-cat,.g-welcome-sky,.g-wb,.g-welcome-cue,.cfdraw,.g-confirm .cfc,
