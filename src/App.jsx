@@ -1861,7 +1861,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
         if(editIdx!==null)setEditIdx(null);
         else if(step>0)setStep(step-1);
         else onX();
-      }}>‹</button>
+      }}>‹ Back</button>
       <span className="es">{isR?"Review":editIdx!==null?"Editing":`${(editIdx??step)+1} / ${tot}`}</span>
       <button className="btn-ghost" onClick={onX}>Cancel</button>
     </div>
