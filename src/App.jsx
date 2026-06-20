@@ -566,6 +566,16 @@ return v;};
 const GREETS=[n=>`Take it one moment at a time${n?", "+n:""}.`,n=>`No rush. You're here, and that's enough${n?", "+n:""}.`,n=>`A small step is still a step${n?", "+n:""}.`,n=>`Glad you're here${n?", "+n:""}.`,n=>`${n?n+", you":"You"} don't have to do this perfectly.`,n=>`Checking in takes courage${n?", "+n:""}.`,n=>`${n?n+", b":"B"}e gentle with yourself today.`,n=>`Ready when you are${n?", "+n:""}.`];
 
 function loadJ(k,fb){try{const s=localStorage.getItem(k);return s?JSON.parse(s):fb;}catch{return fb;}}
+const MOOD_TOUCHED_KEY="mt_mood_touched",SRM_TOUCHED_KEY="mt_srm_touched";
+function validDateKey(k){return/^\d{4}-\d{2}-\d{2}$/.test(String(k||""));}
+function loadTouched(k){const v=loadJ(k,{});return v&&typeof v==="object"&&!Array.isArray(v)?v:{};}
+function saveTouched(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{/* localStorage unavailable; tombstone guard falls back later */}}
+function markTouched(k,date,ts=new Date().toISOString()){if(!validDateKey(date))return;const m=loadTouched(k);m[date]=ts;saveTouched(k,m);}
+function clearTouched(k,date){if(!validDateKey(date))return;const m=loadTouched(k);if(m[date]){delete m[date];saveTouched(k,m);}}
+function markMoodTouched(date,ts){markTouched(MOOD_TOUCHED_KEY,date,ts);}
+function clearMoodTouched(date){clearTouched(MOOD_TOUCHED_KEY,date);}
+function markSrmTouched(date,ts){markTouched(SRM_TOUCHED_KEY,date,ts);}
+function clearSrmTouched(date){clearTouched(SRM_TOUCHED_KEY,date);}
 function loadMood(){try{const s=localStorage.getItem("mt_mood");return s?{...SEED_MOOD,...JSON.parse(s)}:{...SEED_MOOD};}catch{return{...SEED_MOOD};}}
 function saveMood(d){const u={};for(const k in d)if(!SEED_MOOD[k])u[k]=d[k];localStorage.setItem("mt_mood",JSON.stringify(u));}
 function loadSRM(){try{const s=localStorage.getItem("mt_srm");return s?{...SEED_SRM,...JSON.parse(s)}:{...SEED_SRM};}catch{return{...SEED_SRM};}}
@@ -1029,6 +1039,7 @@ export default function App(){
   const doSaveMood=(newMood, changedDate)=>{
     setMood(newMood); saveMood(newMood);
     if(changedDate && newMood[changedDate]){
+      markMoodTouched(changedDate);
       recordLogToday();
       pushMood(changedDate, newMood[changedDate], meds);
     }
@@ -1036,6 +1047,7 @@ export default function App(){
   // Delete mood: remove locally + tell sheets to delete that row
   const doDeleteMood=(date)=>{
     const n={...mood}; delete n[date]; setMood(n); saveMood(n);
+    clearMoodTouched(date);
     pushDeleteMood(date);
   };
   const doMoveDay=(fromDate,toDate,force=false)=>{
@@ -1045,17 +1057,23 @@ export default function App(){
     if(!force&&(mood[toDate]||srm[toDate]?.items?.length)) return "occupied";
     if(force&&mood[toDate]&&!moodEntry){
       const n={...mood};delete n[toDate];setMood(n);saveMood(n);pushDeleteMood(toDate);
+      clearMoodTouched(toDate);
     }
     if(force&&srm[toDate]?.items?.length&&!srmEntry?.items?.length){
       const n={...srm};delete n[toDate];setSrm(n);saveSRM(n);pushDeleteSrm(toDate);
+      clearSrmTouched(toDate);
     }
     if(moodEntry){
+      const ts=new Date().toISOString();
       const n={...mood};delete n[fromDate];n[toDate]={...moodEntry};
       setMood(n);saveMood(n);pushDeleteMood(fromDate);pushMood(toDate,n[toDate],meds);
+      clearMoodTouched(fromDate);markMoodTouched(toDate,ts);
     }
     if(srmEntry?.items?.length){
+      const ts=new Date().toISOString();
       const n={...srm};delete n[fromDate];n[toDate]={...srmEntry,items:[...srmEntry.items]};
       setSrm(n);saveSRM(n);pushDeleteSrm(fromDate);pushSrm(toDate,n[toDate].items);
+      clearSrmTouched(fromDate);markSrmTouched(toDate,ts);
     }
     return true;
   };
@@ -1063,6 +1081,7 @@ export default function App(){
   const doSaveSRM=(newSrm, changedDate)=>{
     setSrm(newSrm); saveSRM(newSrm);
     if(changedDate && newSrm[changedDate]){
+      markSrmTouched(changedDate);
       recordLogToday();
       pushSrm(changedDate, newSrm[changedDate].items || []);
     }
@@ -1070,6 +1089,7 @@ export default function App(){
   // Delete SRM
   const doDeleteSrm=(date)=>{
     const n={...srm}; delete n[date]; setSrm(n); saveSRM(n);
+    clearSrmTouched(date);
     pushDeleteSrm(date);
   };
   const hasMoodFields=entry=>!!(entry&&(
@@ -1089,8 +1109,8 @@ export default function App(){
       else{delete next[date];deletes.push(date);}
     });
     setMood(next);saveMood(next);
-    pushes.forEach(({date,entry})=>{recordLogToday();pushMood(date,entry,meds);});
-    deletes.forEach(date=>pushDeleteMood(date));
+    pushes.forEach(({date,entry})=>{markMoodTouched(date);recordLogToday();pushMood(date,entry,meds);});
+    deletes.forEach(date=>{clearMoodTouched(date);pushDeleteMood(date);});
   };
   const doReplaceSrm=(date,items)=>{
     if(!items.length){doDeleteSrm(date);return;}
@@ -1108,7 +1128,7 @@ export default function App(){
     <div className="app"><div className="page" key={["calendar","history","medications","settings"].includes(screen)?"home":screen}>
       {screen==="welcome"&&<Welcome name={name} onGo={()=>{if(settings.passcode){setScreen("lock");}else if(!consumePendingNav()){setScreen("calendar");}}}/>}
       {screen==="lock"&&<Lock passcode={settings.passcode} onOk={()=>{if(!consumePendingNav()) setScreen("calendar");}}/>}
-      {["calendar","history","medications","settings"].includes(screen)&&<Cal mood={mood} srm={srm} medsAll={medsAll} medEvents={medEvents} vm={vm} setVm={setVm} name={name} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onMeds={()=>setScreen("medications")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);pushDeleteMood(k);}}}/>}
+      {["calendar","history","medications","settings"].includes(screen)&&<Cal mood={mood} srm={srm} medsAll={medsAll} medEvents={medEvents} vm={vm} setVm={setVm} name={name} setSelDay={setSelDay} onAdd={()=>setScreen("entry")} onLogForDay={k=>{setSelDay(k);setScreen("calEntry");}} onSrm={()=>setScreen("srm")} onHist={()=>setScreen("history")} onMeds={()=>setScreen("medications")} onSet={()=>setScreen("settings")} onViewDay={()=>setScreen("dayView")} onQuickMood={(k,mk)=>{const qe={...(mood[k]||{}),moods:[mk]};doSaveMood({...mood,[k]:qe},k);}} onQuickUndo={(k,prev)=>{if(prev){doSaveMood({...mood,[k]:prev},k);}else{const nm={...mood};delete nm[k];setMood(nm);saveMood(nm);clearMoodTouched(k);pushDeleteMood(k);}}}/>}
       {screen==="dayView"&&<DayView dk={selDay} mood={mood} srm={srm} meds={meds} medsAll={medsAll} medEvents={medEvents} onBack={()=>setScreen("calendar")}
         onDelDay={()=>{doDeleteMood(selDay);doDeleteSrm(selDay);setScreen("calendar");}}
         onMoveDay={moveSelectedDay}
