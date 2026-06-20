@@ -315,6 +315,127 @@ export default {
       }, null, 2), { headers: { "Content-Type": "application/json" } });
     }
 
+    // ── Accounts (Phase 3) identity layer. All gated by checkAppToken (the same coarse
+    // app gate as /write,/sync), plus fine-grained device-token checks. NONE of these
+    // touch /write, /sync, or the notes/mood tables — logging is never affected. Inert
+    // until a future frontend phase wires them.
+    if (url.pathname === "/auth/request-code" && request.method === "POST") {
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+      let body;
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      try {
+        const accountId = optionalString(body.account_id);
+        const acct = accountId ? await env.DB.prepare("SELECT id, email FROM accounts WHERE id = ?").bind(accountId).first() : null;
+        if (!acct) return c(jsonResponse({ ok: false, error: "unknown_account" }));
+        const now = new Date();
+        const nowIso = now.toISOString();
+        // opportunistic cleanup of expired codes (no cron yet)
+        await env.DB.prepare("DELETE FROM login_codes WHERE expires_at < ?").bind(nowIso).run();
+        // rate limit: max 5 codes per account per hour
+        const since = new Date(now.getTime() - 60 * 60 * 1000).toISOString();
+        const recent = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_codes WHERE account_id = ? AND created_at > ?").bind(acct.id, since).first();
+        if ((recent?.n ?? 0) >= 5) return c(jsonResponse({ ok: false, error: "rate_limited" }, 429));
+        const code = String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, "0");
+        const codeHash = await sha256hex(code);
+        const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+        await env.DB.prepare(
+          "INSERT INTO login_codes (id, account_id, code_hash, expires_at, consumed_at, attempts, created_at) VALUES (?, ?, ?, ?, NULL, 0, ?)"
+        ).bind(crypto.randomUUID(), acct.id, codeHash, expiresAt, nowIso).run();
+        const mail = await sendLoginEmail(env, acct.email, code);
+        const resp = { ok: true, sent: mail.sent };
+        if (checkAuth(request, env)) resp.debug_code = code; // admin-only (X-Auth) test affordance; a normal app caller never sees it
+        return c(jsonResponse(resp));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/auth/verify-code" && request.method === "POST") {
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+      let body;
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      const accountId = optionalString(body.account_id);
+      const code = optionalString(body.code);
+      const label = optionalString(body.label);
+      if (!accountId || !code) return c(jsonResponse({ ok: false, error: "missing_fields" }, 400));
+      try {
+        const nowIso = new Date().toISOString();
+        const row = await env.DB.prepare(
+          "SELECT id, code_hash, attempts FROM login_codes WHERE account_id = ? AND consumed_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 1"
+        ).bind(accountId, nowIso).first();
+        if (!row) return c(jsonResponse({ ok: false, error: "expired" }));
+        if ((row.attempts ?? 0) >= 5) return c(jsonResponse({ ok: false, error: "locked" }));
+        const hash = await sha256hex(code);
+        if (hash !== row.code_hash) {
+          await env.DB.prepare("UPDATE login_codes SET attempts = attempts + 1 WHERE id = ?").bind(row.id).run();
+          return c(jsonResponse({ ok: false, error: "bad_code" }));
+        }
+        const token = crypto.randomUUID();
+        await env.DB.batch([
+          env.DB.prepare("UPDATE login_codes SET consumed_at = ? WHERE id = ?").bind(nowIso, row.id),
+          env.DB.prepare("INSERT INTO devices (token, account_id, label, created_at, last_seen) VALUES (?, ?, ?, ?, ?)").bind(token, accountId, label, nowIso, nowIso),
+        ]);
+        const acct = await env.DB.prepare("SELECT id, name FROM accounts WHERE id = ?").bind(accountId).first();
+        return c(jsonResponse({ ok: true, token, account: acct ? { id: acct.id, name: acct.name } : { id: accountId } }));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/auth/validate" && request.method === "POST") {
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+      let body;
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      try {
+        const accountId = await deviceAccount(env, body.token);
+        if (!accountId) return c(jsonResponse({ ok: false }));
+        await env.DB.prepare("UPDATE devices SET last_seen = ? WHERE token = ?").bind(new Date().toISOString(), optionalString(body.token)).run();
+        return c(jsonResponse({ ok: true, account_id: accountId }));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/auth/assist-grant" && request.method === "POST") {
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+      let body;
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      try {
+        const callerAccount = await deviceAccount(env, body.caller_token);
+        if (callerAccount !== "cuixi") return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+        if (body.confirm !== true) return c(jsonResponse({ ok: false, error: "needs_confirm" }));
+        const target = optionalString(body.target_account_id);
+        const acct = target ? await env.DB.prepare("SELECT id FROM accounts WHERE id = ?").bind(target).first() : null;
+        if (!acct) return c(jsonResponse({ ok: false, error: "unknown_account" }));
+        const token = crypto.randomUUID();
+        const nowIso = new Date().toISOString();
+        await env.DB.prepare("INSERT INTO devices (token, account_id, label, created_at, last_seen) VALUES (?, ?, ?, ?, ?)")
+          .bind(token, acct.id, optionalString(body.label), nowIso, nowIso).run();
+        return c(jsonResponse({ ok: true, token }));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/auth/me" && request.method === "POST") {
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+      let body;
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      try {
+        const accountId = await deviceAccount(env, body.token);
+        if (!accountId) return c(jsonResponse({ ok: false }));
+        const acct = await env.DB.prepare("SELECT id, name, email FROM accounts WHERE id = ?").bind(accountId).first();
+        const { results: devs = [] } = await env.DB.prepare(
+          "SELECT label, created_at, last_seen, token FROM devices WHERE account_id = ? ORDER BY created_at"
+        ).bind(accountId).all();
+        // Do NOT return raw device tokens (they are credentials); a masked tail is enough to disambiguate in the UI.
+        const devices = devs.map((d) => ({ label: d.label, created_at: d.created_at, last_seen: d.last_seen, token_tail: String(d.token || "").slice(-6) }));
+        return c(jsonResponse({ ok: true, account: acct ? { id: acct.id, name: acct.name, email: acct.email } : null, devices }));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
     if (request.method === "OPTIONS") return c(new Response(null, { status: 204 }));
     if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
 
@@ -394,6 +515,42 @@ function checkAppToken(request, env) {
 
 function noteMissingAppToken(request, env, path) {
   if (!checkAppToken(request, env)) console.warn(`Missing or invalid X-App-Token on ${path}; accepting during app-token rollout.`);
+}
+
+// ── Accounts (Phase 3) helpers ──
+async function sha256hex(s) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function deviceAccount(env, token) {
+  const t = optionalString(token);
+  if (!t) return null;
+  const row = await env.DB.prepare("SELECT account_id FROM devices WHERE token = ?").bind(t).first();
+  return row ? row.account_id : null;
+}
+
+// Send the login code via Resend. Isolated + guarded: with no RESEND_API_KEY (current
+// state — domain DNS not set up) this is an inert no-op and request-code still succeeds.
+// RESEND_API_KEY / RESEND_FROM are operator-set Worker secrets — never in the bundle.
+async function sendLoginEmail(env, toEmail, code) {
+  const key = (env.RESEND_API_KEY || "").trim();
+  if (!key) return { sent: false, reason: "no_key" };
+  try {
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: env.RESEND_FROM || "MooTracker <login@example.com>",
+        to: [toEmail],
+        subject: "Your MooTracker code",
+        text: `Your code is ${code}. It expires in 10 minutes.`,
+      }),
+    });
+    return { sent: resp.ok, reason: resp.ok ? "ok" : `http_${resp.status}` };
+  } catch (e) {
+    return { sent: false, reason: String(e) };
+  }
 }
 
 async function recentDeletionFeed(env) {
