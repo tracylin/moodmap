@@ -91,8 +91,9 @@ export default {
         const { results: medEvents = [] } = await env.DB.prepare(
           "SELECT * FROM med_events ORDER BY date DESC, ts DESC"
         ).all();
+        const deletions = await recentDeletionFeed(env);
 
-        const resp = jsonResponse({ status: "ok", mood, srm, settings, meds, medsAll, medEvents });
+        const resp = jsonResponse({ status: "ok", mood, srm, settings, meds, medsAll, medEvents, deletions });
         resp.headers.set("Cache-Control", "no-store");
         appendVary(resp, "X-App-Token");
         return c(resp);
@@ -207,13 +208,18 @@ export default {
       }
 
       try {
+        const now = new Date().toISOString();
         if (body.type === "mood" && body.date) {
           await env.DB.batch([
             env.DB.prepare("DELETE FROM mood_entries WHERE date = ?").bind(body.date),
             env.DB.prepare("DELETE FROM daily_med_doses WHERE date = ?").bind(body.date),
+            env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, body.date, body.actor || "Wei", "delete_mood"),
           ]);
         } else if (body.type === "srm" && body.date) {
-          await env.DB.prepare("DELETE FROM srm_items WHERE date = ?").bind(body.date).run();
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM srm_items WHERE date = ?").bind(body.date),
+            env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, body.date, body.actor || "Wei", "delete_srm"),
+          ]);
         }
         return c(jsonResponse({ ok: true }));
       } catch (err) {
@@ -386,6 +392,38 @@ function checkAppToken(request, env) {
 
 function noteMissingAppToken(request, env, path) {
   if (!checkAppToken(request, env)) console.warn(`Missing or invalid X-App-Token on ${path}; accepting during app-token rollout.`);
+}
+
+async function recentDeletionFeed(env) {
+  const cutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { results = [] } = await env.DB.prepare(`
+    WITH per_date AS (
+      SELECT
+        entry_date,
+        MAX(CASE WHEN type = 'delete_mood' THEN ts END) AS delete_mood_ts,
+        MAX(CASE WHEN type = 'mood' THEN ts END) AS mood_ts,
+        MAX(CASE WHEN type = 'delete_srm' THEN ts END) AS delete_srm_ts,
+        MAX(CASE WHEN type = 'srm' THEN ts END) AS srm_ts
+      FROM log_activity
+      WHERE entry_date >= ?
+        AND type IN ('delete_mood', 'mood', 'delete_srm', 'srm')
+      GROUP BY entry_date
+    )
+    SELECT entry_date, delete_mood_ts, mood_ts, delete_srm_ts, srm_ts
+    FROM per_date
+    WHERE (delete_mood_ts IS NOT NULL AND (mood_ts IS NULL OR delete_mood_ts > mood_ts))
+       OR (delete_srm_ts IS NOT NULL AND (srm_ts IS NULL OR delete_srm_ts > srm_ts))
+    ORDER BY entry_date
+  `).bind(cutoff).all();
+
+  const deletions = {};
+  for (const row of results) {
+    const entry = {};
+    if (row.delete_mood_ts && (!row.mood_ts || row.delete_mood_ts > row.mood_ts)) entry.mood = row.delete_mood_ts;
+    if (row.delete_srm_ts && (!row.srm_ts || row.delete_srm_ts > row.srm_ts)) entry.srm = row.delete_srm_ts;
+    if (entry.mood || entry.srm) deletions[row.entry_date] = entry;
+  }
+  return deletions;
 }
 
 async function writeToD1(env, body) {
