@@ -498,7 +498,7 @@ async function syncToSheet(payload, env) {
     await fetch(sheetsUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, _fromWorker: true }),
+      body: JSON.stringify({ ...payload, _fromWorker: true, _secret: env.SHARED_SECRET }),
     });
   } catch (e) {
     console.error("Sheet sync failed (non-blocking):", e);
