@@ -6,6 +6,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
    ═══════════════════════════════════════════════════════════════════════════ */
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"; // paste your deployed Apps Script URL here
 const WORKER_URL = "https://mootracker-push.weavergirl.workers.dev";
+const APP_TOKEN = import.meta.env.VITE_APP_TOKEN || "";
 const DEV_NOTES_KEY = "mt_dev_notes";
 const DEV_NOTES_EVENT = "mt-dev-notes-updated";
 
@@ -152,7 +153,7 @@ async function processQueue(){
     try{
       const res = await fetch(`${WORKER_URL}/write`,{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","X-App-Token":APP_TOKEN},
         body:JSON.stringify(job),
         keepalive:true, // survive the app being backgrounded right after a log
       });
@@ -166,9 +167,9 @@ async function processQueue(){
       // The server was REACHED but rejected the write. Only this case may
       // dead-letter — a connectivity failure (the catch below) never does, so
       // entries survive arbitrarily long outages (offline for a week is fine).
-      // 4xx (except 429) is permanent; 5xx/429 may be transient, so retry but
+      // 4xx (except 403/429) is permanent; 5xx/403/429 may be transient, so retry but
       // cap total rejections so a deterministically-bad job can't block forever.
-      const permanent = res.status>=400 && res.status<500 && res.status!==429;
+      const permanent = res.status>=400 && res.status<500 && res.status!==429 && res.status!==403;
       job._attempts=(job._attempts||0)+1;
       saveSyncQueue(syncQueue);
       if(permanent || job._attempts>=12){
@@ -275,7 +276,7 @@ function pushDeleteSrm(date){
 async function pullFromSheets(){
   if(!WORKER_URL) return null;
   try{
-    const res=await fetch(`${WORKER_URL}/sync`,{method:"GET",cache:"no-store"});
+    const res=await fetch(`${WORKER_URL}/sync`,{method:"GET",cache:"no-store",headers:{"X-App-Token":APP_TOKEN}});
     if(res&&res.ok) return await res.json();
   }catch{/* Worker sync failed; keep local cache */}
   return null;
@@ -302,7 +303,7 @@ function saveDevNotes(notes){
 
 async function fetchDevNotesFromWorker(){
   try{
-    const res=await fetch(`${WORKER_URL}/dev-notes`,{method:"GET",cache:"no-store"});
+    const res=await fetch(`${WORKER_URL}/dev-notes`,{method:"GET",cache:"no-store",headers:{"X-App-Token":APP_TOKEN}});
     if(!res.ok) return null;
     const data=await res.json();
     if(Array.isArray(data.notes)) return saveDevNotes(data.notes);
@@ -314,7 +315,7 @@ async function postDevNoteToWorker(note){
   try{
     await fetch(`${WORKER_URL}/dev-notes`,{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json","X-App-Token":APP_TOKEN},
       body:JSON.stringify(note),
     });
   }catch{/* local optimistic note remains visible */}
@@ -322,7 +323,7 @@ async function postDevNoteToWorker(note){
 
 async function deleteDevNoteFromWorker(id){
   try{
-    await fetch(`${WORKER_URL}/dev-notes?id=${encodeURIComponent(id)}`,{method:"DELETE"});
+    await fetch(`${WORKER_URL}/dev-notes?id=${encodeURIComponent(id)}`,{method:"DELETE",headers:{"X-App-Token":APP_TOKEN}});
   }catch{/* deleted local view is authoritative for this device */}
 }
 

@@ -22,8 +22,11 @@
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const corsOrigin = allowedCorsOrigin(request);
+    const c = (resp) => cors(resp, corsOrigin);
 
     if (url.pathname === "/sync" && request.method === "GET") {
+      noteMissingAppToken(request, env, "/sync");
       try {
         const mood = {};
         const { results: moodRows = [] } = await env.DB.prepare(
@@ -89,18 +92,25 @@ export default {
           "SELECT * FROM med_events ORDER BY date DESC, ts DESC"
         ).all();
 
-        return cors(jsonResponse({ status: "ok", mood, srm, settings, meds, medsAll, medEvents }));
+        const resp = jsonResponse({ status: "ok", mood, srm, settings, meds, medsAll, medEvents });
+        resp.headers.set("Cache-Control", "no-store");
+        appendVary(resp, "X-App-Token");
+        return c(resp);
       } catch (err) {
-        return cors(jsonResponse({ status: "error", message: String(err) }, 500));
+        const resp = jsonResponse({ status: "error", message: String(err) }, 500);
+        resp.headers.set("Cache-Control", "no-store");
+        appendVary(resp, "X-App-Token");
+        return c(resp);
       }
     }
 
     if (url.pathname === "/write" && request.method === "POST") {
+      noteMissingAppToken(request, env, "/write");
       let body;
-      try { body = await request.json(); } catch { return cors(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
 
       const type = body.type;
-      if (!type) return cors(jsonResponse({ ok: false, error: "missing type" }, 400));
+      if (!type) return c(jsonResponse({ ok: false, error: "missing type" }, 400));
 
       try {
         const now = new Date().toISOString();
@@ -152,48 +162,48 @@ export default {
           // Push scheduling reads from the Sheet until Phase 4.
 
         } else {
-          return cors(jsonResponse({ ok: false, error: "unknown type" }, 400));
+          return c(jsonResponse({ ok: false, error: "unknown type" }, 400));
         }
 
         // Async Sheet sync — fire-and-forget
         ctx.waitUntil(syncToSheet(body, env));
 
-        return cors(jsonResponse({ ok: true }));
+        return c(jsonResponse({ ok: true }));
       } catch (err) {
-        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
       }
     }
 
     if (url.pathname === "/ingest" && request.method === "POST") {
       if (!checkAuth(request, env)) {
-        return cors(new Response("forbidden", { status: 403 }));
+        return c(new Response("forbidden", { status: 403 }));
       }
 
       let body;
       try {
         body = await request.json();
       } catch {
-        return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+        return c(jsonResponse({ ok: false, error: "bad json" }, 400));
       }
 
       try {
         const counts = await writeToD1(env, body);
-        return cors(jsonResponse({ ok: true, counts }));
+        return c(jsonResponse({ ok: true, counts }));
       } catch (err) {
-        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
       }
     }
 
     if (url.pathname === "/delete" && request.method === "POST") {
       if (!checkAuth(request, env)) {
-        return cors(new Response("forbidden", { status: 403 }));
+        return c(new Response("forbidden", { status: 403 }));
       }
 
       let body;
       try {
         body = await request.json();
       } catch {
-        return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+        return c(jsonResponse({ ok: false, error: "bad json" }, 400));
       }
 
       try {
@@ -205,45 +215,46 @@ export default {
         } else if (body.type === "srm" && body.date) {
           await env.DB.prepare("DELETE FROM srm_items WHERE date = ?").bind(body.date).run();
         }
-        return cors(jsonResponse({ ok: true }));
+        return c(jsonResponse({ ok: true }));
       } catch (err) {
-        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
       }
     }
 
     if (url.pathname === "/seed-med-history" && request.method === "POST") {
       if (!checkAuth(request, env)) {
-        return cors(new Response("forbidden", { status: 403 }));
+        return c(new Response("forbidden", { status: 403 }));
       }
 
       let body;
       try {
         body = await request.json();
       } catch {
-        return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+        return c(jsonResponse({ ok: false, error: "bad json" }, 400));
       }
 
       try {
         const mode = optionalString(body.mode) || "dry";
         if (mode !== "dry" && mode !== "commit") {
-          return cors(jsonResponse({ ok: false, error: "invalid mode" }, 400));
+          return c(jsonResponse({ ok: false, error: "invalid mode" }, 400));
         }
         const result = await seedMedicationHistory(env, mode);
-        return cors(jsonResponse(result));
+        return c(jsonResponse(result));
       } catch (err) {
-        return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
       }
     }
 
     if (url.pathname === "/dev-notes") {
+      noteMissingAppToken(request, env, "/dev-notes");
       if (request.method === "GET") {
         try {
           const { results } = await env.DB.prepare(
             "SELECT id, text, ts FROM dev_notes ORDER BY ts DESC"
           ).all();
-          return cors(jsonResponse({ ok: true, notes: results || [] }));
+          return c(jsonResponse({ ok: true, notes: results || [] }));
         } catch (err) {
-          return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+          return c(jsonResponse({ ok: false, error: String(err) }, 500));
         }
       }
 
@@ -252,35 +263,35 @@ export default {
         try {
           body = await request.json();
         } catch {
-          return cors(jsonResponse({ ok: false, error: "bad json" }, 400));
+          return c(jsonResponse({ ok: false, error: "bad json" }, 400));
         }
 
         const id = typeof body.id === "string" ? body.id.trim() : "";
         const text = typeof body.text === "string" ? body.text.trim() : "";
         const ts = typeof body.ts === "string" ? body.ts.trim() : "";
         if (!id || !text || !ts) {
-          return cors(jsonResponse({ ok: false, error: "missing fields" }, 400));
+          return c(jsonResponse({ ok: false, error: "missing fields" }, 400));
         }
 
         try {
           await env.DB.prepare(
             "INSERT INTO dev_notes (id, text, ts) VALUES (?, ?, ?)"
           ).bind(id, text, ts).run();
-          return cors(jsonResponse({ ok: true, id }));
+          return c(jsonResponse({ ok: true, id }));
         } catch (err) {
-          return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+          return c(jsonResponse({ ok: false, error: String(err) }, 500));
         }
       }
 
       if (request.method === "DELETE") {
         const id = (url.searchParams.get("id") || "").trim();
-        if (!id) return cors(jsonResponse({ ok: false, error: "missing id" }, 400));
+        if (!id) return c(jsonResponse({ ok: false, error: "missing id" }, 400));
 
         try {
           await env.DB.prepare("DELETE FROM dev_notes WHERE id = ?").bind(id).run();
-          return cors(jsonResponse({ ok: true }));
+          return c(jsonResponse({ ok: true }));
         } catch (err) {
-          return cors(jsonResponse({ ok: false, error: String(err) }, 500));
+          return c(jsonResponse({ ok: false, error: String(err) }, 500));
         }
       }
     }
@@ -296,7 +307,7 @@ export default {
       }, null, 2), { headers: { "Content-Type": "application/json" } });
     }
 
-    if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
+    if (request.method === "OPTIONS") return c(new Response(null, { status: 204 }));
     if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
 
     if (!checkAuth(request, env)) {
@@ -318,12 +329,12 @@ export default {
           : { tag: String(body.tag) };
       }
       const result = await sendPush(sub, payload, body.ttl ?? 60, env);
-      return cors(new Response(JSON.stringify(result), {
+      return c(new Response(JSON.stringify(result), {
         status: result.ok ? 200 : 502,
         headers: { "Content-Type": "application/json" },
       }));
     } catch (err) {
-      return cors(new Response(JSON.stringify({ ok: false, error: String(err) }), {
+      return c(new Response(JSON.stringify({ ok: false, error: String(err) }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }));
@@ -331,11 +342,31 @@ export default {
   },
 };
 
-function cors(resp) {
-  resp.headers.set("Access-Control-Allow-Origin", "*");
+function cors(resp, origin) {
+  if (origin) resp.headers.set("Access-Control-Allow-Origin", origin);
   resp.headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  resp.headers.set("Access-Control-Allow-Headers", "Content-Type, X-Auth");
+  resp.headers.set("Access-Control-Allow-Headers", "Content-Type, X-Auth, X-App-Token");
+  appendVary(resp, "Origin");
   return resp;
+}
+
+function allowedCorsOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return "";
+  try {
+    const parsed = new URL(origin);
+    if (parsed.protocol === "https:" && parsed.hostname.endsWith(".vercel.app")) return origin;
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+function appendVary(resp, value) {
+  const existing = resp.headers.get("Vary");
+  const values = new Set(String(existing || "").split(",").map(v => v.trim()).filter(Boolean));
+  values.add(value);
+  resp.headers.set("Vary", [...values].join(", "));
 }
 
 function jsonResponse(body, status = 200) {
@@ -347,6 +378,14 @@ function jsonResponse(body, status = 200) {
 
 function checkAuth(request, env) {
   return (request.headers.get("X-Auth") || "").trim() === (env.SHARED_SECRET || "").trim();
+}
+
+function checkAppToken(request, env) {
+  return (request.headers.get("X-App-Token") || "").trim() === (env.APP_TOKEN || "").trim();
+}
+
+function noteMissingAppToken(request, env, path) {
+  if (!checkAppToken(request, env)) console.warn(`Missing or invalid X-App-Token on ${path}; accepting during app-token rollout.`);
 }
 
 async function writeToD1(env, body) {
