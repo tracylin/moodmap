@@ -122,12 +122,14 @@ export default {
           const date = body.date;
           const entry = body.entry || {};
           const medsRef = body.meds_ref || [];
-          await writeToD1(env, { mood: { [date]: entry }, meds: medsRef });
+          const actor = optionalString(body.actor) || "Wei";
+          await writeToD1(env, { mood: { [date]: entry }, meds: medsRef }, actor);
           await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, body.actor || "Wei", "mood").run();
 
         } else if (type === "srm") {
           const date = body.date;
-          await writeToD1(env, { srm: { [date]: { items: body.items || [] } } });
+          const actor = optionalString(body.actor) || "Wei";
+          await writeToD1(env, { srm: { [date]: { items: body.items || [] } } }, actor);
           await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, body.actor || "Wei", "srm").run();
 
         } else if (type === "delete_mood") {
@@ -190,7 +192,7 @@ export default {
       }
 
       try {
-        const counts = await writeToD1(env, body);
+        const counts = await writeToD1(env, body, optionalString(body.actor) || "Wei");
         return c(jsonResponse({ ok: true, counts }));
       } catch (err) {
         return c(jsonResponse({ ok: false, error: String(err) }, 500));
@@ -247,6 +249,30 @@ export default {
           return c(jsonResponse({ ok: false, error: "invalid mode" }, 400));
         }
         const result = await seedMedicationHistory(env, mode);
+        return c(jsonResponse(result));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
+    if (url.pathname === "/backfill-notes" && request.method === "POST") {
+      if (!checkAuth(request, env)) {
+        return c(new Response("forbidden", { status: 403 }));
+      }
+
+      let body;
+      try {
+        body = await request.json();
+      } catch {
+        return c(jsonResponse({ ok: false, error: "bad json" }, 400));
+      }
+
+      try {
+        const mode = optionalString(body.mode) || "dry";
+        if (mode !== "dry" && mode !== "commit") {
+          return c(jsonResponse({ ok: false, error: "invalid mode" }, 400));
+        }
+        const result = await backfillNotes(env, mode);
         return c(jsonResponse(result));
       } catch (err) {
         return c(jsonResponse({ ok: false, error: String(err) }, 500));
@@ -429,9 +455,10 @@ async function recentDeletionFeed(env) {
   return deletions;
 }
 
-async function writeToD1(env, body) {
+async function writeToD1(env, body, actor = "Wei") {
   const now = new Date().toISOString();
   const statements = [];
+  const rowActor = optionalString(actor) || "Wei";
   let moodCount = 0;
   let srmCount = 0;
   let medsCount = 0;
@@ -443,12 +470,20 @@ async function writeToD1(env, body) {
       ? entry.moods.filter(Boolean)
       : [entry.mood, entry.mood2].filter(Boolean);
     statements.push(env.DB.prepare(
-      "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, sleeps, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+      "INSERT OR REPLACE INTO mood_entries (date, day, moods, sleep, sleeps, irritability, anxiety, notes, weight, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).bind(
       date, dayName(date), JSON.stringify(moods),
       nullableNumber(entry.sleep), sleepEpisodesJson(entry.sleeps), nullableInteger(entry.irritability), nullableInteger(entry.anxiety),
-      entry.notes ?? null, nullableNumber(entry.weight), now,
+      entry.notes ?? null, nullableNumber(entry.weight), rowActor, now,
     ));
+    const hasNote = typeof entry.notes === "string" && entry.notes.trim();
+    if (hasNote) {
+      statements.push(env.DB.prepare(
+        "INSERT OR REPLACE INTO day_notes (date, author, body, updated_at) VALUES (?, ?, ?, ?)"
+      ).bind(date, canonAuthor(rowActor), entry.notes, now));
+    } else {
+      statements.push(env.DB.prepare("DELETE FROM day_notes WHERE date = ? AND author = ?").bind(date, canonAuthor(rowActor)));
+    }
 
     for (const [medKey, med] of Object.entries(entry.meds || {})) {
       const state = dailyMedState(med && med.ct, med && med.off, med && med.note);
@@ -461,12 +496,12 @@ async function writeToD1(env, body) {
     for (const item of day.items || []) {
       srmCount += 1;
       statements.push(env.DB.prepare(
-        "INSERT OR REPLACE INTO srm_items (id, date, time, am, did_not, with_others, who, who_text, engagement, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Wei', ?)"
+        "INSERT OR REPLACE INTO srm_items (id, date, time, am, did_not, with_others, who, who_text, engagement, actor, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ).bind(
         item.id ?? crypto.randomUUID(), date, item.time ?? null,
         item.am ? 1 : 0, item.didNot ? 1 : 0, item.withOthers ? 1 : 0,
         JSON.stringify(Array.isArray(item.who) ? item.who : []), item.whoText ?? "",
-        nullableInteger(item.engagement) ?? 0, now,
+        nullableInteger(item.engagement) ?? 0, rowActor, now,
       ));
     }
   }
@@ -642,6 +677,20 @@ async function seedMedicationHistory(env, mode) {
   return { ok: true, mode, inserted, meds: publicSeedMedicationHistory(meds) };
 }
 
+async function backfillNotes(env, mode) {
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM mood_entries WHERE notes IS NOT NULL AND TRIM(notes) <> ''"
+  ).first();
+  const count = row?.count ?? 0;
+  if (mode === "dry") return { ok: true, mode, count };
+
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO day_notes (date, author, body, updated_at) SELECT date, 'wei', notes, COALESCE(updated_at, ?) FROM mood_entries WHERE notes IS NOT NULL AND TRIM(notes) <> ''"
+  ).bind(now).run();
+  return { ok: true, mode, count };
+}
+
 function publicSeedMedicationHistory(meds) {
   return meds.map((med) => ({
     ...med,
@@ -766,6 +815,14 @@ function requiredString(value, field) {
 
 function optionalString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function canonAuthor(value) {
+  const normalized = optionalString(value);
+  const lower = normalized ? normalized.toLowerCase() : "wei";
+  if (lower === "wei") return "wei";
+  if (lower === "cuixi") return "cuixi";
+  return lower;
 }
 
 function requiredDate(value, field) {
