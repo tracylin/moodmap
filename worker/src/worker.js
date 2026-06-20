@@ -395,6 +395,7 @@ function noteMissingAppToken(request, env, path) {
 }
 
 async function recentDeletionFeed(env) {
+  const today = new Date().toISOString().slice(0, 10);
   const cutoff = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const { results = [] } = await env.DB.prepare(`
     WITH per_date AS (
@@ -405,7 +406,7 @@ async function recentDeletionFeed(env) {
         MAX(CASE WHEN type = 'delete_srm' THEN ts END) AS delete_srm_ts,
         MAX(CASE WHEN type = 'srm' THEN ts END) AS srm_ts
       FROM log_activity
-      WHERE entry_date >= ?
+      WHERE entry_date BETWEEN ? AND ?
         AND type IN ('delete_mood', 'mood', 'delete_srm', 'srm')
       GROUP BY entry_date
     )
@@ -414,7 +415,7 @@ async function recentDeletionFeed(env) {
     WHERE (delete_mood_ts IS NOT NULL AND (mood_ts IS NULL OR delete_mood_ts > mood_ts))
        OR (delete_srm_ts IS NOT NULL AND (srm_ts IS NULL OR delete_srm_ts > srm_ts))
     ORDER BY entry_date
-  `).bind(cutoff).all();
+  `).bind(cutoff, today).all();
 
   const deletions = {};
   for (const row of results) {
