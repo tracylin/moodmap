@@ -7,6 +7,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, AreaChart,
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLOSTK9YOpd20qfrUpLJefmFNckgYRtxBnl8Dht3XL-pojdFMP/exec"; // paste your deployed Apps Script URL here
 const WORKER_URL = "https://mootracker-push.weavergirl.workers.dev";
 const APP_TOKEN = import.meta.env.VITE_APP_TOKEN || "";
+const DELETE_TOMBSTONES = import.meta.env.VITE_DELETE_TOMBSTONES === "1";
 const DEV_NOTES_KEY = "mt_dev_notes";
 const DEV_NOTES_EVENT = "mt-dev-notes-updated";
 
@@ -576,6 +577,20 @@ function markMoodTouched(date,ts){markTouched(MOOD_TOUCHED_KEY,date,ts);}
 function clearMoodTouched(date){clearTouched(MOOD_TOUCHED_KEY,date);}
 function markSrmTouched(date,ts){markTouched(SRM_TOUCHED_KEY,date,ts);}
 function clearSrmTouched(date){clearTouched(SRM_TOUCHED_KEY,date);}
+function tsMs(v){const n=Date.parse(v||"");return Number.isFinite(n)?n:0;}
+function tombstoneTs(deletions,date,kind){const v=deletions?.[date]?.[kind];return typeof v==="string"?v:"";}
+function tombstoneBeatsLocal(deletions,date,kind,touched){const del=tombstoneTs(deletions,date,kind);if(!del)return false;const local=touched?.[date];return!local||tsMs(del)>=tsMs(local);}
+function applyDeletionTombstones(local,touched,deletions,kind){
+  const suppressed=new Set();let changed=false,touchedChanged=false;
+  if(!DELETE_TOMBSTONES||!deletions||typeof deletions!=="object")return{suppressed,changed,touchedChanged};
+  for(const dt in deletions){
+    if(!validDateKey(dt)||!tombstoneBeatsLocal(deletions,dt,kind,touched))continue;
+    suppressed.add(dt);
+    if(local[dt]){delete local[dt];changed=true;}
+    if(touched[dt]){delete touched[dt];touchedChanged=true;}
+  }
+  return{suppressed,changed,touchedChanged};
+}
 function loadMood(){try{const s=localStorage.getItem("mt_mood");return s?{...SEED_MOOD,...JSON.parse(s)}:{...SEED_MOOD};}catch{return{...SEED_MOOD};}}
 function saveMood(d){const u={};for(const k in d)if(!SEED_MOOD[k])u[k]=d[k];localStorage.setItem("mt_mood",JSON.stringify(u));}
 function loadSRM(){try{const s=localStorage.getItem("mt_srm");return s?{...SEED_SRM,...JSON.parse(s)}:{...SEED_SRM};}catch{return{...SEED_SRM};}}
@@ -896,9 +911,11 @@ export default function App(){
     const resp=await pullFromSheets();
     if(!resp||resp.status!=="ok") return;
     const hasPushedSeed=localStorage.getItem("mt_seed_pushed");
+    const deletions=DELETE_TOMBSTONES&&resp.deletions&&typeof resp.deletions==="object"?resp.deletions:null;
     // Merge mood: remote wins, then push local-only entries ONCE
     if(resp.mood && typeof resp.mood==='object'){
       const local=loadMood();
+      const touched=loadTouched(MOOD_TOUCHED_KEY);
       const remoteDates=new Set(Object.keys(resp.mood));
       let changed=false;
       for(const dt in resp.mood){
@@ -917,6 +934,9 @@ export default function App(){
           irritability:r.irritability,weight:r.weight,notes:finalNotes,meds:finalMeds};
         changed=true;
       }
+      const tombstones=applyDeletionTombstones(local,touched,deletions,"mood");
+      if(tombstones.changed) changed=true;
+      if(tombstones.touchedChanged) saveTouched(MOOD_TOUCHED_KEY,touched);
       if(changed){setMood({...local});saveMood(local);}
       // Recover entries that exist locally but aren't on the server.
       // Restrict to the last RECENT_DAYS — older holes are rare and
@@ -925,20 +945,25 @@ export default function App(){
       const cutoffMs=Date.now()-RECENT_DAYS*86400000;
       for(const dt in local){
         if(!/^\d{4}-\d{2}-\d{2}$/.test(dt)) continue;
-        if(!remoteDates.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null || entryHasMedState(local[dt]))){
+        if(!remoteDates.has(dt) && !tombstones.suppressed.has(dt) && (local[dt]?.mood || local[dt]?.sleep!=null || entryHasMedState(local[dt]))){
           const entryMs=new Date(dt+"T12:00:00").getTime();
           if(entryMs>=cutoffMs) pushMood(dt, local[dt], meds);
         }
       }
     } else if(!hasPushedSeed) {
       const local=loadMood();
+      const touched=loadTouched(MOOD_TOUCHED_KEY);
+      const tombstones=applyDeletionTombstones(local,touched,deletions,"mood");
+      if(tombstones.changed){setMood({...local});saveMood(local);}
+      if(tombstones.touchedChanged) saveTouched(MOOD_TOUCHED_KEY,touched);
       for(const dt in local){
-        if(local[dt]?.mood || entryHasMedState(local[dt])) pushMood(dt, local[dt], meds);
+        if(!tombstones.suppressed.has(dt)&&(local[dt]?.mood || entryHasMedState(local[dt]))) pushMood(dt, local[dt], meds);
       }
     }
     // Merge SRM
     if(resp.srm && typeof resp.srm==='object'){
       const local=loadSRM();
+      const touched=loadTouched(SRM_TOUCHED_KEY);
       const remoteDates=new Set(Object.keys(resp.srm));
       let changed=false;
       for(const dt in resp.srm){
@@ -949,20 +974,27 @@ export default function App(){
         }
         local[dt]=src; changed=true;
       }
+      const tombstones=applyDeletionTombstones(local,touched,deletions,"srm");
+      if(tombstones.changed) changed=true;
+      if(tombstones.touchedChanged) saveTouched(SRM_TOUCHED_KEY,touched);
       if(changed){setSrm({...local});saveSRM(local);}
       const RECENT_DAYS_SRM=30;
       const cutoffSrmMs=Date.now()-RECENT_DAYS_SRM*86400000;
       for(const dt in local){
         if(!/^\d{4}-\d{2}-\d{2}$/.test(dt)) continue;
-        if(!remoteDates.has(dt) && local[dt]?.items?.length){
+        if(!remoteDates.has(dt) && !tombstones.suppressed.has(dt) && local[dt]?.items?.length){
           const entryMs=new Date(dt+"T12:00:00").getTime();
           if(entryMs>=cutoffSrmMs) pushSrm(dt, local[dt].items);
         }
       }
     } else if(!hasPushedSeed) {
       const local=loadSRM();
+      const touched=loadTouched(SRM_TOUCHED_KEY);
+      const tombstones=applyDeletionTombstones(local,touched,deletions,"srm");
+      if(tombstones.changed){setSrm({...local});saveSRM(local);}
+      if(tombstones.touchedChanged) saveTouched(SRM_TOUCHED_KEY,touched);
       for(const dt in local){
-        if(local[dt]?.items?.length) pushSrm(dt, local[dt].items);
+        if(!tombstones.suppressed.has(dt)&&local[dt]?.items?.length) pushSrm(dt, local[dt].items);
       }
     }
     // Merge Settings — remote wins (allows device-to-device sync)
