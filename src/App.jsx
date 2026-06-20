@@ -599,7 +599,7 @@ function loadLogActivity(){
 function saveLogActivity(set){try{localStorage.setItem("mt_log_activity",JSON.stringify([...set]));}catch{/* localStorage unavailable or quota full; streak activity stays in memory */}}
 function recordLogToday(){const set=loadLogActivity();set.add(tdk());saveLogActivity(set);}
 function emptyItem(id){return{id,time:"",am:true,didNot:false,withOthers:false,who:[],whoText:"",engagement:0};}
-function pushSettings(settings,meds){enqueueSync({type:"settings",settings,meds});}
+function pushSettings(settings,meds){const rest={...(settings||{})};delete rest.passcode;enqueueSync({type:"settings",settings:rest,meds});}
 const MEDS_ALL_KEY="mt_meds_all",MED_EVENTS_KEY="mt_med_events";
 const activeToLifecycle=meds=>(meds||[]).map(m=>({key:m.key,name:m.name,brand:null,display_pref:"generic",dose:m.dose,default_ct:m.defaultCt??0,when_taken:normalizeWhenTaken(m.whenTaken),status:"active",archived_at:null}));
 function loadMedsAll(){const cached=loadJ(MEDS_ALL_KEY,null);return Array.isArray(cached)?cached:activeToLifecycle(loadJ("mt_meds",DEF_MEDS));}
@@ -960,7 +960,6 @@ export default function App(){
       const cur=loadSet();
       const merged={...cur};
       if(rs.name) merged.name=rs.name;
-      if(rs.passcode) merged.passcode=rs.passcode;
       if(Array.isArray(rs.reminders)) merged.reminders=rs.reminders;
       setSS(merged); saveSet(merged);
     }
