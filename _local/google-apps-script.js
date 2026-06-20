@@ -45,6 +45,11 @@ function doPost(e) {
   try {
     var raw = (e && e.postData && e.postData.contents) || "{}";
     d = JSON.parse(raw);
+    var secret = PropertiesService.getScriptProperties().getProperty("SHARED_SECRET");
+    if (secret && d._secret !== secret) {
+      Logger.log("doPost rejected missing/invalid secret type=%s date=%s", d && d.type, d && d.date);
+      return out_({status:"error", message:"forbidden"});
+    }
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var actor = sanitizeActor_(d.actor);
     Logger.log("doPost type=%s date=%s actor=%s", d.type, d.date, actor);
