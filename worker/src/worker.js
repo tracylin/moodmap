@@ -25,8 +25,10 @@ export default {
     const corsOrigin = allowedCorsOrigin(request);
     const c = (resp) => cors(resp, corsOrigin);
 
+    if (request.method === "OPTIONS") return c(new Response(null, { status: 204 }));
+
     if (url.pathname === "/sync" && request.method === "GET") {
-      noteMissingAppToken(request, env, "/sync");
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
       try {
         const mood = {};
         const { results: moodRows = [] } = await env.DB.prepare(
@@ -106,7 +108,7 @@ export default {
     }
 
     if (url.pathname === "/write" && request.method === "POST") {
-      noteMissingAppToken(request, env, "/write");
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
       let body;
       try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
 
@@ -252,7 +254,7 @@ export default {
     }
 
     if (url.pathname === "/dev-notes") {
-      noteMissingAppToken(request, env, "/dev-notes");
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
       if (request.method === "GET") {
         try {
           const { results } = await env.DB.prepare(
