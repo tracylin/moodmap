@@ -529,6 +529,10 @@ function scrubNotesColumn_() {
   return "cleared " + count + " cells";
 }
 
+function scrubNotesColumn() {
+  return scrubNotesColumn_();
+}
+
 function upsertMoodRow_(ss, date, entry, medsRef) {
   var s = getMoodSheet_(ss);
   ensureMedColumns_(s, medsRef);
