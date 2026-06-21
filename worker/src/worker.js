@@ -727,10 +727,12 @@ async function syncToSheet(payload, env) {
   const sheetsUrl = env.SHEETS_URL;
   if (!sheetsUrl) return;
   try {
+    let out = { ...payload, _fromWorker: true, _secret: env.SHARED_SECRET };
+    if (payload.type === "mood" && out.entry) out = { ...out, entry: { ...out.entry, notes: "" } };
     await fetch(sheetsUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, _fromWorker: true, _secret: env.SHARED_SECRET }),
+      body: JSON.stringify(out),
     });
   } catch (e) {
     console.error("Sheet sync failed (non-blocking):", e);
