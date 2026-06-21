@@ -2712,10 +2712,14 @@ function OversightCard(){
   if(accountId!=="cuixi"||!token) return null; // Cuixi's adopted device only
 
   const open=async()=>{
-    setStep("loading");setMsg("");
-    const data=await accountPost("/auth/oversight-notes",{token});
-    if(data?.ok&&Array.isArray(data.notes)){setNotes(data.notes);setStep("view");}
-    else{setMsg("Couldn't open his notes — try again in a moment.");setStep("idle");}
+    try{
+      setStep("loading");setMsg("");
+      const data=await accountPost("/auth/oversight-notes",{token});
+      if(data?.ok&&Array.isArray(data.notes)){setNotes(data.notes);setStep("view");}
+      else{setMsg("Couldn't open his notes — try again in a moment.");setStep("idle");}
+    }catch{
+      setMsg("Couldn't open his notes — try again in a moment.");setStep("idle");
+    }
   };
 
   if(step==="view") return(<div className="card oversight-card">
