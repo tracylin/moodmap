@@ -506,6 +506,29 @@ function getMoodSheet_(ss) {
   return s;
 }
 
+function scrubNotesColumn_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = getMoodSheet_(ss);
+  var layout = getMoodLayout_(s, []);
+  if (!layout || !layout.notesCol || layout.notesCol < 1) {
+    Logger.log("scrubNotesColumn_ aborted: Notes column not found");
+    return "aborted: Notes column not found";
+  }
+
+  var lastRow = s.getLastRow();
+  if (lastRow < layout.dataStartRow) {
+    Logger.log("scrubNotesColumn_: no data cells to clear in Notes column %s", layout.notesCol);
+    return "cleared 0 cells";
+  }
+
+  var count = lastRow - layout.dataStartRow + 1;
+  var blanks = [];
+  for (var i = 0; i < count; i++) blanks.push([""]);
+  s.getRange(layout.dataStartRow, layout.notesCol, count, 1).setValues(blanks);
+  Logger.log("scrubNotesColumn_: cleared %s data cells in Notes column %s", count, layout.notesCol);
+  return "cleared " + count + " cells";
+}
+
 function upsertMoodRow_(ss, date, entry, medsRef) {
   var s = getMoodSheet_(ss);
   ensureMedColumns_(s, medsRef);
