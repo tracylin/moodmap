@@ -2670,31 +2670,51 @@ function AccountCard(){
   const forget=()=>{setDeviceToken("");saveAccountCache(null);setToken("");setCache(null);setMe(null);setMsg("Account removed from this device.");};
   const devices=Array.isArray(me?.devices)?me.devices:[];
   const accountName=me?.account?.name||cache?.account?.name||cache?.account_id||accountId;
+  const accountEmail=me?.account?.email||cache?.account?.email||accountId;
+  const avatarInitial=((accountName||"?").trim()[0]||"?").toUpperCase();
 
-  if(!open&&!token) return <button className="account-collapsed" onClick={()=>{setAccountSetupDismissed(false);setOpen(true);}}><span>Set up your account</span><span aria-hidden="true">›</span></button>;
+  if(!open&&!token) return <button className="account-collapsed" onClick={()=>{setAccountSetupDismissed(false);setOpen(true);}}>
+    <span className="ac-ic" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7"/></svg></span>
+    <span><span className="ac-t">Set up your account</span><span className="ac-s">Whenever you feel like it.</span></span>
+    <span className="ac-chev" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m9 18 6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+  </button>;
 
   return(<div className="card account-card">
-    <div className="account-head">
-      <h3 className="ctit">Set up your account</h3>
-      {!token&&<button className="btn-ghost account-dismiss" onClick={dismiss} aria-label="Dismiss account setup">×</button>}
-    </div>
     {token?<>
-      <div className="account-current"><span>Signed in</span><b>{accountName}</b></div>
+      <h3 className="ctit">Your account</h3>
+      <div className="account-top">
+        <div className={`account-avatar ${accountId==="cuixi"?"cx":"wei"}`} aria-hidden="true">{avatarInitial}</div>
+        <div><div className="account-nm">{accountName}</div><div className="account-em">{accountEmail}</div></div>
+        <div className="account-trust"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m20 6-11 11-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>This device</div>
+      </div>
       {devices.length>0&&<div className="account-devices">
+        <div className="account-dev-lbl">Signed in on</div>
         {devices.map(d=><div className="account-device" key={d.token_tail||`${d.label}-${d.created_at}`}>
-          <div><b>{d.label||"Device"}</b><span>{d.token_tail?`…${d.token_tail}`:""}{d.last_seen?` · ${formatAccountDate(d.last_seen)}`:""}</span></div>
+          <span className="dv-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="7" y="2.5" width="10" height="19" rx="2.2" stroke="currentColor" strokeWidth="1.7"/><path d="M10.5 18.5h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg></span>
+          <div><b>{d.label||"Device"}</b><span>{d.last_seen?formatAccountDate(d.last_seen):"Signed in"}</span></div>
+          <span className="dv-tail">{d.token_tail?`…${d.token_tail}`:""}</span>
         </div>)}
       </div>}
       <div className="account-actions"><button className="btn-s" onClick={()=>loadMe().catch(()=>setMsg("Could not refresh."))}>Refresh</button><button className="btn-ghost" onClick={forget}>Forget on this device</button></div>
     </>:<>
-      <p className="set-h account-copy">Private notes are separated by account. Logging still works without setup.</p>
-      <div className="actor-pills account-picks">
-        {[["wei","Wei"],["cuixi","Cuixi"]].map(([id,name])=><button key={id} className={`actor-pill${accountId===id?" actor-pill-on":""}`} onClick={()=>setAccountId(id)}>{name}</button>)}
+      <div className="account-invite">
+        <div className="account-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7"/></svg></div>
+        <div className="account-invite-h">Set up your account</div>
+        <p className="account-invite-b">Private notes are separated by account. Logging still works without setup.</p>
       </div>
-      <button className="btn-add account-send" disabled={busy} onClick={requestCode}>{busy?"Working…":"Send code"}</button>
-      <input className="add-input account-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="6-digit code"/>
-      <input className="add-input" value={label} onChange={e=>setLabel(e.target.value)} placeholder="Device label"/>
-      <button className="btn-sm-p account-verify" disabled={busy||code.length!==6} onClick={verifyCode}>Verify</button>
+      <div className="account-activate">
+        <div className="actor-pills account-picks">
+          {[["wei","Wei"],["cuixi","Cuixi"]].map(([id,name])=><button key={id} className={`actor-pill${accountId===id?" actor-pill-on":""}`} onClick={()=>setAccountId(id)}><span className={`account-pill-dot ${id==="cuixi"?"cx":"wei"}`} aria-hidden="true"></span>{name}</button>)}
+        </div>
+        <button className="btn-add account-send" disabled={busy} onClick={requestCode}>{busy?"Working…":"Send code"}</button>
+        <input className="add-input account-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="6-digit code"/>
+        <div className="account-field-l">This device</div>
+        <input className="add-input" value={label} onChange={e=>setLabel(e.target.value)} placeholder="Device label"/>
+        <div className="account-setup-actions">
+          <button className="btn-sm-p account-verify" disabled={busy||code.length!==6} onClick={verifyCode}>Verify</button>
+          <button className="btn-ghost account-dismiss" onClick={dismiss} aria-label="Maybe later">Maybe later</button>
+        </div>
+      </div>
     </>}
     {msg&&<p className="set-saved">{msg}</p>}
   </div>);
@@ -2725,32 +2745,38 @@ function OversightCard(){
   };
 
   if(step==="view") return(<div className="card oversight-card">
-    <div className="oversight-banner">Read-only · opened just now</div>
+    <div className="oversight-banner"><span className="fi" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8"/><path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></span>Read-only · opened just now</div>
     {notes.length===0
       ?<p className="set-h" style={{marginTop:0}}>Nothing written yet.</p>
       :notes.map(n=><div className="oversight-note" key={n.date}>
         <div className="oversight-note-date">{formatAccountDate(n.date)||n.date}</div>
         <div className="oversight-note-body">{n.body}</div>
       </div>)}
+    {notes.length>0&&<div className="oversight-foot">His words, kept as he wrote them.</div>}
     <button className="btn-ghost oversight-close" onClick={()=>{setStep("idle");setNotes([]);}}>Close</button>
   </div>);
 
   if(step==="confirm") return(<div className="card oversight-card">
+    <div className="oversight-sheet-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg></div>
     <p className="oversight-q">Open Wei's private notes?</p>
     <p className="oversight-qs">Because you're worried — not out of habit. They're his own words; you'll only read them.</p>
     <div className="oversight-confirm-btns">
-      <button className="btn-ghost" onClick={()=>setStep("idle")}>Not now</button>
       <button className="btn-sm-p" onClick={open}>Open</button>
+      <button className="btn-ghost" onClick={()=>setStep("idle")}>Not now</button>
     </div>
   </div>);
 
   return(<div className="oversight-wrap">
     {step==="loading"
       ?<p className="set-saved">Opening…</p>
-      :<button className="oversight-open" onClick={()=>setStep("confirm")}>
-        <span className="oversight-open-t">Open Wei's notes</span>
-        <span className="oversight-open-s">His own writing. Open only if you're checking in.</span>
-      </button>}
+      :<>
+        <div className="oversight-lbl">Private to Wei</div>
+        <button className="oversight-open" onClick={()=>setStep("confirm")}>
+          <span className="ov-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg></span>
+          <span className="ov-txt"><span className="oversight-open-t">Open Wei's notes</span><span className="oversight-open-s">His own writing. Open only if you're checking in.</span></span>
+          <span className="ov-chev" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m9 18 6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+        </button>
+      </>}
     {msg&&<p className="set-saved">{msg}</p>}
   </div>);
 }
@@ -3111,7 +3137,7 @@ if(typeof window!=="undefined"){
    ═══════════════════════════════════════════════════════════════════════════ */
 const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;1,8..60,300&display=swap');
-:root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889;--g-bg:#F5F3EE;--g-surface:#ECE8E0;--g-card:#FBFAF6;--g-line:#E2DED4;--g-tx:#1C1C1A;--g-tx2:#6E6A60;--g-tx3:#9A968C;--g-tx4:#C0BBAF;--g-warm-err:#BE7355;--g-mood-sev-low:#5B5E86;--g-mood-mod-low:#7C7EAE;--g-mood-mild-low:#B3A8CC;--g-mood-steady:#CFC9AE;--g-mood-mild-high:#E9C77E;--g-mood-mod-high:#EE9A52;--g-mood-sev-high:#E96A33;--g-sleep-very-short:#C9B9CE;--g-sleep-short:#B3A8D0;--g-sleep-healthy:#93A2CC;--g-sleep-long:#8AB4C8;--g-anx:#7A7268;--g-irr:#ADA593}
+:root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889;--g-bg:#F5F3EE;--g-surface:#ECE8E0;--g-card:#FBFAF6;--g-line:#E2DED4;--g-tx:#1C1C1A;--g-tx2:#6E6A60;--g-tx3:#9A968C;--g-tx4:#C0BBAF;--g-sage:#8FB2A4;--g-clay:#C2745A;--g-warm-err:#BE7355;--g-mood-sev-low:#5B5E86;--g-mood-mod-low:#7C7EAE;--g-mood-mild-low:#B3A8CC;--g-mood-steady:#CFC9AE;--g-mood-mild-high:#E9C77E;--g-mood-mod-high:#EE9A52;--g-mood-sev-high:#E96A33;--g-sleep-very-short:#C9B9CE;--g-sleep-short:#B3A8D0;--g-sleep-healthy:#93A2CC;--g-sleep-long:#8AB4C8;--g-anx:#7A7268;--g-irr:#ADA593}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 input,textarea,select{font-size:16px}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
@@ -3689,35 +3715,67 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .actor-stats{margin-top:14px;padding-top:12px;border-top:1px solid var(--g-line)}
 .g-settings .actor-stats-week{font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-settings .actor-stats-faint{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
-.g-settings .account-collapsed{display:flex;width:100%;align-items:center;justify-content:space-between;margin-bottom:12px;padding:12px 14px;border:1px dashed var(--g-tx4);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
-.g-settings .account-card{position:relative}
-.g-settings .account-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
-.g-settings .account-dismiss{margin-top:-6px;font-size:18px;line-height:1;padding:4px}
-.g-settings .account-copy{margin:0 0 12px}
+.g-settings .account-collapsed{display:flex;width:100%;align-items:center;gap:12px;justify-content:flex-start;margin-bottom:12px;padding:13px 14px;border:1px dashed var(--g-tx4);border-radius:14px;background:transparent;text-align:left;cursor:pointer}
+.g-settings .account-collapsed .ac-ic{color:var(--g-tx3);display:inline-flex;flex-shrink:0}
+.g-settings .account-collapsed .ac-t{display:block;font:500 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-settings .account-collapsed .ac-s{display:block;font:400 11px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
+.g-settings .account-collapsed .ac-chev{margin-left:auto;color:var(--g-tx4);display:inline-flex}
+.g-settings .account-card{position:relative;padding:17px 17px 15px}
+.g-settings .account-invite{border-radius:14px;background-image:linear-gradient(180deg, rgba(143,178,164,.07), rgba(143,178,164,0) 46%);margin:-3px -3px 4px;padding:3px}
+.g-settings .account-ico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(143,178,164,.16);color:#557163;margin-bottom:13px}
+.g-settings .account-invite-h{font:500 16px/1.32 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx)}
+.g-settings .account-invite-b{font:400 12.5px/1.6 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:8px}
+.g-settings .account-activate{margin-top:16px;padding-top:15px;border-top:1px solid var(--g-line)}
 .g-settings .account-picks{margin-bottom:10px}
+.g-settings .account-picks .actor-pill{display:flex;align-items:center;justify-content:center;gap:8px}
+.g-settings .account-pill-dot{width:18px;height:18px;border-radius:50%;display:inline-block;flex-shrink:0}
+.g-settings .account-pill-dot.cx{background:linear-gradient(135deg,#E9C77E,#EE9A52)}
+.g-settings .account-pill-dot.wei{background:linear-gradient(135deg,#B3A8CC,#7C7EAE)}
 .g-settings .account-send{margin-bottom:10px}
-.g-settings .account-code{letter-spacing:.18em;text-align:center;font-weight:500}
+.g-settings .account-code{letter-spacing:.32em;text-align:center;font:500 18px/1 'Inter',system-ui,sans-serif;padding:13px 12px}
+.g-settings .account-field-l{font:500 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--g-tx3);margin:4px 0 6px}
+.g-settings .account-setup-actions{display:flex;align-items:center;gap:12px;margin-top:4px}
 .g-settings .account-verify{width:100%}
-.g-settings .account-current{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--g-line);font:400 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-settings .account-current b{font-weight:500;color:var(--g-tx)}
-.g-settings .account-devices{padding-top:4px}
-.g-settings .account-device{padding:10px 0;border-bottom:1px solid var(--g-line)}
-.g-settings .account-device b{display:block;font:500 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.g-settings .account-device span{display:block;margin-top:3px;font:400 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .account-setup-actions .account-verify{width:auto;flex:1}
+.g-settings .account-dismiss{border:none;background:none;color:var(--g-tx3);font:500 12.5px/1 'Inter',system-ui,sans-serif;padding:0 6px;cursor:pointer;white-space:nowrap}
+.g-settings .account-top{display:flex;align-items:center;gap:11px;margin-bottom:4px}
+.g-settings .account-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font:500 15px/1 'Inter',system-ui,sans-serif;color:#fff}
+.g-settings .account-avatar.cx{background:linear-gradient(135deg,#E9C77E,#EE9A52)}
+.g-settings .account-avatar.wei{background:linear-gradient(135deg,#B3A8CC,#7C7EAE)}
+.g-settings .account-nm{font:500 14.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .account-em{font:400 11px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:2px}
+.g-settings .account-trust{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 10.5px/1 'Inter',system-ui,sans-serif;color:#557163;background:rgba(143,178,164,.16);border-radius:999px;padding:6px 9px;white-space:nowrap}
+.g-settings .account-dev-lbl{font:600 9.5px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin:18px 0 9px}
+.g-settings .account-device{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--g-line)}
+.g-settings .account-device:last-of-type{border-bottom:0}
+.g-settings .account-device .dv-ic{color:var(--g-tx4);display:inline-flex;flex-shrink:0}
+.g-settings .account-device b{display:block;font:500 12.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .account-device span{display:block;margin-top:3px;font:400 10.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .account-device .dv-tail{margin-left:auto;font:400 10.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);font-variant-numeric:tabular-nums}
 .g-settings .account-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
 .g-settings .account-actions .btn-s{font-size:12px;padding:8px 13px}
 .g-settings .oversight-wrap{margin-bottom:12px}
-.g-settings .oversight-open{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;padding:12px 14px;border:1px dashed var(--g-tx4);border-radius:12px;background:transparent;cursor:pointer}
-.g-settings .oversight-open-t{font:500 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
-.g-settings .oversight-open-s{font:400 11px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .oversight-lbl{font:600 9.5px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx4);margin-bottom:9px}
+.g-settings .oversight-open{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:14px 15px;border:1px dashed var(--g-tx4);border-radius:14px;background:transparent;cursor:pointer}
+.g-settings .oversight-open .ov-ic{color:var(--g-tx3);display:inline-flex;flex-shrink:0}
+.g-settings .oversight-open .ov-txt{flex:1;display:flex;flex-direction:column;gap:3px}
+.g-settings .oversight-open-t{font:500 13.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-settings .oversight-open-s{font:400 11px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .oversight-open .ov-chev{color:var(--g-tx4);display:inline-flex;flex-shrink:0}
 .g-settings .oversight-card{margin-bottom:12px}
-.g-settings .oversight-q{font:500 15px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx);margin:0 0 6px}
-.g-settings .oversight-qs{font:400 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:0 0 14px}
-.g-settings .oversight-confirm-btns{display:flex;align-items:center;justify-content:flex-end;gap:12px}
-.g-settings .oversight-banner{font:500 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px}
-.g-settings .oversight-note{padding:10px 0;border-bottom:1px solid var(--g-line)}
-.g-settings .oversight-note-date{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:4px}
-.g-settings .oversight-note-body{font:400 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:pre-wrap}
+.g-settings .oversight-sheet-ico{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(194,116,90,.14);color:var(--g-clay);margin:0 auto 14px}
+.g-settings .oversight-q{font:500 18px/1.32 'Inter',system-ui,sans-serif;letter-spacing:-.2px;color:var(--g-tx);text-align:center;margin:0 0 10px}
+.g-settings .oversight-qs{font:400 12.5px/1.6 'Inter',system-ui,sans-serif;color:var(--g-tx2);text-align:center;margin:0 0 20px}
+.g-settings .oversight-confirm-btns{display:flex;flex-direction:column;gap:11px}
+.g-settings .oversight-confirm-btns .btn-sm-p{width:100%;height:50px;border-radius:999px;font:500 14.5px/1 'Inter',system-ui,sans-serif}
+.g-settings .oversight-confirm-btns .btn-ghost{width:100%;height:46px;border:1px solid var(--g-tx4);border-radius:999px;color:var(--g-tx2);background:transparent;font:500 14px/1 'Inter',system-ui,sans-serif}
+.g-settings .oversight-banner{display:inline-flex;align-items:center;gap:7px;font:400 11px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2);background:rgba(194,116,90,.10);border:1px solid rgba(194,116,90,.25);border-radius:9px;padding:8px 11px;margin-bottom:18px;text-transform:none;letter-spacing:normal}
+.g-settings .oversight-banner .fi{display:inline-flex;color:var(--g-clay)}
+.g-settings .oversight-note{padding:13px 0;border-bottom:1px solid var(--g-line)}
+.g-settings .oversight-note:last-of-type{border-bottom:0}
+.g-settings .oversight-note-date{font:500 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3);text-transform:none;letter-spacing:normal;margin-bottom:5px}
+.g-settings .oversight-note-body{font:400 14px/1.55 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:pre-wrap}
+.g-settings .oversight-foot{font:400 11px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx4);font-style:italic;text-align:center;margin-top:16px}
 .g-settings .oversight-close{margin-top:12px}
 .g-settings .add-input{width:100%;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx);font:400 14px/1.2 'Inter',system-ui,sans-serif;padding:10px 12px;margin-bottom:8px}
 .g-settings .add-input::placeholder{color:var(--g-tx4)}
