@@ -2987,6 +2987,15 @@ function Settings({settings,setS,onBack}){
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
   const[showAdvanced,setShowAdvanced]=useState(false);
   const[weiTz,setWeiTz]=useState(getDeviceWeiTz());
+  const[faceIdAvailable,setFaceIdAvailable]=useState(false);
+
+  useEffect(()=>{
+    let active=true;
+    const cred=typeof window!=="undefined"?window.PublicKeyCredential:null;
+    if(!cred||typeof cred.isUserVerifyingPlatformAuthenticatorAvailable!=="function") return()=>{active=false;};
+    cred.isUserVerifyingPlatformAuthenticatorAvailable().then(v=>{if(active)setFaceIdAvailable(!!v);}).catch(()=>{});
+    return()=>{active=false;};
+  },[]);
 
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
@@ -3020,6 +3029,7 @@ function Settings({settings,setS,onBack}){
           {TZ_LIST.map(z=><option key={z} value={z}>{z}</option>)}
         </select>
         <p className="set-saved" style={{marginTop:8}}>Wei's today: {tdk()} · {weiHM()}</p>
+        <p className="set-saved">Face ID available: {faceIdAvailable?"yes":"no"}</p>
       </div>
       {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
       {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
