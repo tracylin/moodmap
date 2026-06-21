@@ -30,6 +30,8 @@ export default {
     if (url.pathname === "/sync" && request.method === "GET") {
       if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
       try {
+        const scopeNotes = notesScopeEnabled(env);
+        const acct = scopeNotes ? await deviceAccount(env, request.headers.get("X-Device-Token")) : null;
         const mood = {};
         const { results: moodRows = [] } = await env.DB.prepare(
           "SELECT * FROM mood_entries"
@@ -48,6 +50,17 @@ export default {
             sleeps: parseJsonArray(row.sleeps),
             meds: {},
           };
+        }
+
+        if (acct) {
+          for (const dt of Object.keys(mood)) mood[dt].notes = "";
+          const { results: noteRows = [] } = await env.DB.prepare(
+            "SELECT date, body FROM day_notes WHERE author = ?"
+          ).bind(acct).all();
+          for (const row of noteRows) {
+            if (!mood[row.date]) continue;
+            mood[row.date].notes = row.body;
+          }
         }
 
         const { results: doseRows = [] } = await env.DB.prepare(
@@ -98,11 +111,13 @@ export default {
         const resp = jsonResponse({ status: "ok", mood, srm, settings, meds, medsAll, medEvents, deletions });
         resp.headers.set("Cache-Control", "no-store");
         appendVary(resp, "X-App-Token");
+        appendVary(resp, "X-Device-Token");
         return c(resp);
       } catch (err) {
         const resp = jsonResponse({ status: "error", message: String(err) }, 500);
         resp.headers.set("Cache-Control", "no-store");
         appendVary(resp, "X-App-Token");
+        appendVary(resp, "X-Device-Token");
         return c(resp);
       }
     }
@@ -117,20 +132,25 @@ export default {
 
       try {
         const now = new Date().toISOString();
+        let tokenActor = null;
+        if (notesScopeEnabled(env)) {
+          try { tokenActor = await deviceAccount(env, request.headers.get("X-Device-Token")); }
+          catch { tokenActor = null; }
+        }
 
         if (type === "mood") {
           const date = body.date;
           const entry = body.entry || {};
           const medsRef = body.meds_ref || [];
-          const actor = optionalString(body.actor) || "Wei";
+          const actor = tokenActor || optionalString(body.actor) || "Wei";
           await writeToD1(env, { mood: { [date]: entry }, meds: medsRef }, actor);
-          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, body.actor || "Wei", "mood").run();
+          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, actor, "mood").run();
 
         } else if (type === "srm") {
           const date = body.date;
-          const actor = optionalString(body.actor) || "Wei";
+          const actor = tokenActor || optionalString(body.actor) || "Wei";
           await writeToD1(env, { srm: { [date]: { items: body.items || [] } } }, actor);
-          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, body.actor || "Wei", "srm").run();
+          await env.DB.prepare("INSERT INTO log_activity (ts, entry_date, actor, type) VALUES (?, ?, ?, ?)").bind(now, date, actor, "srm").run();
 
         } else if (type === "delete_mood") {
           await env.DB.batch([
@@ -462,6 +482,22 @@ export default {
       }
     }
 
+    if (url.pathname === "/auth/oversight-notes" && request.method === "POST") {
+      if (!checkAppToken(request, env)) return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+      let body;
+      try { body = await request.json(); } catch { return c(jsonResponse({ ok: false, error: "bad json" }, 400)); }
+      try {
+        const caller = await deviceAccount(env, body.token);
+        if (caller !== "cuixi") return c(jsonResponse({ ok: false, error: "forbidden" }, 403));
+        const { results: notes = [] } = await env.DB.prepare(
+          "SELECT date, body, updated_at FROM day_notes WHERE author = 'wei' ORDER BY date DESC"
+        ).all();
+        return c(jsonResponse({ ok: true, notes }));
+      } catch (err) {
+        return c(jsonResponse({ ok: false, error: String(err) }, 500));
+      }
+    }
+
     if (request.method === "OPTIONS") return c(new Response(null, { status: 204 }));
     if (request.method !== "POST") return new Response("method not allowed", { status: 405 });
 
@@ -537,6 +573,10 @@ function checkAuth(request, env) {
 
 function checkAppToken(request, env) {
   return (request.headers.get("X-App-Token") || "").trim() === (env.APP_TOKEN || "").trim();
+}
+
+function notesScopeEnabled(env) {
+  return (env.NOTES_SCOPE_FLAG || "").trim() === "1";
 }
 
 function noteMissingAppToken(request, env, path) {
