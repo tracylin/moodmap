@@ -158,7 +158,7 @@ async function processQueue(){
     try{
       const res = await fetch(`${WORKER_URL}/write`,{
         method:"POST",
-        headers:{"Content-Type":"application/json","X-App-Token":APP_TOKEN},
+        headers:{"Content-Type":"application/json","X-App-Token":APP_TOKEN,"X-Device-Token":getDeviceToken()},
         body:JSON.stringify(job),
         keepalive:true, // survive the app being backgrounded right after a log
       });
@@ -281,7 +281,7 @@ function pushDeleteSrm(date){
 async function pullFromSheets(){
   if(!WORKER_URL) return null;
   try{
-    const res=await fetch(`${WORKER_URL}/sync`,{method:"GET",cache:"no-store",headers:{"X-App-Token":APP_TOKEN}});
+    const res=await fetch(`${WORKER_URL}/sync`,{method:"GET",cache:"no-store",headers:{"X-App-Token":APP_TOKEN,"X-Device-Token":getDeviceToken()}});
     if(res&&res.ok) return await res.json();
   }catch{/* Worker sync failed; keep local cache */}
   return null;

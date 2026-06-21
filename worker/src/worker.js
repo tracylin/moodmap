@@ -536,7 +536,7 @@ export default {
 function cors(resp, origin) {
   if (origin) resp.headers.set("Access-Control-Allow-Origin", origin);
   resp.headers.set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  resp.headers.set("Access-Control-Allow-Headers", "Content-Type, X-Auth, X-App-Token");
+  resp.headers.set("Access-Control-Allow-Headers", "Content-Type, X-Auth, X-App-Token, X-Device-Token");
   appendVary(resp, "Origin");
   return resp;
 }
