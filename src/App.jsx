@@ -1559,7 +1559,9 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
   const mode="full";
   const initialKey=lockedDate||editKey||tdk();
   const[dateKey,setDateKey]=useState(initialKey);
+  const[datePicked,setDatePicked]=useState(false);
   const targetKey=editKey||lockedDate||dateKey;
+  const displayTargetKey=!editKey&&!lockedDate&&!datePicked?tdk():targetKey;
 
   const activeSteps=MSTEPS_FULL;
 
@@ -1567,8 +1569,8 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     return{moods:[],sleep:null,weight:null,anxiety:null,irritability:null,meds:defaultRoutineMedsMap(meds),notes:""};
   };
 
-  const isMedsYesterdayFlow=!editKey&&!lockedDate&&targetKey===tdk();
-  const yesterdayMedKey=ydk();
+  const isMedsYesterdayFlow=!editKey&&!lockedDate&&!datePicked;
+  const yesterdayMedKey=prevDateKey(displayTargetKey);
   const seedYesterdayMeds=()=>{
     return defaultRoutineMedsMap(meds);
   };
@@ -1850,7 +1852,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     const todayHasMeds=entryHasMedState({meds:todayMeds});
     return <div className="rv-meds-days">
       <div className="rv-meds-day"><span className="rv-meds-day-k">Yesterday · {new Date(yesterdayMedKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span><div>{renderMedsReviewMap(yesterdayMeds)}</div></div>
-      {todayMedsOpen&&<div className="rv-meds-day"><span className="rv-meds-day-k">Today · {new Date(tdk()+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span><div>{todayHasMeds?renderMedsReviewMap(todayMeds):"Not logged"}</div></div>}
+      {todayMedsOpen&&<div className="rv-meds-day"><span className="rv-meds-day-k">Today · {new Date(displayTargetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span><div>{todayHasMeds?renderMedsReviewMap(todayMeds):"Not logged"}</div></div>}
     </div>;
   };
   const toggleMood=(key)=>{
@@ -1945,7 +1947,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <span className="also-tx"><span className="a1">Also log today?</span><span className="a2">If today's doses are done too. Optional.</span></span>
         </button>
         {todayMedsOpen&&<div className="meds-today-drawer">
-          <div className="meds-today-head"><span>Today's meds</span><small>{new Date(tdk()+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}</small></div>
+          <div className="meds-today-head"><span>Today's meds</span><small>{new Date(displayTargetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"})}</small></div>
           <p className="meds-today-note">Only fill this in if today's doses have already happened.</p>
           {renderMedsLog({medMap:todayMeds,onChoice:updateTodayChoice,onNote:updateTodayNote,onTogglePrn:toggleTodayPrn,onNudgePrn:nudgeTodayPrn,defaultTaken:false})}
         </div>}
@@ -1984,10 +1986,10 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
 
     {!editKey&&!lockedDate&&editIdx===null&&(
       <div className="datebar">
-        <button className={`datepill${dateKey===tdk()?" on":""}`} onClick={()=>setDateKey(tdk())}>Today</button>
-        <button className={`datepill${dateKey===ydk()?" on":""}`} onClick={()=>setDateKey(ydk())}>Yesterday</button>
-        <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)",dateKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v))setDateKey(v);}}>Pick</button>
-        <span className="datecap">{new Date(dateKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
+        <button className={`datepill${displayTargetKey===tdk()?" on":""}`} onClick={()=>{setDatePicked(true);setDateKey(tdk());}}>Today</button>
+        <button className={`datepill${displayTargetKey===ydk()?" on":""}`} onClick={()=>{setDatePicked(true);setDateKey(ydk());}}>Yesterday</button>
+        <button className="datepick" onClick={()=>{const v=prompt("Enter date (YYYY-MM-DD)",displayTargetKey);if(v&&/^\d{4}-\d{2}-\d{2}$/.test(v)){setDatePicked(true);setDateKey(v);}}}>Pick</button>
+        <span className="datecap">{new Date(displayTargetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}</span>
       </div>
     )}
     {lockedDate&&editIdx===null&&(
@@ -2000,7 +2002,7 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
     {editIdx!==null?renderStep(editIdx):(!isR?renderStep(step):(
       <div className="qa" key="rv">
         <h2 className="qt">Looks good?</h2>
-        <p className="qs">{new Date(targetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
+        <p className="qs">{new Date(displayTargetKey+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</p>
         <div className="rc">
           <RvRow l="Mood" v={(entry.moods||[]).length?entry.moods.map((k,i)=>(<span key={k} className="rv-mood"><span className={`rv-dot ${G_MOOD_CLASS[k]}`}/>{MM[k].label}<span className="rv-muted"> · {MM[k].v>0?`+${MM[k].v}`:MM[k].v}</span>{i<entry.moods.length-1?", ":""}</span>)):"—"} onEdit={()=>setEditIdx(0)}/>
           <RvRow l="Sleep" v={entry.sleep!=null?<>{slpTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(slpTime.h,slpTime.m)} → </span>}{wkTime&&<span style={{color:"var(--t2)",fontSize:12}}>{slpFmt12(wkTime.h,wkTime.m)} · </span>}{entry.sleep} hrs{sleepMultiCue(entry.sleeps)&&<span className="rv-sleep-cue">{sleepMultiCue(entry.sleeps)}</span>}</>:"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="sleep"))}/>
@@ -2010,8 +2012,11 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           <RvRow l="Notes" v={entry.notes||"—"} onEdit={()=>setEditIdx(activeSteps.findIndex(s=>s.id==="notes"))}/>
         </div>
         <button className="btn-p" onClick={()=>{
+          const liveSaveTargetKey=!editKey&&!lockedDate&&!datePicked?tdk():targetKey;
+          const liveYesterdayMedKey=prevDateKey(liveSaveTargetKey);
+          const liveMedsYesterdayFlow=!editKey&&!lockedDate&&!datePicked;
           const sleepEpisodes=[primaryEpisode(),...extraSleeps.map(uiExtraEpisode)].filter(ep=>ep.hrs!=null||ep.bed||ep.wake);
-          const todayMedsForSave=isMedsYesterdayFlow
+          const todayMedsForSave=liveMedsYesterdayFlow
             ? (todayMedsTouched?normalizeMedsForSave(todayMeds):normalizeMedsForSave(entry.meds))
             : normalizeMedsForSave(entry.meds);
           const finalEntry={...entry,sleep:sleepEpisodes.length?sleepEpisodeTotal(sleepEpisodes):null,sleeps:sleepEpisodes.length>1?sleepEpisodes.map(sleepEpisodeForStorage):null,meds:todayMedsForSave};
@@ -2020,24 +2025,24 @@ function MoodEntry({mood,meds,srm,onSaveSRM,editKey,lockedDate,onSave,onMoveMood
           if(onSaveSRM){
             let updSrm={...(srm||{})};
             if(slpTime){
-              const prevKey=prevDateKey(targetKey);
+              const prevKey=prevDateKey(liveSaveTargetKey);
               const prevItems=(updSrm[prevKey]||{}).items||[];
               const btItem={...emptyItem("bedtime"),time:`${String(slpTime.h).padStart(2,"0")}:${String(slpTime.m).padStart(2,"0")}`,am:slpTime.h<12};
               updSrm[prevKey]={items:[...prevItems.filter(i=>i.id!=="bedtime"),btItem]};
               onSaveSRM(updSrm,prevKey);
             }
             if(wkTime){
-              const curItems=(updSrm[targetKey]||{}).items||[];
+              const curItems=(updSrm[liveSaveTargetKey]||{}).items||[];
               const bdItem={...emptyItem("bed"),time:`${String(wkTime.h).padStart(2,"0")}:${String(wkTime.m).padStart(2,"0")}`,am:wkTime.h<12};
-              updSrm[targetKey]={items:[...curItems.filter(i=>i.id!=="bed"),bdItem]};
-              onSaveSRM(updSrm,targetKey);
+              updSrm[liveSaveTargetKey]={items:[...curItems.filter(i=>i.id!=="bed"),bdItem]};
+              onSaveSRM(updSrm,liveSaveTargetKey);
             }
           }
-          const splitMeds=!skippedSteps.has("meds")&&isMedsYesterdayFlow&&entryHasMedState({meds:yesterdayMeds})?{
-            yesterdayDate:yesterdayMedKey,
-            yesterdayEntry:{...(mood[yesterdayMedKey]||{}),meds:normalizeMedsForSave(yesterdayMeds)},
+          const splitMeds=!skippedSteps.has("meds")&&liveMedsYesterdayFlow&&entryHasMedState({meds:yesterdayMeds})?{
+            yesterdayDate:liveYesterdayMedKey,
+            yesterdayEntry:{...(mood[liveYesterdayMedKey]||{}),meds:normalizeMedsForSave(yesterdayMeds)},
           }:null;
-          onSave(finalEntry,targetKey,splitMeds);
+          onSave(finalEntry,liveSaveTargetKey,splitMeds);
         }}>Save entry</button>
         {editKey&&onMoveMood&&<button className="btn-move-date" onClick={()=>{
           const v=prompt("Move entry to date (YYYY-MM-DD):",editKey);
