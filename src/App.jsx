@@ -949,6 +949,8 @@ export default function App(){
       const local=loadMood();
       const touched=loadTouched(MOOD_TOUCHED_KEY);
       const remoteDates=new Set(Object.keys(resp.mood));
+      const accountCache=loadAccountCache();
+      const myAcct=accountCache?.account_id||accountCache?.account?.id||"";
       let changed=false;
       for(const dt in resp.mood){
         const r=resp.mood[dt];
@@ -961,7 +963,7 @@ export default function App(){
         const localMeds=local[dt]?.meds||{};
         const finalMeds=hasRemoteMeds ? rMeds : localMeds;
         const rNote=(r.notes||"").trim();
-        const finalNotes=rNote===""&&SEED_MOOD[dt]?.notes?SEED_MOOD[dt].notes:(r.notes||"");
+        const finalNotes=(myAcct!=="cuixi"&&rNote===""&&SEED_MOOD[dt]?.notes)?SEED_MOOD[dt].notes:(r.notes||"");
         local[dt]={mood:r.mood||null,mood2:r.mood2||null,sleep:r.sleep,sleeps:Array.isArray(r.sleeps)&&r.sleeps.length>1?r.sleeps:null,anxiety:r.anxiety,
           irritability:r.irritability,weight:r.weight,notes:finalNotes,meds:finalMeds};
         changed=true;
