@@ -8,8 +8,12 @@ const SHEETS_URL = "https://script.google.com/macros/s/AKfycbygl23s4Fr81MqTfkGLO
 const WORKER_URL = "https://mootracker-push.weavergirl.workers.dev";
 const APP_TOKEN = import.meta.env.VITE_APP_TOKEN || "";
 const DELETE_TOMBSTONES = import.meta.env.VITE_DELETE_TOMBSTONES === "1";
+const ACCOUNTS_UI = import.meta.env.VITE_ACCOUNTS_UI === "1";
 const DEV_NOTES_KEY = "mt_dev_notes";
 const DEV_NOTES_EVENT = "mt-dev-notes-updated";
+const DEVICE_TOKEN_KEY = "mt_device_token";
+const ACCOUNT_CACHE_KEY = "mt_account_cache";
+const ACCOUNT_SETUP_DISMISSED_KEY = "mt_account_setup_dismissed";
 
 // VAPID public key — paired with the private key held by the Cloudflare Worker
 // that signs Web Push requests on behalf of this app. Safe to expose publicly.
@@ -334,6 +338,26 @@ function formatDevNoteTs(ts){
   const date=new Intl.DateTimeFormat(undefined,{month:"short",day:"numeric"}).format(d);
   const time=new Intl.DateTimeFormat(undefined,{hour:"numeric",minute:"2-digit"}).format(d);
   return `${date} · ${time}`;
+}
+
+function getDeviceToken(){try{return localStorage.getItem(DEVICE_TOKEN_KEY)||"";}catch{return "";}}
+function setDeviceToken(token){try{if(token)localStorage.setItem(DEVICE_TOKEN_KEY,token);else localStorage.removeItem(DEVICE_TOKEN_KEY);}catch{/* device token is local-only; auth UI can retry later */}}
+function loadAccountCache(){const v=loadJ(ACCOUNT_CACHE_KEY,null);return v&&typeof v==="object"?v:null;}
+function saveAccountCache(v){try{if(v)localStorage.setItem(ACCOUNT_CACHE_KEY,JSON.stringify(v));else localStorage.removeItem(ACCOUNT_CACHE_KEY);}catch{/* display cache only */}}
+function accountSetupDismissed(){try{return localStorage.getItem(ACCOUNT_SETUP_DISMISSED_KEY)==="1";}catch{return false;}}
+function setAccountSetupDismissed(v){try{if(v)localStorage.setItem(ACCOUNT_SETUP_DISMISSED_KEY,"1");else localStorage.removeItem(ACCOUNT_SETUP_DISMISSED_KEY);}catch{/* preference only */}}
+async function accountPost(path,body){
+  if(!WORKER_URL) return{ok:false,error:"worker_unavailable"};
+  const res=await fetch(`${WORKER_URL}${path}`,{
+    method:"POST",
+    cache:"no-store",
+    headers:{"Content-Type":"application/json","X-App-Token":APP_TOKEN},
+    body:JSON.stringify(body||{}),
+  });
+  let data=null;
+  try{data=await res.json();}catch{/* auth responses should be JSON, but status is enough */}
+  if(!res.ok) return{...(data||{}),ok:false,error:data?.error||`http_${res.status}`};
+  return data||{ok:true};
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -849,6 +873,14 @@ function useAutoUpdate() {
 export default function App(){
   useAutoUpdate();
   useEffect(()=>{pushUpdateTzForCurrentSub();},[]);
+  useEffect(()=>{
+    if(!ACCOUNTS_UI) return;
+    const token=getDeviceToken();
+    if(!token) return;
+    accountPost("/auth/validate",{token}).then(data=>{
+      if(data?.ok) saveAccountCache({account_id:data.account_id||""});
+    }).catch(()=>{});
+  },[]);
   const[screen,setScreen]=useState("welcome");
   const[mood,setMood]=useState(loadMood);
   const[srm,setSrm]=useState(loadSRM);
@@ -2571,6 +2603,101 @@ function RemindersCard({settings, setS}){
   </div>);
 }
 
+function defaultDeviceLabel(){
+  const actor=getDeviceActor();
+  const platform=typeof navigator!=="undefined"&&navigator.platform?navigator.platform:"device";
+  return `${actor}'s ${platform}`.slice(0,80);
+}
+
+function formatAccountDate(ts){
+  const d=new Date(ts||"");
+  if(Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat(undefined,{month:"short",day:"numeric"}).format(d);
+}
+
+function AccountCard(){
+  const[token,setToken]=useState(()=>getDeviceToken());
+  const[cache,setCache]=useState(()=>loadAccountCache());
+  const[open,setOpen]=useState(()=>!!getDeviceToken()||!accountSetupDismissed());
+  const[accountId,setAccountId]=useState(()=>cache?.account_id||cache?.account?.id||"wei");
+  const[code,setCode]=useState("");
+  const[label,setLabel]=useState(defaultDeviceLabel);
+  const[busy,setBusy]=useState(false);
+  const[msg,setMsg]=useState("");
+  const[me,setMe]=useState(()=>cache?.account?cache:null);
+
+  const loadMe=useCallback(async(nextToken=token)=>{
+    if(!nextToken) return;
+    const data=await accountPost("/auth/me",{token:nextToken});
+    if(data?.ok){
+      const next={account_id:data.account?.id||accountId,account:data.account,devices:Array.isArray(data.devices)?data.devices:[]};
+      setMe(next);setCache(next);saveAccountCache(next);
+    }
+  },[accountId,token]);
+
+  useEffect(()=>{
+    if(!token) return;
+    const t=setTimeout(()=>loadMe().catch(()=>{}),0);
+    return()=>clearTimeout(t);
+  },[token,loadMe]);
+
+  const requestCode=async()=>{
+    setBusy(true);setMsg("");
+    const data=await accountPost("/auth/request-code",{account_id:accountId});
+    setBusy(false);
+    if(data?.ok) setMsg(data.sent===false?"Code created. Email is not enabled yet.":"Code sent.");
+    else setMsg("Could not send code.");
+  };
+
+  const verifyCode=async()=>{
+    const clean=code.replace(/\D/g,"").slice(0,6);
+    if(clean.length!==6){setMsg("Enter the 6-digit code.");return;}
+    setBusy(true);setMsg("");
+    const data=await accountPost("/auth/verify-code",{account_id:accountId,code:clean,label:label.trim()||defaultDeviceLabel()});
+    setBusy(false);
+    if(data?.ok&&data.token){
+      setDeviceToken(data.token);
+      setToken(data.token);
+      const next={account_id:data.account_id||accountId};
+      setCache(next);saveAccountCache(next);setAccountSetupDismissed(false);setMsg("Account set on this device.");
+      loadMe(data.token).catch(()=>{});
+    }else setMsg("Code did not match.");
+  };
+
+  const dismiss=()=>{setAccountSetupDismissed(true);setOpen(false);};
+  const forget=()=>{setDeviceToken("");saveAccountCache(null);setToken("");setCache(null);setMe(null);setMsg("Account removed from this device.");};
+  const devices=Array.isArray(me?.devices)?me.devices:[];
+  const accountName=me?.account?.name||cache?.account?.name||cache?.account_id||accountId;
+
+  if(!open&&!token) return <button className="account-collapsed" onClick={()=>{setAccountSetupDismissed(false);setOpen(true);}}><span>Set up your account</span><span aria-hidden="true">›</span></button>;
+
+  return(<div className="card account-card">
+    <div className="account-head">
+      <h3 className="ctit">Set up your account</h3>
+      {!token&&<button className="btn-ghost account-dismiss" onClick={dismiss} aria-label="Dismiss account setup">×</button>}
+    </div>
+    {token?<>
+      <div className="account-current"><span>Signed in</span><b>{accountName}</b></div>
+      {devices.length>0&&<div className="account-devices">
+        {devices.map(d=><div className="account-device" key={d.token_tail||`${d.label}-${d.created_at}`}>
+          <div><b>{d.label||"Device"}</b><span>{d.token_tail?`…${d.token_tail}`:""}{d.last_seen?` · ${formatAccountDate(d.last_seen)}`:""}</span></div>
+        </div>)}
+      </div>}
+      <div className="account-actions"><button className="btn-s" onClick={()=>loadMe().catch(()=>setMsg("Could not refresh."))}>Refresh</button><button className="btn-ghost" onClick={forget}>Forget on this device</button></div>
+    </>:<>
+      <p className="set-h account-copy">Private notes are separated by account. Logging still works without setup.</p>
+      <div className="actor-pills account-picks">
+        {[["wei","Wei"],["cuixi","Cuixi"]].map(([id,name])=><button key={id} className={`actor-pill${accountId===id?" actor-pill-on":""}`} onClick={()=>setAccountId(id)}>{name}</button>)}
+      </div>
+      <button className="btn-add account-send" disabled={busy} onClick={requestCode}>{busy?"Working…":"Send code"}</button>
+      <input className="add-input account-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="6-digit code"/>
+      <input className="add-input" value={label} onChange={e=>setLabel(e.target.value)} placeholder="Device label"/>
+      <button className="btn-sm-p account-verify" disabled={busy||code.length!==6} onClick={verifyCode}>Verify</button>
+    </>}
+    {msg&&<p className="set-saved">{msg}</p>}
+  </div>);
+}
+
 // Actor selector — who's using this device. Stored per-device (NOT synced),
 // so Cuixi marking her device "Cuixi" doesn't change Wei's other devices.
 // Affects who's credited for saves and which audience this device's push
@@ -2866,6 +2993,8 @@ function Settings({settings,setS,onBack}){
   const pcDel=()=>{if(pcStep==="new")setPc1(pc1.slice(0,-1));else setPc2(pc2.slice(0,-1));};
   const pcClear=()=>{if(pcStep==="new")setPc1("");else setPc2("");};
   return(<BottomSheet onClose={onBack} sheetClass="g-settings" title="Settings">
+
+    {ACCOUNTS_UI&&<AccountCard/>}
 
     <ActorCard/>
 
@@ -3492,6 +3621,23 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .actor-stats{margin-top:14px;padding-top:12px;border-top:1px solid var(--g-line)}
 .g-settings .actor-stats-week{font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
 .g-settings .actor-stats-faint{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
+.g-settings .account-collapsed{display:flex;width:100%;align-items:center;justify-content:space-between;margin-bottom:12px;padding:12px 14px;border:1px dashed var(--g-tx4);border-radius:12px;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif}
+.g-settings .account-card{position:relative}
+.g-settings .account-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.g-settings .account-dismiss{margin-top:-6px;font-size:18px;line-height:1;padding:4px}
+.g-settings .account-copy{margin:0 0 12px}
+.g-settings .account-picks{margin-bottom:10px}
+.g-settings .account-send{margin-bottom:10px}
+.g-settings .account-code{letter-spacing:.18em;text-align:center;font-weight:500}
+.g-settings .account-verify{width:100%}
+.g-settings .account-current{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--g-line);font:400 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .account-current b{font-weight:500;color:var(--g-tx)}
+.g-settings .account-devices{padding-top:4px}
+.g-settings .account-device{padding:10px 0;border-bottom:1px solid var(--g-line)}
+.g-settings .account-device b{display:block;font:500 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .account-device span{display:block;margin-top:3px;font:400 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .account-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.g-settings .account-actions .btn-s{font-size:12px;padding:8px 13px}
 .g-settings .add-input{width:100%;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx);font:400 14px/1.2 'Inter',system-ui,sans-serif;padding:10px 12px;margin-bottom:8px}
 .g-settings .add-input::placeholder{color:var(--g-tx4)}
 .g-settings .btn-sm-p{border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 13px/1 'Inter',system-ui,sans-serif;padding:10px 16px}
