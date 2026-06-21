@@ -2698,6 +2698,57 @@ function AccountCard(){
   </div>);
 }
 
+// Caretaker oversight — Cuixi-only, one-way, read-only. Tucked in Settings,
+// never on home/day. The confirm step IS the deliberate friction (Face-ID is a
+// later enhancement, not a dependency). Wei has no equivalent and never sees this.
+function OversightCard(){
+  const cache=loadAccountCache();
+  const accountId=cache?.account_id||cache?.account?.id||"";
+  const token=getDeviceToken();
+  const[step,setStep]=useState("idle"); // idle | confirm | loading | view
+  const[notes,setNotes]=useState([]);
+  const[msg,setMsg]=useState("");
+
+  if(accountId!=="cuixi"||!token) return null; // Cuixi's adopted device only
+
+  const open=async()=>{
+    setStep("loading");setMsg("");
+    const data=await accountPost("/auth/oversight-notes",{token});
+    if(data?.ok&&Array.isArray(data.notes)){setNotes(data.notes);setStep("view");}
+    else{setMsg("Couldn't open his notes — try again in a moment.");setStep("idle");}
+  };
+
+  if(step==="view") return(<div className="card oversight-card">
+    <div className="oversight-banner">Read-only · opened just now</div>
+    {notes.length===0
+      ?<p className="set-h" style={{marginTop:0}}>Nothing written yet.</p>
+      :notes.map(n=><div className="oversight-note" key={n.date}>
+        <div className="oversight-note-date">{formatAccountDate(n.date)||n.date}</div>
+        <div className="oversight-note-body">{n.body}</div>
+      </div>)}
+    <button className="btn-ghost oversight-close" onClick={()=>{setStep("idle");setNotes([]);}}>Close</button>
+  </div>);
+
+  if(step==="confirm") return(<div className="card oversight-card">
+    <p className="oversight-q">Open Wei's private notes?</p>
+    <p className="oversight-qs">Because you're worried — not out of habit. They're his own words; you'll only read them.</p>
+    <div className="oversight-confirm-btns">
+      <button className="btn-ghost" onClick={()=>setStep("idle")}>Not now</button>
+      <button className="btn-sm-p" onClick={open}>Open</button>
+    </div>
+  </div>);
+
+  return(<div className="oversight-wrap">
+    {step==="loading"
+      ?<p className="set-saved">Opening…</p>
+      :<button className="oversight-open" onClick={()=>setStep("confirm")}>
+        <span className="oversight-open-t">Open Wei's notes</span>
+        <span className="oversight-open-s">His own writing. Open only if you're checking in.</span>
+      </button>}
+    {msg&&<p className="set-saved">{msg}</p>}
+  </div>);
+}
+
 // Actor selector — who's using this device. Stored per-device (NOT synced),
 // so Cuixi marking her device "Cuixi" doesn't change Wei's other devices.
 // Affects who's credited for saves and which audience this device's push
@@ -3004,6 +3055,7 @@ function Settings({settings,setS,onBack}){
   return(<BottomSheet onClose={onBack} sheetClass="g-settings" title="Settings">
 
     {ACCOUNTS_UI&&<AccountCard/>}
+    {ACCOUNTS_UI&&<OversightCard/>}
 
     <ActorCard/>
 
@@ -3648,6 +3700,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .account-device span{display:block;margin-top:3px;font:400 11px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
 .g-settings .account-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
 .g-settings .account-actions .btn-s{font-size:12px;padding:8px 13px}
+.g-settings .oversight-wrap{margin-bottom:12px}
+.g-settings .oversight-open{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;padding:12px 14px;border:1px dashed var(--g-tx4);border-radius:12px;background:transparent;cursor:pointer}
+.g-settings .oversight-open-t{font:500 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
+.g-settings .oversight-open-s{font:400 11px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
+.g-settings .oversight-card{margin-bottom:12px}
+.g-settings .oversight-q{font:500 15px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx);margin:0 0 6px}
+.g-settings .oversight-qs{font:400 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin:0 0 14px}
+.g-settings .oversight-confirm-btns{display:flex;align-items:center;justify-content:flex-end;gap:12px}
+.g-settings .oversight-banner{font:500 11px/1 'Inter',system-ui,sans-serif;color:var(--g-tx3);letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px}
+.g-settings .oversight-note{padding:10px 0;border-bottom:1px solid var(--g-line)}
+.g-settings .oversight-note-date{font:600 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--g-tx3);margin-bottom:4px}
+.g-settings .oversight-note-body{font:400 14px/1.5 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:pre-wrap}
+.g-settings .oversight-close{margin-top:12px}
 .g-settings .add-input{width:100%;border:1px solid var(--g-line);border-radius:10px;background:transparent;color:var(--g-tx);font:400 14px/1.2 'Inter',system-ui,sans-serif;padding:10px 12px;margin-bottom:8px}
 .g-settings .add-input::placeholder{color:var(--g-tx4)}
 .g-settings .btn-sm-p{border-radius:999px;border:none;background:var(--g-tx);color:var(--g-bg);font:500 13px/1 'Inter',system-ui,sans-serif;padding:10px 16px}
