@@ -236,16 +236,18 @@ if(typeof window!=="undefined" && WORKER_URL){
   document.addEventListener("visibilitychange",()=>{if(!document.hidden&&syncQueue.length)processQueue();});
 }
 
-// This device's actor (Wei / Cuixi / free-text). Stored in its own localStorage
-// key — NOT inside settings — so it stays per-device and doesn't propagate
-// across users via the Sheet sync. Default "Wei".
+// This device's actor. Adopted accounts are the source of truth; unadopted
+// devices keep the legacy per-device mt_actor fallback. Default "Wei".
 const ACTOR_KEY="mt_actor";
 function getDeviceActor(){
-  try{const v=localStorage.getItem(ACTOR_KEY);return (v&&v.trim())?v.trim():"Wei";}
+  try{
+    const cache=loadAccountCache();
+    const accountId=String(cache?.account_id||cache?.account?.id||"").trim().toLowerCase();
+    if(accountId==="wei") return "Wei";
+    if(accountId==="cuixi") return "Cuixi";
+    const v=localStorage.getItem(ACTOR_KEY);return (v&&v.trim())?v.trim():"Wei";
+  }
   catch{return "Wei";}
-}
-function setDeviceActor(v){
-  try{localStorage.setItem(ACTOR_KEY,String(v||"Wei"));}catch{/* localStorage unavailable; actor remains per-session default */}
 }
 const WEI_TZ_KEY="mt_weitz";
 const weiTzValidity=new Map();
@@ -872,7 +874,7 @@ function useAutoUpdate() {
 
 export default function App(){
   useAutoUpdate();
-  useEffect(()=>{pushUpdateTzForCurrentSub();},[]);
+  useEffect(()=>{pushUpdateTzForCurrentSub();pushUpdateRoleForCurrentSub();},[]);
   useEffect(()=>{
     if(!ACCOUNTS_UI) return;
     const token=getDeviceToken();
@@ -2773,69 +2775,6 @@ function OversightCard(){
   </div>);
 }
 
-// Actor selector — who's using this device. Stored per-device (NOT synced),
-// so Cuixi marking her device "Cuixi" doesn't change Wei's other devices.
-// Affects who's credited for saves and which audience this device's push
-// subscription falls into ("primary" = Wei, anything else = "caretaker").
-function ActorCard(){
-  const [current,setCurrent]=useState(()=>getDeviceActor());
-  const isCustom=current!=="Wei"&&current!=="Cuixi";
-  const [mode,setMode]=useState(isCustom?"Other":current);
-  const [customVal,setCustomVal]=useState(isCustom?current:"");
-  const [savedFlash,setSavedFlash]=useState(false);
-  const [stats,setStats]=useState(null);
-  useEffect(()=>{
-    if(!SHEETS_URL) return;
-    (async()=>{try{const res=await fetch(`${SHEETS_URL}?action=log_stats`,{method:"GET",cache:"no-store"});if(res?.ok) setStats(await res.json());}catch{/* log-stats optional; user card renders without it */}})();
-  },[]);
-
-  const commit=async(actor)=>{
-    if(!actor) return;
-    setDeviceActor(actor);
-    setCurrent(actor);
-    setSavedFlash(true);setTimeout(()=>setSavedFlash(false),1500);
-    try{ await pushUpdateRoleForCurrentSub(); }catch{/* role retag enqueue failed; actor is still saved locally */}
-  };
-
-  const pick=(label)=>{
-    setMode(label);
-    if(label==="Wei"||label==="Cuixi") commit(label);
-    else if(label==="Other"&&customVal.trim()) commit(customVal.trim());
-  };
-
-  const commitCustom=()=>{
-    const v=customVal.trim();
-    if(v) commit(v);
-  };
-
-  const weekDays=stats?.thisWeek?.distinctDays ?? 0;
-  const weekByActor=stats?.thisWeek?.byActor || {};
-  const weekWei=weekByActor["Wei"] || 0;
-  const weekOthers=Object.entries(weekByActor).filter(([k])=>k!=="Wei");
-  const weekSplit=(weekOthers.length>0 && weekDays>0)?`Wei ${weekWei}${weekOthers.map(([k,v])=>` · ${k} ${v}`).join("")}`:null;
-  const lastLog=stats?.lastLog || null;
-  const lastLogActor=stats?.lastLogActor || "";
-
-  return(<div className="card">
-    <h3 className="ctit">This device's user</h3>
-    <div className="actor-pills">
-      {["Wei","Cuixi","Other"].map(label=>(
-        <button key={label} className={`actor-pill${mode===label?" actor-pill-on":""}`} onClick={()=>pick(label)}>{label}</button>
-      ))}
-    </div>
-    {mode==="Other"&&(<div style={{marginTop:8,display:"flex",gap:8}}>
-      <input className="add-input" style={{marginBottom:0,flex:1}} value={customVal} onChange={e=>setCustomVal(e.target.value)} onBlur={commitCustom} onKeyDown={e=>{if(e.key==="Enter") commitCustom();}} placeholder="Name (e.g. Mom)"/>
-      <button className="btn-sm-p" onClick={commitCustom} disabled={!customVal.trim()}>Save</button>
-    </div>)}
-    {savedFlash&&<p className="set-saved" style={{marginTop:8}}>Set to {current}.</p>}
-    {(weekDays>0||lastLog)&&<div className="actor-stats">
-      {weekDays>0&&<div className="actor-stats-week">{weekDays} day{weekDays===1?"":"s"} logged this week</div>}
-      {weekSplit&&<div className="actor-stats-faint">{weekSplit}</div>}
-      {lastLog&&<div className="actor-stats-faint">Last: {lastLog}{lastLogActor?` · ${lastLogActor}`:""}</div>}
-    </div>}
-  </div>);
-}
-
 function DevNotesSection(){
   const[notes,setNotes]=useState(loadDevNotes);
   const[composing,setComposing]=useState(false);
@@ -3080,8 +3019,6 @@ function Settings({settings,setS,onBack}){
 
     {ACCOUNTS_UI&&<AccountCard/>}
     {ACCOUNTS_UI&&<OversightCard/>}
-
-    <ActorCard/>
 
     <RemindersCard settings={settings} setS={setS}/>
 
@@ -3704,9 +3641,6 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .actor-pills{display:flex;gap:8px}
 .g-settings .actor-pill{flex:1;padding:10px;border-radius:10px;border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-settings .actor-pill-on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
-.g-settings .actor-stats{margin-top:14px;padding-top:12px;border-top:1px solid var(--g-line)}
-.g-settings .actor-stats-week{font:400 13px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
-.g-settings .actor-stats-faint{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
 .g-settings .account-collapsed{display:flex;width:100%;align-items:center;gap:12px;justify-content:flex-start;margin-bottom:12px;padding:13px 14px;border:1px dashed var(--g-tx4);border-radius:14px;background:transparent;text-align:left;cursor:pointer}
 .g-settings .account-collapsed .ac-ic{color:var(--g-tx3);display:inline-flex;flex-shrink:0}
 .g-settings .account-collapsed .ac-t{display:block;font:500 13px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx2)}
