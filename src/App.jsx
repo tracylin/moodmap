@@ -2668,9 +2668,7 @@ function AccountCard(){
 
   const dismiss=()=>{setAccountSetupDismissed(true);setOpen(false);};
   const forget=()=>{setDeviceToken("");saveAccountCache(null);setToken("");setCache(null);setMe(null);setMsg("Account removed from this device.");};
-  const devices=Array.isArray(me?.devices)?me.devices:[];
   const accountName=me?.account?.name||cache?.account?.name||cache?.account_id||accountId;
-  const accountEmail=me?.account?.email||cache?.account?.email||accountId;
   const avatarInitial=((accountName||"?").trim()[0]||"?").toUpperCase();
 
   if(!open&&!token) return <button className="account-collapsed" onClick={()=>{setAccountSetupDismissed(false);setOpen(true);}}>
@@ -2681,21 +2679,15 @@ function AccountCard(){
 
   return(<div className="card account-card">
     {token?<>
-      <h3 className="ctit">Your account</h3>
-      <div className="account-top">
+      <div className="account-signed">
         <div className={`account-avatar ${accountId==="cuixi"?"cx":"wei"}`} aria-hidden="true">{avatarInitial}</div>
-        <div><div className="account-nm">{accountName}</div><div className="account-em">{accountEmail}</div></div>
-        <div className="account-trust"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m20 6-11 11-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>This device</div>
+        <div className="account-signed-copy">
+          <div className="account-kicker">Account · {accountName}</div>
+          <div className="account-em">Personal account · this phone</div>
+        </div>
       </div>
-      {devices.length>0&&<div className="account-devices">
-        <div className="account-dev-lbl">Signed in on</div>
-        {devices.map(d=><div className="account-device" key={d.token_tail||`${d.label}-${d.created_at}`}>
-          <span className="dv-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="7" y="2.5" width="10" height="19" rx="2.2" stroke="currentColor" strokeWidth="1.7"/><path d="M10.5 18.5h3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg></span>
-          <div><b>{d.label||"Device"}</b><span>{d.last_seen?formatAccountDate(d.last_seen):"Signed in"}</span></div>
-          <span className="dv-tail">{d.token_tail?`…${d.token_tail}`:""}</span>
-        </div>)}
-      </div>}
-      <div className="account-actions"><button className="btn-s" onClick={()=>loadMe().catch(()=>setMsg("Could not refresh."))}>Refresh</button><button className="btn-ghost" onClick={forget}>Forget on this device</button></div>
+      <div className="account-access"><span className="account-access-ic" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span><b>Private notes</b><em>kept to your account</em></span></div>
+      <div className="account-actions account-actions-single"><button className="btn-ghost" onClick={forget}>Forget on this device</button></div>
     </>:<>
       <div className="account-invite">
         <div className="account-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7"/></svg></div>
@@ -3738,21 +3730,19 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .account-verify{width:100%}
 .g-settings .account-setup-actions .account-verify{width:auto;flex:1}
 .g-settings .account-dismiss{border:none;background:none;color:var(--g-tx3);font:500 12.5px/1 'Inter',system-ui,sans-serif;padding:0 6px;cursor:pointer;white-space:nowrap}
-.g-settings .account-top{display:flex;align-items:center;gap:11px;margin-bottom:4px}
+.g-settings .account-signed{display:flex;align-items:center;gap:13px;padding:3px 0 15px;border-bottom:1px solid var(--g-line)}
 .g-settings .account-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font:500 15px/1 'Inter',system-ui,sans-serif;color:#fff}
 .g-settings .account-avatar.cx{background:linear-gradient(135deg,#E9C77E,#EE9A52)}
 .g-settings .account-avatar.wei{background:linear-gradient(135deg,#B3A8CC,#7C7EAE)}
-.g-settings .account-nm{font:500 14.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.g-settings .account-em{font:400 11px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:2px}
-.g-settings .account-trust{margin-left:auto;display:inline-flex;align-items:center;gap:5px;font:500 10.5px/1 'Inter',system-ui,sans-serif;color:#557163;background:rgba(143,178,164,.16);border-radius:999px;padding:6px 9px;white-space:nowrap}
-.g-settings .account-dev-lbl{font:600 9.5px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx3);margin:18px 0 9px}
-.g-settings .account-device{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--g-line)}
-.g-settings .account-device:last-of-type{border-bottom:0}
-.g-settings .account-device .dv-ic{color:var(--g-tx4);display:inline-flex;flex-shrink:0}
-.g-settings .account-device b{display:block;font:500 12.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
-.g-settings .account-device span{display:block;margin-top:3px;font:400 10.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-settings .account-device .dv-tail{margin-left:auto;font:400 10.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4);font-variant-numeric:tabular-nums}
+.g-settings .account-signed-copy{min-width:0}
+.g-settings .account-kicker{font:500 14.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-settings .account-em{font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
+.g-settings .account-access{display:flex;align-items:center;gap:10px;padding:14px 0 2px}
+.g-settings .account-access-ic{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#557163;background:rgba(143,178,164,.16)}
+.g-settings .account-access b{display:block;font:500 12.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .account-access em{display:block;margin-top:3px;font:400 11px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-style:normal}
 .g-settings .account-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.g-settings .account-actions-single{justify-content:flex-end;border-top:1px solid var(--g-line);padding-top:12px}
 .g-settings .account-actions .btn-s{font-size:12px;padding:8px 13px}
 .g-settings .oversight-wrap{margin-bottom:12px}
 .g-settings .oversight-lbl{font:600 9.5px/1 'Inter',system-ui,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--g-tx4);margin-bottom:9px}
