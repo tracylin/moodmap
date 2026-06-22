@@ -2771,10 +2771,10 @@ function OversightCard(){
     {step==="loading"
       ?<p className="set-saved">Opening…</p>
       :<>
-        <div className="oversight-lbl">Private to Wei</div>
+        <div className="oversight-lbl">Checking in on Wei</div>
         <button className="oversight-open" onClick={()=>setStep("confirm")}>
-          <span className="ov-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.7"/><path d="M8 10V7a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg></span>
-          <span className="ov-txt"><span className="oversight-open-t">Open Wei's notes</span><span className="oversight-open-s">His own writing. Open only if you're checking in.</span></span>
+          <span className="ov-ic" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="5" y="4" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.7"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg></span>
+          <span className="ov-txt"><span className="oversight-open-t">Open Wei's notes</span><span className="oversight-open-s">Open only if you're worried — not out of habit.</span></span>
           <span className="ov-chev" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="m9 18 6-6-6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
         </button>
       </>}
@@ -3006,17 +3006,13 @@ function Medications({medsAll,medEvents,mood,onCreate,onUpdateMeta,onEvent,onUpd
 
 function Settings({settings,setS,onBack}){
   const[pcStep,setPcStep]=useState(null);const[pc1,setPc1]=useState("");const[pc2,setPc2]=useState("");
-  const[showAdvanced,setShowAdvanced]=useState(false);
   const[weiTz,setWeiTz]=useState(getDeviceWeiTz());
-  const[faceIdAvailable,setFaceIdAvailable]=useState(false);
+  const[showDevNotes,setShowDevNotes]=useState(false);
 
-  useEffect(()=>{
-    let active=true;
-    const cred=typeof window!=="undefined"?window.PublicKeyCredential:null;
-    if(!cred||typeof cred.isUserVerifyingPlatformAuthenticatorAvailable!=="function") return()=>{active=false;};
-    cred.isUserVerifyingPlatformAuthenticatorAvailable().then(v=>{if(active)setFaceIdAvailable(!!v);}).catch(()=>{});
-    return()=>{active=false;};
-  },[]);
+  const acctCache=loadAccountCache();
+  const acctId=String(acctCache?.account_id||acctCache?.account?.id||"").toLowerCase();
+  const showTz=!ACCOUNTS_UI||acctId==="cuixi";
+  const tzOn=weiTz!=="";
 
   const curPc=pcStep==="new"?pc1:pc2;
   const pcTap=n=>{if(pcStep==="new"){const nx=pc1+n;setPc1(nx);if(nx.length===4)setTimeout(()=>setPcStep("confirm"),200);}else if(pcStep==="confirm"){const nx=pc2+n;setPc2(nx);if(nx.length===4){if(nx===pc1){setS({passcode:nx});setPcStep(null);}else setPc2("");}}};
@@ -3025,37 +3021,56 @@ function Settings({settings,setS,onBack}){
   return(<BottomSheet onClose={onBack} sheetClass="g-settings" title="Settings">
 
     {ACCOUNTS_UI&&<AccountCard/>}
-    {ACCOUNTS_UI&&<OversightCard/>}
 
-    <RemindersCard settings={settings} setS={setS}/>
+    <div className="card merged-card">
+      {/* Reminders row — keeps RemindersCard's existing controls/handlers */}
+      <div className="merged-row merged-row-rem">
+        <RemindersCard settings={settings} setS={setS}/>
+      </div>
 
-    <div className="card set-quiet">
-      <h3 className="ctit">Passcode Lock</h3>
-      {settings.passcode&&!pcStep&&(<div><p className="set-h" style={{marginBottom:10}}>Passcode is set.</p>
-        <div className="set-pcb"><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Change</button><button className="btn-ghost" style={{color:"#D4785C"}} onClick={()=>setS({passcode:""})}>Remove</button></div></div>)}
-      {!settings.passcode&&!pcStep&&(<div><button className="btn-s" style={{fontSize:13,padding:"10px 16px"}} onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set Passcode</button></div>)}
-      {pcStep&&(<div className="set-pcf"><p className="set-h">{pcStep==="new"?"Enter 4-digit passcode":"Confirm passcode"}</p>
-        <div className="lock-dots" style={{justifyContent:"flex-start",margin:"12px 0"}}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<curPc.length?" on":""}`}/>)}</div>
-        <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}} disabled={false}>{n==="del"?"‹":""+n}</button>))}</div>
-        <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button></div>)}
+      {/* Passcode row */}
+      <div className="merged-row">
+        {!pcStep&&<div className="merged-row-head">
+          <span className="merged-t">Passcode</span>
+          {settings.passcode
+            ?<div className="merged-ctl"><button className="btn-s merged-btn" onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Change</button><button className="btn-ghost merged-remove" onClick={()=>setS({passcode:""})}>Remove</button></div>
+            :<button className="btn-s merged-btn" onClick={()=>{setPcStep("new");setPc1("");setPc2("");}}>Set</button>}
+        </div>}
+        {pcStep&&<div className="set-pcf">
+          <p className="set-h">{pcStep==="new"?"Enter 4-digit passcode":"Confirm passcode"}</p>
+          <div className="lock-dots" style={{justifyContent:"flex-start",margin:"12px 0"}}>{[0,1,2,3].map(i=><div key={i} className={`lock-dot${i<curPc.length?" on":""}`}/>)}</div>
+          <div className="set-pad">{[1,2,3,4,5,6,7,8,9,"C",0,"del"].map((n,i)=>(<button key={i} className={`lk lksm${n==="del"?" lkdel":n==="C"?" lkclr":""}`} onClick={()=>{if(n==="del")pcDel();else if(n==="C")pcClear();else pcTap(String(n));}}>{n==="del"?"‹":""+n}</button>))}</div>
+          <button className="btn-ghost" onClick={()=>setPcStep(null)}>Cancel</button>
+        </div>}
+      </div>
+
+      {/* Time zone row — toggle-first (Cuixi-only when accounts on) */}
+      {showTz&&<div className="merged-row">
+        <div className="merged-row-head">
+          <span className="merged-t">Log on Wei's time zone</span>
+          <button className={`rem-toggle${tzOn?" rem-toggle-on":""}`} role="switch" aria-checked={tzOn} aria-label={`Log on Wei's time zone ${tzOn?"on":"off"}`} onClick={()=>{if(tzOn){setDeviceWeiTz("");setWeiTz(getDeviceWeiTz());}else{const def=getDeviceTz()||TZ_LIST[0]||"";setDeviceWeiTz(def);setWeiTz(getDeviceWeiTz());}}}>
+            <div className="rem-toggle-knob"/>
+          </button>
+        </div>
+        {tzOn&&<div className="tz-expand">
+          <select className="add-input" style={{marginTop:0,marginBottom:0}} value={weiTz} onChange={e=>{setDeviceWeiTz(e.target.value);setWeiTz(getDeviceWeiTz());}}>
+            {(TZ_LIST.includes(weiTz)?TZ_LIST:[weiTz,...TZ_LIST]).map(z=><option key={z} value={z}>{z}</option>)}
+          </select>
+          <p className="set-saved" style={{marginTop:8}}>Wei's today: {tdk()} · {weiHM()}</p>
+        </div>}
+      </div>}
     </div>
 
-    <button className="settings-advanced-toggle" aria-expanded={showAdvanced} onClick={()=>setShowAdvanced(!showAdvanced)}><span>Advanced</span><span className="adv-chev" aria-hidden="true">⌄</span></button>
-    {showAdvanced&&<div className="settings-advanced">
-      <div className="card"><h3 className="ctit">Wei's time zone</h3>
-        <p className="set-h" style={{marginTop:0}}>Set this to Wei's time zone if you log from a different one — dates land on Wei's day, not yours. Leave on the default if you and Wei share a time zone.</p>
-        <select className="add-input" style={{marginTop:10,marginBottom:0}} value={weiTz} onChange={e=>{setDeviceWeiTz(e.target.value);setWeiTz(getDeviceWeiTz());}}>
-          <option value="">This device's time zone (default)</option>
-          {TZ_LIST.map(z=><option key={z} value={z}>{z}</option>)}
-        </select>
-        <p className="set-saved" style={{marginTop:8}}>Wei's today: {tdk()} · {weiHM()}</p>
-        <p className="set-saved">Face ID available: {faceIdAvailable?"yes":"no"}</p>
-      </div>
-      {SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Active — entries sync one at a time. Pull from sheets on app open.</p><button className="btn-s" style={{fontSize:13,padding:"10px 16px",marginTop:8}} onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Force re-sync all data</button></div>}
-      {!SHEETS_URL&&<div className="card"><h3 className="ctit">Google Sheets Sync</h3><p className="set-h" style={{marginTop:0}}>Not configured. Set SHEETS_URL in the code to enable.</p></div>}
-      <DevNotesSection/>
-      <p className="ver-label">MooTracker v{VER}</p>
-    </div>}
+    {ACCOUNTS_UI&&<OversightCard/>}
+
+    <div className="settings-foot">
+      <span>MooTracker v{VER}</span><span aria-hidden="true">·</span><button className="settings-resync" onClick={()=>{localStorage.removeItem("mt_seed_pushed");window.location.reload();}}>Re-sync data</button>
+    </div>
+
+    <div className="settings-devnotes">
+      <button className="settings-devnotes-toggle" aria-expanded={showDevNotes} onClick={()=>setShowDevNotes(!showDevNotes)}>Dev notes</button>
+      {showDevNotes&&<DevNotesSection/>}
+    </div>
   </BottomSheet>);
 }
 
@@ -3741,6 +3756,28 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .past-text{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx2);margin-top:2px}
 .g-settings .btn-del{color:var(--g-tx4)}
 .g-settings .ver-label{margin-top:10px;text-align:center;font:300 10px/1 'Inter',system-ui,sans-serif;letter-spacing:.04em;color:var(--g-tx4)}
+/* merged settings card — hairline rows */
+.g-settings .merged-card{padding:2px 14px}
+.g-settings .merged-row{padding:14px 0;border-top:1px solid var(--g-line)}
+.g-settings .merged-row:first-child{border-top:none}
+.g-settings .merged-row-head{display:flex;align-items:center;gap:12px}
+.g-settings .merged-t{flex:1;font:400 15px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx)}
+.g-settings .merged-ctl{display:flex;align-items:center;gap:4px}
+.g-settings .merged-btn{font:500 13px/1 'Inter',system-ui,sans-serif;padding:9px 16px}
+.g-settings .merged-remove{color:var(--g-warm-err);font:400 13px/1 'Inter',system-ui,sans-serif;padding:6px 8px}
+.g-settings .tz-expand{margin-top:14px}
+/* RemindersCard rendered inline as a row — strip its card chrome */
+.g-settings .merged-row-rem .card{background:transparent;border:none;border-radius:0;box-shadow:none;padding:0;margin:0}
+.g-settings .merged-row-rem .ctit{display:block;font:400 15px/1.3 'Inter',system-ui,sans-serif;letter-spacing:0;text-transform:none;color:var(--g-tx);margin-bottom:0}
+.g-settings .merged-row-rem .rem-smart{padding-top:0}
+.g-settings .merged-row-rem .rem-smart-row{padding:0;margin-top:10px}
+.g-settings .merged-row-rem .rem-msg{margin-top:10px}
+/* quiet footer */
+.g-settings .settings-foot{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:18px;font:300 11.5px/1 'Inter',system-ui,sans-serif;color:var(--g-tx4)}
+.g-settings .settings-resync{border:none;background:none;color:var(--g-tx3);font:300 11.5px/1 'Inter',system-ui,sans-serif;text-decoration:underline;text-underline-offset:2px;cursor:pointer;padding:0}
+/* dev notes quiet collapsed link */
+.g-settings .settings-devnotes{margin-top:16px;text-align:center}
+.g-settings .settings-devnotes-toggle{border:none;background:none;color:var(--g-tx4);font:400 11px/1 'Inter',system-ui,sans-serif;letter-spacing:.03em;cursor:pointer;padding:6px}
 .g-settings .settings-advanced-toggle{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:0;padding:14px 2px;border:none;border-top:1px solid var(--g-line);border-radius:0;background:transparent;color:var(--g-tx2);font:500 13px/1 'Inter',system-ui,sans-serif;cursor:pointer}
 .g-settings .settings-advanced-toggle .adv-chev{color:var(--g-tx3);transition:transform .2s}
 .g-settings .settings-advanced-toggle[aria-expanded="true"] .adv-chev{transform:rotate(180deg)}
