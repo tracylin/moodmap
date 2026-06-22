@@ -2675,7 +2675,9 @@ function AccountCard(){
 
   const dismiss=()=>{setAccountSetupDismissed(true);setOpen(false);};
   const forget=()=>{setDeviceToken("");saveAccountCache(null);setToken("");setCache(null);setMe(null);setMsg("Account removed from this device.");};
+  const signedAccountId=String(me?.account?.id||cache?.account_id||cache?.account?.id||accountId||"").toLowerCase();
   const accountName=me?.account?.name||cache?.account?.name||cache?.account_id||accountId;
+  const otherName=signedAccountId==="cuixi"?"Wei":"Cuixi";
   const avatarInitial=((accountName||"?").trim()[0]||"?").toUpperCase();
 
   if(!open&&!token) return <button className="account-collapsed" onClick={()=>{setAccountSetupDismissed(false);setOpen(true);}}>
@@ -2687,14 +2689,14 @@ function AccountCard(){
   return(<div className="card account-card">
     {token?<>
       <div className="account-signed">
-        <div className={`account-avatar ${accountId==="cuixi"?"cx":"wei"}`} aria-hidden="true">{avatarInitial}</div>
+        <div className={`account-avatar ${signedAccountId==="cuixi"?"cx":"wei"}`} aria-hidden="true">{avatarInitial}</div>
         <div className="account-signed-copy">
-          <div className="account-kicker">Account · {accountName}</div>
-          <div className="account-em">Personal account · this phone</div>
+          <div className="account-kicker">{accountName}</div>
+          <div className="account-em">Personal · this phone</div>
         </div>
+        <button className="btn-ghost account-signout" onClick={forget}>Sign out</button>
       </div>
-      <div className="account-access"><span className="account-access-ic" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg></span><span><b>Private notes</b><em>kept to your account</em></span></div>
-      <div className="account-actions account-actions-single"><button className="btn-ghost" onClick={forget}>Forget on this device</button></div>
+      <div className="account-access"><span className="account-access-ic" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="3.4" y="7" width="9.2" height="6.3" rx="2.2" stroke="currentColor" strokeWidth="1.2"/><path d="M5.4 7V5.3a2.6 2.6 0 0 1 5.2 0V7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg></span><span><b>Private notes</b><em>Your notes stay with you, separate from {otherName}</em></span><span className="account-access-on">On</span></div>
     </>:<>
       <div className="account-invite">
         <div className="account-ico" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M20 21a8 8 0 0 0-16 0" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/><circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.7"/></svg></div>
@@ -3673,13 +3675,15 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-settings .account-avatar{width:38px;height:38px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font:500 15px/1 'Inter',system-ui,sans-serif;color:#fff}
 .g-settings .account-avatar.cx{background:linear-gradient(135deg,#E9C77E,#EE9A52)}
 .g-settings .account-avatar.wei{background:linear-gradient(135deg,#B3A8CC,#7C7EAE)}
-.g-settings .account-signed-copy{min-width:0}
-.g-settings .account-kicker{font:500 14.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.g-settings .account-em{font:400 11.5px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:3px}
+.g-settings .account-signed-copy{flex:1;min-width:0}
+.g-settings .account-kicker{font:500 17px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-settings .account-em{font:400 12px/1.3 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-top:4px}
+.g-settings .account-signout.btn-ghost{flex-shrink:0;border:none;background:transparent;color:var(--g-tx2);font:400 12.5px/1 'Inter',system-ui,sans-serif;padding:9px 6px;border-radius:9px;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--g-line);white-space:nowrap}
 .g-settings .account-access{display:flex;align-items:center;gap:10px;padding:14px 0 2px}
-.g-settings .account-access-ic{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#557163;background:rgba(143,178,164,.16)}
+.g-settings .account-access-ic{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--g-tx3)}
 .g-settings .account-access b{display:block;font:500 12.5px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx)}
 .g-settings .account-access em{display:block;margin-top:3px;font:400 11px/1.35 'Inter',system-ui,sans-serif;color:var(--g-tx3);font-style:normal}
+.g-settings .account-access-on{margin-left:auto;font:400 12px/1 'Inter',system-ui,sans-serif;color:var(--g-sage);white-space:nowrap}
 .g-settings .account-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
 .g-settings .account-actions-single{justify-content:flex-end;border-top:1px solid var(--g-line);padding-top:12px}
 .g-settings .account-actions .btn-s{font-size:12px;padding:8px 13px}
