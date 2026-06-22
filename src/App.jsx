@@ -3073,7 +3073,7 @@ if(typeof window!=="undefined"){
    ═══════════════════════════════════════════════════════════════════════════ */
 const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;1,8..60,300&display=swap');
-:root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889;--g-bg:#F5F3EE;--g-surface:#ECE8E0;--g-card:#FBFAF6;--g-line:#E2DED4;--g-tx:#1C1C1A;--g-tx2:#6E6A60;--g-tx3:#9A968C;--g-tx4:#C0BBAF;--g-sage:#8FB2A4;--g-clay:#C2745A;--g-warm-err:#BE7355;--g-mood-sev-low:#5B5E86;--g-mood-mod-low:#7C7EAE;--g-mood-mild-low:#B3A8CC;--g-mood-steady:#CFC9AE;--g-mood-mild-high:#E9C77E;--g-mood-mod-high:#EE9A52;--g-mood-sev-high:#E96A33;--g-sleep-very-short:#C9B9CE;--g-sleep-short:#B3A8D0;--g-sleep-healthy:#93A2CC;--g-sleep-long:#8AB4C8;--g-anx:#7A7268;--g-irr:#ADA593}
+:root{--bg:#F7F2EA;--card:#FFFCF6;--tx:#3A332E;--t2:#857F76;--t3:#C8C0B5;--bd:#EEE7DC;--warm:#F2EBDF;--gn:#7BA08B;--gbg:#EFF6F1;--r:14px;--rs:10px;--sh:0 1px 2px rgba(60,40,20,.025),0 12px 28px rgba(60,40,20,.05);--ease:cubic-bezier(.16,1,.3,1);--z-very-short:#B0573D;--z-short:#D49479;--z-healthy:#9DB28E;--z-long:#7E89A8;--wei:#8FA889;--g-bg:#F5F3EE;--g-surface:#ECE8E0;--g-card:#FBFAF6;--g-line:#E2DED4;--g-tx:#1C1C1A;--g-tx2:#6E6A60;--g-tx3:#9A968C;--g-tx4:#C0BBAF;--g-sage:#8FB2A4;--g-clay:#C2745A;--g-warm-err:#BE7355;--g-mood-sev-low:#5B5E86;--g-mood-mod-low:#7C7EAE;--g-mood-mild-low:#B3A8CC;--g-mood-steady:#CFC9AE;--g-mood-mild-high:#E9C77E;--g-mood-mod-high:#EE9A52;--g-mood-sev-high:#E96A33;--g-sleep-very-short:#C9B9CE;--g-sleep-short:#B3A8D0;--g-sleep-healthy:#93A2CC;--g-sleep-long:#8AB4C8;--g-anx:#7A7268;--g-irr:#ADA593;--g-safe:calc(env(safe-area-inset-top) + env(safe-area-inset-bottom,0px))}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 input,textarea,select{font-size:16px}
 body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
@@ -3235,7 +3235,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-entry .datepill,.g-entry .datepick{border:1px solid var(--g-line);background:transparent;color:var(--g-tx2);font:500 12px/1 'Inter',system-ui,sans-serif}
 .g-entry .datepill.on{border-color:var(--g-tx);background:var(--g-surface);color:var(--g-tx)}
 .g-entry .datecap{font:300 12px/1.2 'Inter',system-ui,sans-serif;color:var(--g-tx3)}
-.g-entry .qa{position:relative;z-index:1;display:flex;min-height:calc(100dvh - 126px);flex-direction:column;animation:si .3s var(--ease)}
+.g-entry .qa{position:relative;z-index:1;display:flex;min-height:calc(100dvh - var(--g-safe) - 126px);flex-direction:column;animation:si .3s var(--ease)}
 .g-entry .qt{font:500 21px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;margin-bottom:10px;color:var(--g-tx)}
 .g-entry .qs{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:22px}
 .g-entry .step-btns{margin-top:auto;padding-top:18px}
@@ -3250,7 +3250,7 @@ body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--t
 .g-review .es{font:500 13px/1 'Inter',system-ui,sans-serif;color:var(--g-tx2);letter-spacing:0;text-transform:none}
 .g-review .pb{height:3px;background:var(--g-line);margin-bottom:22px}
 .g-review .pf{background:var(--g-tx)}
-.g-review .qa{display:flex;min-height:calc(100dvh - 116px);flex-direction:column;animation:si .3s var(--ease)}
+.g-review .qa{display:flex;min-height:calc(100dvh - var(--g-safe) - 116px);flex-direction:column;animation:si .3s var(--ease)}
 .g-review .qt{font:500 22px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-.4px;margin-bottom:5px;color:var(--g-tx)}
 .g-review .qs{font:300 13px/1.45 'Inter',system-ui,sans-serif;color:var(--g-tx3);margin-bottom:20px}
 .g-review .rc{margin:0 0 18px;background:transparent;border-radius:0;box-shadow:none;padding:0}
