@@ -1222,10 +1222,37 @@ function daysSinceLastLog_(activity, tz, weiTodayStr) {
 
 // 1-minute trigger entry point. Function name kept (sendDueReminders) so the
 // existing trigger doesn't need re-binding.
+// Google services (SpreadsheetApp, PropertiesService) occasionally throw a
+// transient "We're sorry, a server error occurred". Retry once or twice
+// with a short pause before giving up.
+function withRetry_(fn, label) {
+  var delays = [1000, 3000];
+  for (var i = 0; ; i++) {
+    try {
+      return fn();
+    } catch (err) {
+      if (i >= delays.length) throw err;
+      Logger.log("%s failed (attempt %s): %s; retrying", label || "call", i + 1, err);
+      Utilities.sleep(delays[i]);
+    }
+  }
+}
+
+// Time-driven trigger entry point. Transient Google errors are logged
+// instead of thrown so the trigger does not mark the run failed and send
+// failure-summary emails; the next minute's run picks up normally.
 function sendDueReminders() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    sendDueReminders_();
+  } catch (err) {
+    console.error("sendDueReminders error: " + (err && err.stack ? err.stack : err));
+  }
+}
+
+function sendDueReminders_() {
+  var ss = withRetry_(function(){ return SpreadsheetApp.getActiveSpreadsheet(); }, "getActiveSpreadsheet");
   var tz = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone();
-  var subs = listPushSubscriptions_(ss);
+  var subs = withRetry_(function(){ return listPushSubscriptions_(ss); }, "listPushSubscriptions_");
   if (!subs.length) return;
 
   var buckets = { noon: [], midnight: [], "noon:1": [], "noon:2": [], "noon:3": [], "midnight:1": [], "midnight:2": [], "midnight:3": [] };
@@ -1243,8 +1270,8 @@ function sendDueReminders() {
   var shared = {};
   if (anySlot) {
     shared.weiToday  = weiDateKey_(new Date(), tz);
-    shared.state     = weiDayEntryState_(ss, shared.weiToday);
-    shared.activity  = readRecentLogActivity_(ss, 200);
+    shared.state     = withRetry_(function(){ return weiDayEntryState_(ss, shared.weiToday); }, "weiDayEntryState_");
+    shared.activity  = withRetry_(function(){ return readRecentLogActivity_(ss, 200); }, "readRecentLogActivity_");
   }
 
   if (buckets.noon.length) fireSmartSlot_(ss, "noon", tz, { subs: buckets.noon, weiToday: shared.weiToday, state: shared.state, activity: shared.activity });
@@ -1258,12 +1285,14 @@ function sendDueReminders() {
 
   // eslint-disable-next-line no-undef
   var props = PropertiesService.getScriptProperties();
+  // One bulk read instead of a getProperty call per subscriber.
+  var allProps = withRetry_(function(){ return props.getProperties(); }, "getProperties");
   var now = new Date();
   subs.forEach(function(sub){
     if (sub.role === "caretaker") return;
     var subTz = sub.tz || tz;
     var nextKey = "wildcard:nextFireAt:" + sub.endpoint.slice(0, 80);
-    var nextFireAt = props.getProperty(nextKey);
+    var nextFireAt = allProps[nextKey];
     var planned = nextFireAt ? new Date(nextFireAt) : null;
     if (!planned || isNaN(planned.getTime())) {
       props.setProperty(nextKey, computeNextWildcardFire_(sub, subTz, now).toISOString());
